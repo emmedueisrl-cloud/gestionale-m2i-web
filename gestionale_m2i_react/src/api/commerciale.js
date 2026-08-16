@@ -18,7 +18,7 @@ export async function uploadFatturaXml(file) {
   const formData = new FormData();
   formData.append('file', file);
   
-  const res = await fetch('/api/upload-fattura-xml', {
+  const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/upload-fattura-xml', {
     method: 'POST',
     body: formData
   });
@@ -38,7 +38,7 @@ export async function anteprimaFattureCsv(file, mese, anno) {
   formData.append('mese', mese);
   formData.append('anno', anno);
   
-  const res = await fetch('/api/anteprima-fatture-csv', {
+  const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/anteprima-fatture-csv', {
     method: 'POST',
     body: formData
   });
@@ -53,7 +53,7 @@ export async function anteprimaFattureCsv(file, mese, anno) {
 }
 
 export async function confermaFattureCsv(fatture) {
-  const res = await fetch('/api/conferma-fatture-csv', {
+  const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/conferma-fatture-csv', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fatture })
@@ -97,7 +97,7 @@ export async function anteprimaFattureXml(files, mese, anno) {
   formData.append('mese', mese);
   formData.append('anno', anno);
   
-  const res = await fetch('/api/anteprima-fatture-xml', {
+  const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/anteprima-fatture-xml', {
     method: 'POST',
     body: formData
   });
@@ -112,7 +112,7 @@ export async function anteprimaFattureXml(files, mese, anno) {
 }
 
 export async function confermaFattureXml(righe, aggiornamenti_clienti) {
-  const res = await fetch('/api/conferma-fatture-xml', {
+  const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/conferma-fatture-xml', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ righe, aggiornamenti_clienti })

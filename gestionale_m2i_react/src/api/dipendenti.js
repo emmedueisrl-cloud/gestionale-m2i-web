@@ -5,7 +5,7 @@
 
 import { apiCall } from './client';
 
-const UPLOAD_URL = '/api/upload';
+const UPLOAD_URL = (import.meta.env.VITE_API_URL || '') + '/api/upload';
 
 // -----------------------------------------------------------------------------
 // ENDPOINT ANAGRAFICA DIPENDENTI

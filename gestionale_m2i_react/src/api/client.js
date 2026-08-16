@@ -3,7 +3,7 @@ export async function apiCall(functionName, args = []) {
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
   try {
-    const res = await fetch('/api/run', {
+    const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ functionName, args }),

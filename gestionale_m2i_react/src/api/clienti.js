@@ -87,7 +87,7 @@ export async function uploadFileCliente(idCliente, file, tipoDocumento = '', nom
 
   try {
     // Il backend si aspetta /api/upload
-    const response = await fetch('/api/upload', {
+    const response = await fetch((import.meta.env.VITE_API_URL || '') + '/api/upload', {
       method: 'POST',
       body: formData, 
       signal: controller.signal

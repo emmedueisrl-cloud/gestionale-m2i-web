@@ -91,7 +91,7 @@ export default function PostaElettronica() {
     try {
       setSubmittingLink(true);
       showStatus('loading', 'Collegamento allegato...', 'Collegamento del file alla scheda Dipendente in corso...');
-      const res = await fetch(`/api/dipendenti/${linkingCandidateId}/collega-allegato`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/dipendenti/${linkingCandidateId}/collega-allegato`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -151,7 +151,7 @@ export default function PostaElettronica() {
   const fetchEmails = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/emails`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails`);
       const json = await res.json();
       if (json.success) {
         setEmails(json.data || []);
@@ -170,7 +170,7 @@ export default function PostaElettronica() {
       
       showStatus('loading', 'Sincronizzazione...', isLoadMore ? 'Recupero messaggi meno recenti...' : 'Sincronizzazione con il server Aruba in corso...');
       
-      const res = await fetch(`/api/emails/sync`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 50, offset: nextOffset })
@@ -278,7 +278,7 @@ export default function PostaElettronica() {
     }
     
     try {
-      await fetch(`/api/emails/${id}/preferito`, {
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/${id}/preferito`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preferito: newVal })
@@ -298,7 +298,7 @@ export default function PostaElettronica() {
     }
 
     try {
-      await fetch(`/api/emails/${id}/letto`, {
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/${id}/letto`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ letto: newVal })
@@ -326,7 +326,7 @@ export default function PostaElettronica() {
 
     try {
       await Promise.all(idList.map(id => 
-        fetch(`/api/emails/${id}/cartella`, {
+        fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/${id}/cartella`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cartella: folder })
@@ -360,7 +360,7 @@ export default function PostaElettronica() {
 
     try {
       await Promise.all(idList.map(id => 
-        fetch(`/api/emails/${id}`, { method: 'DELETE' })
+        fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/${id}`, { method: 'DELETE' })
       ));
       showStatus('success', 'Eliminazione completata', 'Messaggi eliminati definitivamente.');
     } catch (err) {
@@ -375,7 +375,7 @@ export default function PostaElettronica() {
     setSelectedIds(new Set());
     try {
       await Promise.all(list.map(id => 
-        fetch(`/api/emails/${id}/preferito`, {
+        fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/${id}/preferito`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ preferito: starred ? 1 : 0 })
@@ -392,7 +392,7 @@ export default function PostaElettronica() {
     setSelectedIds(new Set());
     try {
       await Promise.all(list.map(id => 
-        fetch(`/api/emails/${id}/letto`, {
+        fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/${id}/letto`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ letto: read ? 1 : 0 })
@@ -436,7 +436,7 @@ export default function PostaElettronica() {
 
     try {
       showStatus('loading', 'Invio e-mail...', 'Trasmissione del messaggio in corso...');
-      const res = await fetch(`/api/emails/send`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/emails/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

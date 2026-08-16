@@ -87,7 +87,7 @@ export default function RegistroOre() {
     formData.append('anno', anno);
     
     try {
-      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api/excel/carica-presenze', {
+      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3000') + (import.meta.env.VITE_API_URL || '') + '/api/excel/carica-presenze', {
         method: 'POST',
         body: formData
       });

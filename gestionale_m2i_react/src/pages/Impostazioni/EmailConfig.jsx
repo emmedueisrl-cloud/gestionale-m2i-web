@@ -26,7 +26,7 @@ export default function ConfigurazioneEmail() {
 
   const fetchEmailConfig = async () => {
     try {
-      const res = await fetch('/api/configurazione-email');
+      const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/configurazione-email');
       const json = await res.json();
       if (json.success && json.data) {
         setEmailConfig(json.data);
@@ -83,7 +83,7 @@ export default function ConfigurazioneEmail() {
     
     try {
       showStatus('loading', 'Salvataggio...', 'Salvataggio configurazione server...');
-      const res = await fetch(`/api/configurazione-email`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/configurazione-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
