@@ -3,14 +3,26 @@ const fs = require('fs');
 
 let dbPath = path.join(__dirname, 'gestionale.db');
 if (process.env.DATA_DIR) {
-  const persistDbPath = path.join(process.env.DATA_DIR, 'gestionale.db');
-  // Se il database persistente non esiste (es. primo avvio), lo copio dal repository
-  if (!fs.existsSync(persistDbPath) && fs.existsSync(dbPath)) {
-    console.log("Database persistente non trovato. Copio il database iniziale da " + dbPath + " a " + persistDbPath);
-    fs.copyFileSync(dbPath, persistDbPath);
+  const dataDir = process.env.DATA_DIR.trim();
+  if (!fs.existsSync(dataDir)) {
+    try { fs.mkdirSync(dataDir, { recursive: true }); } catch(e) {}
+  }
+  
+  const persistDbPath = path.join(dataDir, 'gestionale.db');
+  
+  try {
+    const stats = fs.existsSync(persistDbPath) ? fs.statSync(persistDbPath) : null;
+    // Se non esiste, o è vuoto/corrotto (< 10KB), sovrascrivilo
+    if (!stats || stats.size < 10240) {
+      console.log("Copia DB iniziale in corso verso: " + persistDbPath);
+      fs.copyFileSync(dbPath, persistDbPath);
+    }
+  } catch(e) {
+    console.error("Errore copia DB:", e);
   }
   dbPath = persistDbPath;
 }
+console.log("=== DB PATH CONFIGURATO: " + dbPath + " ===");
 
 // Inizializza Knex per SQLite
 const knex = require('knex')({
