@@ -1,0 +1,1 @@
+const { knex } = require('./db'); async function main() { try { await knex.raw('ALTER TABLE dipendenti ADD COLUMN is_caposquadra INTEGER DEFAULT 0'); console.log('Column added.'); } catch(e) { console.log(e.message); } process.exit(0); } main();

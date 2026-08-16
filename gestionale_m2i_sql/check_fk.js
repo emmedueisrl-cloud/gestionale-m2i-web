@@ -1,0 +1,9 @@
+const sqlite3 = require('sqlite3').verbose();
+const db = new sqlite3.Database('gestionale.db');
+db.all("PRAGMA foreign_key_list('fatture')", (err, rows) => console.log('fatture:', rows));
+db.all("PRAGMA foreign_key_list('programma_fisso')", (err, rows) => console.log('programma_fisso:', rows));
+db.all("PRAGMA foreign_key_list('agenda_caposquadra')", (err, rows) => console.log('agenda_caposquadra:', rows));
+db.all("PRAGMA foreign_key_list('dettaglio_mesi_chiusi_clienti')", (err, rows) => console.log('dettaglio_mesi_chiusi_clienti:', rows));
+db.all("PRAGMA foreign_key_list('dettaglio_mesi_chiusi_provvigioni')", (err, rows) => console.log('dettaglio_mesi_chiusi_provvigioni:', rows));
+db.all("PRAGMA foreign_key_list('regolazioni_clienti')", (err, rows) => console.log('regolazioni_clienti:', rows));
+db.all("PRAGMA foreign_key_list('regolazioni_provvigioni')", (err, rows) => console.log('regolazioni_provvigioni:', rows));

@@ -1,0 +1,51 @@
+========================================================================
+LOG STORICO DELLE RICHIESTE UTENTE - GESTIONALE M2I
+========================================================================
+
+Questo file contiene l'elenco cronologico di tutte le modifiche, funzionalità
+e requisiti richiesti dall'utente per il Gestionale M2I. Non influisce sul
+funzionamento del codice ed è utilizzato per tenere traccia dello stato dei lavori.
+
+------------------------------------------------------------------------
+[OK] 1. Aggiunto pulsante per ricerca e stampa di un singolo allegato.
+[OK] 2. Corretti i pulsanti "Proroga", "Stabilizza" e "Cessa" nella Dashboard.
+[OK] 3. Corretta visibilità dell'allegato documento d'identità in stampa.
+[OK] 4. Rimosso campo "Periodo di prova" dal foglio di stampa anagrafica.
+[OK] 5. Generatore automatico di 30 dipendenti di prova nel foglio.
+[OK] 6. Risolto schiacciamento visivo delle checklist nella Dashboard (flex-shrink).
+[OK] 7. Modulo di Stampa Riepilogo Filtrato ed esportazione in nuovo Foglio Google.
+[OK] 8. Messa in sicurezza e irrobustimento errori data, stringhe e colonne in Riepilogo.
+[OK] 9. Creazione modulo inserimento Clienti (struttura base e foglio "Anagrafica Clienti GS").
+[OK] 10. Estensione colonne Clienti (Ragione Sociale, P.IVA, Sedi, Telefoni, Tariffe, ecc.).
+[OK] 11. Aggiunta gestione data firma contratto, tipo contratto (rinnovo tacito/scadenza), 
+         pagamento (bonifico, riba, ecc.) e caricamento file allegato contratto su Google Drive.
+[OK] 12. Risolto bug di scrolling e bottoni tagliati in inserimento clienti (CSS flexbox).
+[INFO] 13. Risposta diagnostica ed esplicativa su potenziale app mobile di inserimento presenze.
+[OK] 14. Creazione cartella di backup "salvo fino a creazione clienti" per sicurezza codice.
+[OK] 15. Aggiunto controllo codice IBAN mancante nella checklist Dashboard con inserimento rapido.
+[OK] 16. Aggiunto bottone "🔑 Consegna/Cambio Chiavi" nel menu Dipendenti per i clienti.
+[OK] 17. Creazione di questo file "note.txt" per archivio storico richieste.
+[INFO] 18. Definizione dell'architettura per la gestione accessi e ruoli utente (Gestione Utenti GS).
+[ATTESA] 19. Sviluppo del menu principale con integrazione logo aziendale (rimandato all'ultimo).
+[OK] 20. Creazione del modulo "Buste Paga" (foglio "Gestione Buste Paga GS", script A.BustePaga.gs, HTML BustePaga.html) con auto-compilazione da PDF (Codice Fiscale, mese/anno, netto).
+[OK] 21. Creazione del modulo "Fatture" (foglio "Gestione Fatture GS", script A.Fatture.gs, HTML Fatture.html) con auto-compilazione da PDF (P.IVA cliente, imponibile, data, numero) e ricalcolo IVA.
+[OK] 22. Supporto a caricamento multipagina/spacchettamento automatico per le buste paga (pdf-lib & pdf.js nel browser).
+[OK] 23. Creazione modulo "Inserimento Ore Mensili" (foglio "Registro Ore GS", script A.RegistroOre.gs, HTML RegistroOre.html) con griglia mensile editabile e turni giornalieri multipli (➕).
+[OK] 24. Aggiunto supporto a generazione modelli presenze CSV ad-hoc per dipendente, caricamento/parsing automatico CSV e correzione/rettifica ore già salvate a database.
+[OK] 25. Creazione modulo "Reportistica e Stampa Ore" (script A.ReportOre.gs, HTML ReportOre.html, SchedaReportOre.html) con filtri per dipendente singolo/multiplo, causali ore personalizzate e clienti multipli.
+[OK] 26. Aggiunto supporto a generazione ed esportazione automatica dei report ore in un file Google Spreadsheet (Foglio Google) separato su Drive, completo di formattazioni e formule di somma totale.
+[OK] 27. Creazione modulo "Programma Settimanale Fisso" (script A.ProgrammaFisso.gs, HTML ProgrammaFisso.html) con tabellone ricorrente a 7 colonne (Lun-Dom) e integrazione in presenze mensili tramite tasto "📅 Precompila da Programma Fisso".
+[OK] 28. Creazione modulo "Agenda Settimanale Caposquadra" (script A.AgendaCaposquadra.gs, HTML AgendaCaposquadra.html) con calendario colorato a date reali, navigazione settimanale (prec/succ) ed integrazione automatica nella precompilazione presenze mensili.
+[OK] 29. Creazione modulo "Gestione Pagamenti e Insoluti" (script A.Pagamenti.gs, HTML Pagamenti.html, foglio "Gestione Fatture GS" esteso) con KPI cards contabili, scadenze automatiche (+30 gg), registrazione pagamenti totali/parziali e marcatura insoluti.
+[OK] 30. Creazione modulo "Creazione e Generazione Preventivi" (script A.Preventivi.gs, A.LogoBase64.gs, HTML Preventivi.html, foglio "Gestione Preventivi GS") con form per inserimento commerciale, gestione prospect/clienti anagrafici e generazione automatica preventivi con logo M2I e intestazione contatti su Google Drive.
+[OK] 31. Riorganizzazione strutturale del menu superiore di Google Sheets in categorie gerarchiche (Area Commerciale e Area Amministrazione) e creazione della Dashboard Grafica Home (Home.html) come Sidebar laterale persistente, per un accesso rapido a tutti i moduli.
+[OK] 32. Risoluzione bug di rendering altezze e scrolling in Registro Ore (min-height, flex-shrink) e allargamento finestra a 1150x800. Automazione del Cliente: azzeramento automatico se si imposta un'assenza (ferie, permessi, ecc.).
+------------------------------------------------------------------------
+[OK] 33. Creazione modulo "Moduli Dipendenti" (Generazione Fogli Presenze Google, Contratti, Consegna Chiavi) e integrazione dell'importazione inline nel Registro Ore. Layout Fogli Presenze strutturato in colonne per ciascun cliente (programmati + extra) e righe per data, con somme e dropdown. Risolto bug "sheet.showGridlines is not a function" (corretto in "setHiddenGridlines"). Risolto bug data "1899" nel Programma Fisso e inserito autocompletamento intelligente orari (onblur "8" -> "08:00"). Impostate larghezze colonne fisse per formato A4 landscape, espanse causali assenza, e inserito controllo obbligatorio compilazione note per assenze all'importazione.
+------------------------------------------------------------------------
+[OK] 34. Risolto bug generazione ID Clienti duplicati (tutti impostati a C0001 per via della lettura fissa della prima colonna anagrafica che conteneva intestazioni diverse). Implementato script di auto-riparazione (riparaDatabaseClienti) che allinea gli ID di tutti i clienti in sequenza (C0001, C0002, ...) e corregge i riferimenti salvati nel Programma Settimanale Fisso. Aggiunto pulsante "Genera Programmi Casuali" per riempire automaticamente il tabellone di tutti i dipendenti con turni di test.
+------------------------------------------------------------------------
+[OK] 35. Implementato filtraggio dei file presenze Drive per dipendente e mese/anno selezionati in fase di import. Introdotta gestione robusta del formato Date (Google Sheets Date object) in importaDatiPresenzeDaFoglioInline per evitare il fallimento della scomposizione della data e riempire correttamente la griglia ore.
+
+
+

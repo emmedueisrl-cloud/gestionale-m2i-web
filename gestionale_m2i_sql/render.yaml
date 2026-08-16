@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: gestionale-m2i-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATA_DIR
+        value: /var/lib/data
+    disk:
+      name: sqlite-data
+      mountPath: /var/lib/data
+      sizeGB: 10
