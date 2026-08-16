@@ -1,6 +1,16 @@
 const path = require('path');
+const fs = require('fs');
 
-const dbPath = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'gestionale.db') : path.join(__dirname, 'gestionale.db');
+let dbPath = path.join(__dirname, 'gestionale.db');
+if (process.env.DATA_DIR) {
+  const persistDbPath = path.join(process.env.DATA_DIR, 'gestionale.db');
+  // Se il database persistente non esiste (es. primo avvio), lo copio dal repository
+  if (!fs.existsSync(persistDbPath) && fs.existsSync(dbPath)) {
+    console.log("Database persistente non trovato. Copio il database iniziale da " + dbPath + " a " + persistDbPath);
+    fs.copyFileSync(dbPath, persistDbPath);
+  }
+  dbPath = persistDbPath;
+}
 
 // Inizializza Knex per SQLite
 const knex = require('knex')({
