@@ -460,19 +460,11 @@ function ModificaCliente() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 text-indigo-400">Outbound</label>
-              <input type="text" name="operatore" value={dati.operatore} onChange={handleChange} list="listaOperatori" className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" placeholder="Digita o seleziona..." />
-              <datalist id="listaOperatori">
-                {dipendenti.map(d => <option key={d.id} value={d.nomeCompleto} />)}
-                {listaOperatori.filter(op => !dipendenti.find(d => d.nomeCompleto === op)).map((op, i) => <option key={`op-${i}`} value={op} />)}
-              </datalist>
+              <input type="text" name="operatore" value={dati.operatore} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" placeholder="Digita a mano..." />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 text-emerald-400">Commerciale</label>
-              <input type="text" name="commerciale" value={dati.commerciale} onChange={handleChange} list="listaCommerciali" className="w-full p-2.5 bg-slate-900/80 border border-emerald-500/30 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-100" placeholder="Digita o seleziona..." />
-              <datalist id="listaCommerciali">
-                {dipendenti.map(d => <option key={`d-comm-${d.id}`} value={d.nomeCompleto} />)}
-                {listaCommerciali.filter(comm => !dipendenti.find(d => d.nomeCompleto === comm)).map((comm, i) => <option key={`comm-${i}`} value={comm} />)}
-              </datalist>
+              <input type="text" name="commerciale" value={dati.commerciale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-emerald-500/30 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-100" placeholder="Digita a mano..." />
             </div>
           </div>
 
