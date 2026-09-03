@@ -49,8 +49,11 @@ export default function NuovoDipendente() {
       // 2. Upload file opzionali
       let filesUploaded = 0;
       if (fileDocs) {
-        await uploadFile(idDipendente, fileDocs, 'Documento', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const docsArray = Array.isArray(fileDocs) ? fileDocs : [fileDocs];
+        for (const f of docsArray) {
+          await uploadFile(idDipendente, f, 'Documento', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
       if (fileContratto) {
         await uploadFile(idDipendente, fileContratto, 'Contratto', payload.Nome, payload.Cognome);

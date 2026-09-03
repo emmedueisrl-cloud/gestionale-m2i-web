@@ -184,8 +184,11 @@ export default function ModificaDipendente() {
 
       let filesUploaded = 0;
       if (fileDocs) {
-        await uploadFile(selectedId, fileDocs, 'Documento', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const docsArray = Array.isArray(fileDocs) ? fileDocs : [fileDocs];
+        for (const f of docsArray) {
+          await uploadFile(selectedId, f, 'Documento', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
       if (fileContratto) {
         await uploadFile(selectedId, fileContratto, 'Contratto', payload.Nome, payload.Cognome);

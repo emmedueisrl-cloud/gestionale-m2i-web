@@ -454,6 +454,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
                 label="Documenti Dipendente (CI, CF)" 
                 file={fileDocs} 
                 onFileSelect={setFileDocs} 
+                multiple={true}
               />
               <FileUploader 
                 label="Contratto Firmato" 
