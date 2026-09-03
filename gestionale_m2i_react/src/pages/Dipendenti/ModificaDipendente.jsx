@@ -191,16 +191,25 @@ export default function ModificaDipendente() {
         }
       }
       if (fileContratto) {
-        await uploadFile(selectedId, fileContratto, 'Contratto', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const arr = Array.isArray(fileContratto) ? fileContratto : [fileContratto];
+        for (const f of arr) {
+          await uploadFile(selectedId, f, 'Contratto', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
       if (fileUnilav) {
-        await uploadFile(selectedId, fileUnilav, 'Unilav', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const arr = Array.isArray(fileUnilav) ? fileUnilav : [fileUnilav];
+        for (const f of arr) {
+          await uploadFile(selectedId, f, 'Unilav', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
       if (fileAltro) {
-        await uploadFile(selectedId, fileAltro, 'Documento_Generico', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const arr = Array.isArray(fileAltro) ? fileAltro : [fileAltro];
+        for (const f of arr) {
+          await uploadFile(selectedId, f, 'Documento_Generico', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
       
       const isBozza = payload.isBozza;

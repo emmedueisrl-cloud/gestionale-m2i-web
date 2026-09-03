@@ -460,11 +460,13 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
                 label="Contratto Firmato" 
                 file={fileContratto} 
                 onFileSelect={setFileContratto} 
+                multiple={true}
               />
               <FileUploader 
-                label="UNILAV" 
+                label="Modello Unilav" 
                 file={fileUnilav} 
                 onFileSelect={setFileUnilav} 
+                multiple={true}
               />
             </div>
             <div className="border-t border-slate-700/50 pt-6">
@@ -473,6 +475,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
                   label={`Altri Documenti (${nomeFileAltro ? nomeFileAltro.replace(/_/g, ' ') : 'Generici'})`} 
                   file={fileAltro} 
                   onFileSelect={handleAltroSelect} 
+                  multiple={true}
                 />
               </div>
             </div>

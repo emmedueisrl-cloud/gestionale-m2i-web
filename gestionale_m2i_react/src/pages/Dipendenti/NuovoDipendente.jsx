@@ -56,16 +56,25 @@ export default function NuovoDipendente() {
         }
       }
       if (fileContratto) {
-        await uploadFile(idDipendente, fileContratto, 'Contratto', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const arr = Array.isArray(fileContratto) ? fileContratto : [fileContratto];
+        for (const f of arr) {
+          await uploadFile(idDipendente, f, 'Contratto', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
       if (fileUnilav) {
-        await uploadFile(idDipendente, fileUnilav, 'Unilav', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const arr = Array.isArray(fileUnilav) ? fileUnilav : [fileUnilav];
+        for (const f of arr) {
+          await uploadFile(idDipendente, f, 'Unilav', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
       if (fileAltro) {
-        await uploadFile(idDipendente, fileAltro, 'Documento_Generico', payload.Nome, payload.Cognome);
-        filesUploaded++;
+        const arr = Array.isArray(fileAltro) ? fileAltro : [fileAltro];
+        for (const f of arr) {
+          await uploadFile(idDipendente, f, 'Documento_Generico', payload.Nome, payload.Cognome);
+          filesUploaded++;
+        }
       }
 
       const isBozza = payload.isBozza;
