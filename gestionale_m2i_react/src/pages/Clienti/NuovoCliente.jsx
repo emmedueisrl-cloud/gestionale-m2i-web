@@ -600,12 +600,7 @@ export default function NuovoCliente() {
             
             <div className="col-span-1 md:col-span-2">
               <label className="block text-sm font-medium text-slate-200 mb-1 text-indigo-400">Operatore Assegnato</label>
-              <select name="operatoreAssegnato" value={dati.operatoreAssegnato} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100">
-                <option value="">Nessuno</option>
-                {dipendenti.map(d => (
-                  <option key={d.id} value={d.nomeCompleto}>{d.nomeCompleto}</option>
-                ))}
-              </select>
+              <input type="text" name="operatoreAssegnato" value={dati.operatoreAssegnato} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" placeholder="Digita a mano..." />
             </div>
             
             <div className="col-span-1 md:col-span-2">

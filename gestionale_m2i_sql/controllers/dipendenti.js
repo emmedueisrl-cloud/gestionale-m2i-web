@@ -5,14 +5,18 @@ const { knex, generaIDIncrementale, getVal } = require('../db');
 module.exports = {
   async recuperaDipendentiAttivi() {
     const list = await knex('dipendenti')
-      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'is_caposquadra')
+      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'is_caposquadra', 'mansione')
       .whereNot('stato', 'Cessato')
       .andWhere('cestinato', 0);
       
     return list.map(d => ({
       id: d.id,
       nomeCompleto: `${d.cognome} ${d.nome}`.toUpperCase(),
+      nome: d.nome,
+      cognome: d.cognome,
       codiceFiscale: d.codice_fiscale,
+      codice_fiscale: d.codice_fiscale,
+      mansione: d.mansione,
       is_caposquadra: d.is_caposquadra
     }));
   },
@@ -23,13 +27,17 @@ module.exports = {
 
   async elencoTuttiIDipendenti() {
     const list = await knex('dipendenti')
-      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email')
+      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email', 'mansione')
       .where('cestinato', 0);
       
     return list.map(d => ({
       id: d.id,
       nomeCompleto: `${d.cognome} ${d.nome}`.toUpperCase(),
+      nome: d.nome,
+      cognome: d.cognome,
       codiceFiscale: d.codice_fiscale,
+      codice_fiscale: d.codice_fiscale,
+      mansione: d.mansione,
       stato: d.stato,
       email: d.email
     }));

@@ -30,9 +30,9 @@ export default function PrintableModuloChiavi({ formData, dipendenteData, aziend
       </p>
 
       <div className="mb-6 space-y-2">
-        <p><strong>Nome e Cognome:</strong> {dipendenteData.nome} {dipendenteData.cognome}</p>
-        <p><strong>Codice Fiscale:</strong> {dipendenteData.codice_fiscale || '________________________________________'}</p>
-        <p><strong>Qualifica/Mansione:</strong> {dipendenteData.qualifica || dipendenteData.mansione || '________________________________________'}</p>
+        <p><strong>Nome e Cognome:</strong> {dipendenteData.nomeCompleto || `${dipendenteData.nome || ''} ${dipendenteData.cognome || ''}`.trim()}</p>
+        <p><strong>Codice Fiscale:</strong> {dipendenteData.codice_fiscale || dipendenteData.codiceFiscale || '________________________________________'}</p>
+        <p><strong>Qualifica/Mansione:</strong> {dipendenteData.mansione || dipendenteData.qualifica || '________________________________________'}</p>
       </div>
 
       <p className="mb-6">
