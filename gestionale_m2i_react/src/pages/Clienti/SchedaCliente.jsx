@@ -444,7 +444,7 @@ export default function SchedaCliente() {
                 {documenti.map((doc, index) => (
                   <div key={index} className="flex relative items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700 hover:border-indigo-500 hover:bg-slate-800 transition-all group">
                     <a 
-                      href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${doc.path}`} 
+                      href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${doc.path}`} 
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="flex items-center gap-3 w-full"
