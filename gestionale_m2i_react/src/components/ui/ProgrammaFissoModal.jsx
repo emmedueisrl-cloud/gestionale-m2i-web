@@ -5,6 +5,68 @@ import { recuperaElencoClienti } from '../../api/clienti';
 import { recuperaDatiProgramma, salvaProgrammaFisso } from '../../api/ore';
 import ModernModal from './ModernModal';
 
+const ClientSelect = ({ value, onChange, clienti }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  
+  const selectedCliente = clienti.find(c => c.id?.toString() === value?.toString());
+  
+  const filteredClienti = search.length >= 3 
+    ? clienti.filter(c => (c.ragione_sociale || c.ragioneSociale || '').toLowerCase().includes(search.toLowerCase()))
+    : clienti;
+
+  return (
+    <div className="relative w-full flex items-center">
+      <div 
+        className="w-full bg-transparent text-sm text-slate-200 cursor-pointer truncate py-1"
+        onClick={() => { setIsOpen(!isOpen); setSearch(''); }}
+      >
+        {selectedCliente ? (selectedCliente.ragione_sociale || selectedCliente.ragioneSociale) : <span className="text-slate-500">-- Seleziona Cliente --</span>}
+      </div>
+      
+      {isOpen && (
+        <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}></div>
+      )}
+
+      {isOpen && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-full min-w-[250px] bg-slate-800 border border-slate-600 rounded-md shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-slate-700 bg-slate-900">
+            <input 
+              type="text" 
+              autoFocus
+              className="w-full bg-slate-950 border border-slate-600 rounded p-1.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+              placeholder="Cerca (min. 3 caratteri)..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            <div 
+              className="p-2.5 text-sm text-slate-400 hover:bg-slate-700 cursor-pointer border-b border-slate-700/50"
+              onClick={() => { onChange(''); setIsOpen(false); }}
+            >
+              -- Nessun Cliente --
+            </div>
+            {filteredClienti.map(c => (
+              <div 
+                key={c.id}
+                className={`p-2.5 text-sm cursor-pointer hover:bg-indigo-600 hover:text-white transition-colors ${value?.toString() === c.id?.toString() ? 'bg-indigo-500/20 text-indigo-300 font-medium' : 'text-slate-200'}`}
+                onClick={() => { onChange(c.id); setIsOpen(false); }}
+              >
+                {c.ragione_sociale || c.ragioneSociale}
+              </div>
+            ))}
+            {filteredClienti.length === 0 && (
+              <div className="p-3 text-sm text-slate-500 text-center italic">Nessun cliente trovato</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function ProgrammaFissoModal({ isOpen, onClose, idDipendente }) {
   const [dipendenteInfo, setDipendenteInfo] = useState(null);
   const [clienti, setClienti] = useState([]);
@@ -291,16 +353,11 @@ export default function ProgrammaFissoModal({ isOpen, onClose, idDipendente }) {
                                 {/* Blocco Cliente (Edit) */}
                                 <div className="flex-1 min-w-0 flex items-center gap-2 bg-slate-900 border border-slate-600 rounded-md p-1.5 px-3 focus-within:ring-1 focus-within:ring-indigo-500">
                                   <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                                  <select 
+                                  <ClientSelect 
                                     value={entry.idCliente}
-                                    onChange={(e) => updateEntry(gIndex, entry.id, 'idCliente', e.target.value)}
-                                    className="w-full bg-transparent text-sm text-slate-200 focus:outline-none truncate"
-                                  >
-                                    <option value="" className="text-slate-500">-- Seleziona Cliente --</option>
-                                    {clienti.map(c => (
-                                      <option key={c.id} value={c.id}>{c.ragione_sociale || c.ragioneSociale}</option>
-                                    ))}
-                                  </select>
+                                    onChange={(val) => updateEntry(gIndex, entry.id, 'idCliente', val)}
+                                    clienti={clienti}
+                                  />
                                 </div>
               
                                 {/* Blocco Frequenza (Edit) */}
