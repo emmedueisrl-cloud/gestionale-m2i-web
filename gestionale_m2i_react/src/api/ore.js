@@ -101,3 +101,5 @@ export async function eliminaRegolazioneStipendio(idRegolazione) {
 export async function importaProgrammaFissoAgenda(idDipendente, dataInizioSettimana) { return await apiCall('importaProgrammaFissoAgenda', [idDipendente, dataInizioSettimana]); }
 export async function svuotaSettimanaAgenda(idDipendente, dataInizioSettimana) { return await apiCall('svuotaSettimanaAgenda', [idDipendente, dataInizioSettimana]); }
 
+
+export async function recuperaProspettoGlobale() { return await apiCall('recuperaProspettoGlobale', []); }

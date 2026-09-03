@@ -12,6 +12,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
     { type: 'item', label: '🔒 Elaborato Mensile Dipendenti', path: '/admin/elaborati/dipendenti' },
     { type: 'item', label: '⏰ Inserisci Ore Mensili', path: '/admin/ore/registro' },
     { type: 'item', label: '📅 Agenda Caposquadra', path: '/admin/ore/agenda' },
+    { type: 'item', label: '🗓️ Prospetto Settimanale', path: '/admin/ore/prospetto' },
     { type: 'item', label: '💰 Maggiorazioni/Detrazioni', path: '/admin/dipendenti/regolazioni' },
     { type: 'item', label: '📄 Carica Busta Paga', path: '/admin/bustepaga' },
     

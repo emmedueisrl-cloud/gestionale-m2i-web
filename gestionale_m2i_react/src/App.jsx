@@ -17,6 +17,7 @@ import Chiavi from './pages/Dipendenti/Chiavi';
 // Fase 3
 import RegistroOre from './pages/Ore/RegistroOre';
 import AgendaCaposquadra from './pages/Ore/AgendaCaposquadra';
+import ProspettoSettimanale from './pages/Ore/ProspettoSettimanale';
 import ElaboratoDipendenti from './pages/Elaborati/ElaboratoDipendenti';
 import ElaboratoClienti from './pages/Elaborati/ElaboratoClienti';
 
@@ -75,6 +76,7 @@ function App() {
         {/* Gestione Ore e Stampe (Fase 3) */}
         <Route path="ore/registro" element={<RegistroOre />} />
         <Route path="ore/agenda" element={<AgendaCaposquadra />} />
+        <Route path="ore/prospetto" element={<ProspettoSettimanale />} />
         <Route path="elaborati/dipendenti" element={<ElaboratoDipendenti />} />
         <Route path="elaborati/clienti" element={<ElaboratoClienti />} />
         <Route path="azienda" element={<SchedaAzienda />} />

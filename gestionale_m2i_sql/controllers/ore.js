@@ -312,5 +312,39 @@ module.exports = {
     }
     
     return true;
+  },
+
+  async recuperaProspettoGlobale() {
+    const rows = await knex('dipendenti as d')
+      .leftJoin('programma_fisso as p', 'd.id', 'p.dipendente_id')
+      .leftJoin('clienti as c', 'p.cliente_id', 'c.id')
+      .select(
+        'p.id',
+        'p.giorno_settimana',
+        'p.ora_inizio',
+        'p.ora_fine',
+        'p.frequenza',
+        'p.note',
+        'd.id as dipendente_id',
+        'd.nome',
+        'd.cognome',
+        'd.stato as stato_dipendente',
+        'p.cliente_id',
+        'c.ragione_sociale as clienteNome'
+      )
+      .where('d.cestinato', 0)
+      .andWhereNot('d.stato', 'Cessato');
+
+    return rows.map(r => ({
+      id: r.id,
+      dipendenteId: r.dipendente_id,
+      dipendenteNome: `${r.cognome} ${r.nome}`.trim().toUpperCase(),
+      giorno: (r.giorno_settimana || '').toLowerCase().trim(),
+      oraInizio: r.ora_inizio,
+      oraFine: r.ora_fine,
+      frequenza: r.frequenza || 'Settimanale',
+      clienteNome: r.clienteNome || r.note || 'Senza Cliente',
+      note: r.note
+    }));
   }
 };
