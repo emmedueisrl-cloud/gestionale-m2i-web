@@ -27,7 +27,7 @@ module.exports = {
 
   async elencoTuttiIDipendenti() {
     const list = await knex('dipendenti')
-      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email', 'mansione')
+      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email', 'mansione', 'scadenza')
       .where('cestinato', 0);
       
     return list.map(d => ({
@@ -39,7 +39,8 @@ module.exports = {
       codice_fiscale: d.codice_fiscale,
       mansione: d.mansione,
       stato: d.stato,
-      email: d.email
+      email: d.email,
+      scadenza: d.scadenza
     }));
   },
 

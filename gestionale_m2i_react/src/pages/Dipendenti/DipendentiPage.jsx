@@ -158,10 +158,31 @@ export default function DipendentiPage() {
         else if (stato === 'Bozza') colorClass = 'bg-amber-500/20 text-amber-400';
         else if (stato === 'Cessato') colorClass = 'bg-red-500/20 text-red-300';
 
+        let testoScadenza = null;
+        if (stato === 'Determinato' && row.scadenza) {
+          const oggi = new Date();
+          oggi.setHours(0, 0, 0, 0);
+          const dataScadenza = new Date(row.scadenza);
+          dataScadenza.setHours(0, 0, 0, 0);
+          const diffTime = dataScadenza - oggi;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays < 0) {
+            testoScadenza = <span className="text-red-400 font-bold block mt-1 text-[10px] tracking-wide">Scaduto da {-diffDays} gg</span>;
+          } else if (diffDays === 0) {
+            testoScadenza = <span className="text-amber-400 font-bold block mt-1 text-[10px] tracking-wide">Scade oggi!</span>;
+          } else {
+            testoScadenza = <span className="text-indigo-300/80 block mt-1 text-[10px] tracking-wide">Scade fra {diffDays} gg</span>;
+          }
+        }
+
         return (
-          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${colorClass}`}>
-            {stato}
-          </span>
+          <div className="flex flex-col items-start">
+            <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${colorClass}`}>
+              {stato}
+            </span>
+            {testoScadenza}
+          </div>
         );
       }
     },
