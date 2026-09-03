@@ -126,13 +126,13 @@ export default function ProspettoSettimanale() {
 
       {/* Griglia Principale */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left border-collapse">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+        <div className="overflow-auto max-h-[calc(100vh-250px)]">
+          <table className="w-full text-sm text-left border-collapse relative">
+            <thead className="text-slate-600 border-b-2 border-slate-300">
               <tr>
-                <th className="px-4 py-3 font-semibold w-48 border-r border-slate-200">Operatore</th>
+                <th className="px-4 py-3 font-semibold w-48 border-r border-slate-300 sticky left-0 top-0 bg-slate-100 z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Operatore</th>
                 {labelsGiorni.map(g => (
-                  <th key={g} className="px-4 py-3 font-semibold text-center border-r border-slate-200 min-w-[160px]">{g}</th>
+                  <th key={g} className="px-4 py-3 font-semibold text-center border-r border-slate-200 min-w-[160px] sticky top-0 bg-slate-100 z-20">{g}</th>
                 ))}
               </tr>
             </thead>
@@ -145,10 +145,10 @@ export default function ProspettoSettimanale() {
                 </tr>
               ) : (
                 dipendentiList.map((dip, idx) => (
-                  <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="px-4 py-3 border-r border-slate-200 align-top bg-slate-50/30">
+                  <tr key={idx} className="border-b-2 border-slate-300 even:bg-slate-50/50 hover:bg-indigo-50/30 transition-colors">
+                    <td className="px-4 py-3 border-r border-slate-300 align-top bg-slate-50 sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                       <div className="font-bold text-slate-800">{dip.nome}</div>
-                      <div className="text-xs font-medium text-indigo-600 mt-1 bg-indigo-50 inline-block px-2 py-0.5 rounded-full">
+                      <div className="text-xs font-medium text-indigo-700 mt-1 bg-indigo-100 border border-indigo-200 inline-block px-2 py-0.5 rounded-full">
                         {dip.totaleOre.toFixed(1)} ore / sett
                       </div>
                     </td>
