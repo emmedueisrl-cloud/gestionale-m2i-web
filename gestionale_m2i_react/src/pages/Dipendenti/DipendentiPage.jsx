@@ -18,6 +18,7 @@ export default function DipendentiPage() {
   const [programmaFissoModalState, setProgrammaFissoModalState] = useState({ isOpen: false, idDipendente: null });
   const [bustePagaModalState, setBustePagaModalState] = useState({ isOpen: false, dipendenteId: null, dipendenteNome: '' });
   const [sortBy, setSortBy] = useState('nome'); // 'nome' o 'tipoContratto'
+  const [nascondiCessati, setNascondiCessati] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
@@ -64,7 +65,12 @@ export default function DipendentiPage() {
 
   // Ordinamento dei dipendenti in base alla scelta dell'utente
   const sortedDipendenti = React.useMemo(() => {
-    const list = [...dipendenti];
+    let list = [...dipendenti];
+    
+    if (nascondiCessati) {
+      list = list.filter(d => d.stato !== 'Cessato');
+    }
+
     if (sortBy === 'nome') {
       list.sort((a, b) => {
         const nomeA = (a.nomeCompleto || '').toLowerCase();
@@ -89,7 +95,7 @@ export default function DipendentiPage() {
       });
     }
     return list;
-  }, [dipendenti, sortBy]);
+  }, [dipendenti, sortBy, nascondiCessati]);
 
   const handleElimina = async (idToEliminate) => {
     if (!idToEliminate) return;
@@ -342,7 +348,7 @@ export default function DipendentiPage() {
         </div>
       </div>
       
-      {/* Controlli di Ordinamento Superiore */}
+      {/* Controlli di Ordinamento Superiore e Filtri */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4 bg-slate-800 border border-slate-700/80 p-4 rounded-xl">
         <div className="flex items-center gap-3">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Ordina elenco per:</span>
@@ -369,8 +375,21 @@ export default function DipendentiPage() {
             </button>
           </div>
         </div>
-        <div className="text-xs text-slate-500 font-medium">
-          Dati ordinati localmente
+        
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-2 cursor-pointer text-slate-300 hover:text-slate-100 transition-colors">
+            <input 
+              type="checkbox" 
+              className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-indigo-500/50"
+              checked={nascondiCessati}
+              onChange={(e) => setNascondiCessati(e.target.checked)}
+            />
+            <span className="text-sm font-semibold uppercase tracking-wider">Nascondi Cessati</span>
+          </label>
+          
+          <div className="text-xs text-slate-500 font-medium">
+            Dati ordinati localmente
+          </div>
         </div>
       </div>
 
