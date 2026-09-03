@@ -65,6 +65,23 @@ function getVal(obj, key) {
   return realKey ? obj[realKey] : null;
 }
 
+// Auto-migrazione: crea agenda_caposquadra se non esiste (necessario per persistent disk su Render)
+knex.schema.hasTable('agenda_caposquadra').then(exists => {
+  if (!exists) {
+    console.log("Creazione tabella agenda_caposquadra in corso...");
+    return knex.schema.createTable('agenda_caposquadra', t => {
+      t.increments('id').primary();
+      t.text('dipendente_id').references('id').inTable('dipendenti').onDelete('CASCADE');
+      t.text('data').notNullable();
+      t.text('ora_inizio').notNullable();
+      t.text('ora_fine').notNullable();
+      t.text('cliente_id').references('id').inTable('clienti').onDelete('RESTRICT');
+      t.text('colore').defaultTo('#3b82f6');
+      t.text('note');
+    }).then(() => console.log("Tabella agenda_caposquadra creata con successo."));
+  }
+}).catch(err => console.error("Errore auto-migrazione agenda_caposquadra:", err));
+
 module.exports = {
   knex,
   generaIDIncrementale,

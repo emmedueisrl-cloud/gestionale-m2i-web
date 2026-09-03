@@ -1,1 +1,1 @@
-﻿const { knex } = require('./db'); knex('dipendenti').first().then(console.log).finally(() => process.exit());
+﻿const { knex } = require('./db'); knex('agenda_caposquadra').columnInfo().then(console.log).catch(console.error).finally(() => process.exit());

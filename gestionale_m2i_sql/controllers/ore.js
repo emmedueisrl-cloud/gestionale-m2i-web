@@ -300,7 +300,7 @@ module.exports = {
           data: dataStr,
           ora_inizio: p.ora_inizio,
           ora_fine: p.ora_fine,
-          cliente_id: p.cliente_id,
+          cliente_id: p.cliente_id || null,
           colore: '#4f46e5', // Indaco di default
           note: p.note ? p.note : "Da programma fisso"
         });
