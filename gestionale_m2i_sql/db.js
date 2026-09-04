@@ -43,13 +43,21 @@ async function generaIDIncrementale(tabella, prefisso) {
   return new Promise((resolve, reject) => {
     idMutex = idMutex.then(async () => {
       try {
-        const row = await knex(tabella).select('id').orderBy('id', 'desc').first();
-        if (!row || !row.id) {
+        const rows = await knex(tabella).select('id');
+        let maxNum = 0;
+        rows.forEach(row => {
+          if (row.id) {
+            const match = row.id.match(/\d+/);
+            if (match) {
+              const num = parseInt(match[0], 10);
+              if (num > maxNum) maxNum = num;
+            }
+          }
+        });
+        if (maxNum === 0) {
           return resolve(prefisso + "0001");
         }
-        const match = row.id.match(/\d+/);
-        const num = match ? parseInt(match[0], 10) + 1 : 1;
-        resolve(prefisso + String(num).padStart(4, "0"));
+        resolve(prefisso + String(maxNum + 1).padStart(4, "0"));
       } catch (e) {
         reject(e);
       }
