@@ -7,18 +7,22 @@ if (process.env.DATA_DIR) {
   if (!fs.existsSync(dataDir)) {
     try { fs.mkdirSync(dataDir, { recursive: true }); } catch(e) {}
   }
-  
+
   const persistDbPath = path.join(dataDir, 'gestionale.db');
-  
+
   try {
-    const stats = fs.existsSync(persistDbPath) ? fs.statSync(persistDbPath) : null;
-    // Se non esiste, o è vuoto/corrotto (< 10KB), sovrascrivilo
-    if (!stats || stats.size < 10240) {
-      console.log("Copia DB iniziale in corso verso: " + persistDbPath);
+    const persistExists = fs.existsSync(persistDbPath);
+    if (!persistExists) {
+      // Prima accensione assoluta: il disco è vuoto, copia il DB base
+      console.log("=== PRIMA ACCENSIONE: copio DB base verso disco persistente: " + persistDbPath + " ===");
       fs.copyFileSync(dbPath, persistDbPath);
+    } else {
+      // Il disco esiste già con i dati reali: NON TOCCARE MAI
+      const stats = fs.statSync(persistDbPath);
+      console.log("=== DB PERSISTENTE TROVATO (" + Math.round(stats.size / 1024) + " KB) - USO QUELLO ESISTENTE ===");
     }
   } catch(e) {
-    console.error("Errore copia DB:", e);
+    console.error("Errore inizializzazione DB:", e);
   }
   dbPath = persistDbPath;
 }
