@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Loader2, Plus, Eye, Edit, Trash2 } from 'lucide-react';
+import { Building2, Loader2, Plus, Eye, Edit, Trash2, Power } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
-import { recuperaTuttiIClienti, recuperaClientiCestinati, eliminaCliente, ripristinaCliente } from '../../api/clienti';
+import { recuperaTuttiIClienti, recuperaClientiCestinati, eliminaCliente, ripristinaCliente, cessaCliente, riattivaCliente } from '../../api/clienti';
 
 export default function ClientiPage() {
   const navigate = useNavigate();
@@ -63,6 +63,36 @@ export default function ClientiPage() {
     }
   };
 
+  const handleCessa = async (id) => {
+    try {
+      await cessaCliente(id);
+      loadData();
+    } catch (error) {
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Attenzione',
+        content: 'Errore durante la cessazione.',
+        primaryAction: { label: 'Chiudi', onClick: () => setModal({ isOpen: false }) }
+      });
+    }
+  };
+
+  const handleRiattiva = async (id) => {
+    try {
+      await riattivaCliente(id);
+      loadData();
+    } catch (error) {
+      setModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Attenzione',
+        content: 'Errore durante la riattivazione.',
+        primaryAction: { label: 'Chiudi', onClick: () => setModal({ isOpen: false }) }
+      });
+    }
+  };
+
   const handleRipristina = async (cli) => {
     try {
       await ripristinaCliente(cli.id);
@@ -86,8 +116,8 @@ export default function ClientiPage() {
       header: 'Stato', 
       accessor: 'attivo',
       render: (row) => {
-        let stato = row.attivo === 'SI' ? 'Attivo' : (row.attivo === 'Bozza' ? 'Bozza' : 'Non Attivo');
-        let colorClass = row.attivo === 'SI' ? 'bg-emerald-500/20 text-emerald-300' : (row.attivo === 'Bozza' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-300');
+        let stato = row.attivo === 'SI' ? 'Attivo' : (row.attivo === 'Cessato' ? 'Cessato' : (row.attivo === 'Bozza' ? 'Bozza' : 'Non Attivo'));
+        let colorClass = row.attivo === 'SI' ? 'bg-emerald-500/20 text-emerald-300' : (row.attivo === 'Cessato' ? 'bg-fuchsia-500/20 text-fuchsia-400' : (row.attivo === 'Bozza' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-300'));
         
         return (
           <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${colorClass}`}>
@@ -117,6 +147,48 @@ export default function ClientiPage() {
               >
                 <Edit className="w-4 h-4" />
               </button>
+
+              {row.attivo !== 'Cessato' ? (
+                <button 
+                  onClick={() => {
+                    setActionCliente(row);
+                    setModal({
+                      isOpen: true,
+                      type: 'warning',
+                      title: 'Conferma Cessazione',
+                      content: `Sei sicuro di voler cessare il cliente ${row.ragione_sociale}? Non comparirà più nella fatturazione mensile.`,
+                      primaryAction: {
+                        label: 'Cessa Cliente',
+                        onClick: () => {
+                          setModal({ isOpen: false });
+                          setActionCliente(null);
+                          handleCessa(row.id);
+                        }
+                      },
+                      secondaryAction: {
+                        label: 'Annulla',
+                        onClick: () => {
+                          setModal({ isOpen: false });
+                          setActionCliente(null);
+                        }
+                      }
+                    });
+                  }}
+                  className="flex items-center justify-center p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 hover:text-fuchsia-400 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/10 transition-all shadow-sm"
+                  title="Cessa Cliente"
+                >
+                  <Power className="w-4 h-4" />
+                </button>
+              ) : (
+                <button 
+                  onClick={() => handleRiattiva(row.id)}
+                  className="flex items-center justify-center p-1.5 bg-slate-900 border border-emerald-700 rounded-lg text-emerald-400 hover:bg-emerald-500/20 transition-all shadow-sm"
+                  title="Riattiva Cliente"
+                >
+                  <Power className="w-4 h-4" />
+                </button>
+              )}
+
               <button 
                 onClick={() => {
                   setActionCliente(row);
@@ -139,7 +211,7 @@ export default function ClientiPage() {
                   });
                 }}
                 className="flex items-center justify-center p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 hover:text-red-400 hover:border-red-500/50 hover:bg-red-500/10 transition-all shadow-sm"
-                title="Elimina"
+                title="Sposta in Cestino"
               >
                 <Trash2 className="w-4 h-4" />
               </button>

@@ -177,6 +177,24 @@ module.exports = {
     }
   },
 
+  async cessaCliente(id) {
+    await knex('clienti').where('id', id).update({ attivo: 'Cessato' });
+    await knex('log_attivita').insert({
+      categoria: "Clienti", icona: "🛑", colore: "#f97316",
+      descrizione: `Cliente impostato come Cessato: <b>${id}</b>`, eseguito_da: "LocalServer"
+    });
+    return true;
+  },
+
+  async riattivaCliente(id) {
+    await knex('clienti').where('id', id).update({ attivo: 'SI' });
+    await knex('log_attivita').insert({
+      categoria: "Clienti", icona: "✅", colore: "#10b981",
+      descrizione: `Cliente riattivato: <b>${id}</b>`, eseguito_da: "LocalServer"
+    });
+    return true;
+  },
+
   async ripristinaCliente(id) {
     await knex('clienti').where('id', id).update({ cestinato: 0 });
     await knex('log_attivita').insert({
