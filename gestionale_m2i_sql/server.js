@@ -72,6 +72,26 @@ app.get('/api/health', async (req, res) => {
     res.status(500).json({ status: 'ERRORE', message: e.message });
   }
 });
+// ============================================================
+// INSPECT DISK
+app.get('/api/inspect-disk', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+  function getFiles(dir) {
+    try {
+      return fs.readdirSync(dir).map(f => {
+        const p = path.join(dir, f);
+        const stats = fs.statSync(p);
+        return { file: f, size: stats.size, mtime: stats.mtime };
+      });
+    } catch(e) { return e.message; }
+  }
+  res.json({
+    var_lib_data: getFiles('/var/lib/data'),
+    data_dir: getFiles(path.join(__dirname, 'DATA_DIR'))
+  });
+});
+// ============================================================
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
