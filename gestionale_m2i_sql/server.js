@@ -29,6 +29,50 @@ const baseUploadPath = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'u
 app.use('/uploads', express.static(baseUploadPath));
 
 // Configurazione Multer per l'upload dei file
+
+// ============================================================
+// HEALTH CHECK - Verifica stato DB persistente
+// GET /api/health → restituisce percorso DB, dimensione, conteggio clienti/dipendenti
+// ============================================================
+app.get('/api/health', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const dbFilePath = process.env.DATA_DIR
+      ? require('path').join(process.env.DATA_DIR.trim(), 'gestionale.db')
+      : require('path').join(__dirname, 'gestionale.db');
+
+    const exists = fs.existsSync(dbFilePath);
+    const sizeKB = exists ? Math.round(fs.statSync(dbFilePath).size / 1024) : 0;
+
+    const [clientiRow] = await knex('clienti').count('* as cnt');
+    const [dipenRow]   = await knex('dipendenti').count('* as cnt');
+
+    // Cerca i record chiave per verificare il restore
+    const fisiocast  = await knex('clienti').where('partita_iva', '05701431008').first();
+    const condominio = await knex('clienti').whereRaw("ragione_sociale LIKE '%TOR DE%SCHIAVI%'").first();
+    const zappadu    = await knex('dipendenti').whereRaw("UPPER(cognome) LIKE '%ZAPPADU%'").first();
+    const giacinti   = await knex('dipendenti').whereRaw("UPPER(cognome) LIKE '%GIACINTI%'").first();
+
+    res.json({
+      status: 'OK',
+      db_path: dbFilePath,
+      db_exists: exists,
+      db_size_kb: sizeKB,
+      data_dir_env: process.env.DATA_DIR || '(non impostato - sviluppo locale)',
+      totale_clienti: clientiRow.cnt,
+      totale_dipendenti: dipenRow.cnt,
+      verifica_dati: {
+        'Fisio.Cast (partita_iva 05701431008)': fisiocast ? `✅ TROVATO (ID: ${fisiocast.id})` : '❌ NON TROVATO',
+        'Condominio Via Tor de Schiavi':        condominio ? `✅ TROVATO (ID: ${condominio.id})` : '❌ NON TROVATO',
+        'Zappadu (dipendente)':                 zappadu   ? `✅ TROVATO (ID: ${zappadu.id})` : '❌ NON TROVATO',
+        'Di Giacinti (deve essere ELIMINATO)':  giacinti  ? `⚠️ ANCORA PRESENTE (ID: ${giacinti.id})` : '✅ CORRETTAMENTE ELIMINATO',
+      }
+    });
+  } catch(e) {
+    res.status(500).json({ status: 'ERRORE', message: e.message });
+  }
+});
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const rawId = req.body.idCliente || req.body.idDipendente || 'unknown';
