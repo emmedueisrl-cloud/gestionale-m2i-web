@@ -199,56 +199,66 @@ module.exports = {
     }
 
     const id = await generaIDIncrementale("clienti", "C");
-    await knex('clienti').insert({
-      id,
-      ragione_sociale: ragioneSociale,
-      nome_attivita: getVal(dati, "nomeAttivita") || "",
-      partita_iva: partitaIva ? partitaIva : (isBozza ? `BOZZA_${Date.now()}` : ""),
-      codice_fiscale: getVal(dati, "codiceFiscale"),
-      indirizzo_sede: getVal(dati, "indirizzoSede"),
-      civico_sede: getVal(dati, "civicoSede"),
-      cap: getVal(dati, "cap"),
-      citta: getVal(dati, "citta"),
-      provincia: getVal(dati, "provincia"),
-      sede_legale: getVal(dati, "sedeLegale"),
-      sede_operativa: typeof getVal(dati, "sedeOperativa") === 'object' ? JSON.stringify(getVal(dati, "sedeOperativa")) : getVal(dati, "sedeOperativa"),
-      titolare: getVal(dati, "titolare"),
-      telefono_titolare: getVal(dati, "telefonoTitolare"),
-      telefono: getVal(dati, "telefono"),
-      email: getVal(dati, "email"),
-      email_secondaria: getVal(dati, "emailSecondaria"),
-      banca: getVal(dati, "banca"),
-      referente: getVal(dati, "referente"),
-      ruolo_referente: getVal(dati, "ruoloReferente"),
-      telefono_referente: getVal(dati, "telefonoReferente"),
-      tariffa_oraria_operatore: getVal(dati, "tariffaOrariaOperatore") || 0,
-      tariffa_oraria_commerciale: getVal(dati, "tariffaOrariaCommerciale") || 0,
-      attivo: isBozza ? "Bozza" : "SI",
-      cestinato: 0,
-      creato_da: "LocalServer",
-      data_firma_contratto: getVal(dati, "dataFirmaContratto"),
-      scadenza_contratto: getVal(dati, "scadenzaContratto"),
-      tipo_contratto: getVal(dati, "tipoContratto") || 'Rinnovo Tacito',
-      metodo_pagamento: getVal(dati, "metodoPagamento"),
-      iban: getVal(dati, "iban"),
-      pec: getVal(dati, "pec"),
-      codice_sdi: getVal(dati, "sdi"),
-      note: getVal(dati, "note"),
-      note_fisse_elaborato: getVal(dati, "noteFisseElaborato"),
-      foto_servizio: JSON.stringify(getVal(dati, "fotoServizio") || []),
-      possesso_chiavi: getVal(dati, "possessoChiavi") || "NO",
-      copie: parseInt(getVal(dati, "copie"), 10) || 0,
-      in_possesso_di: getVal(dati, "possessoChiavi") === "SI" ? (getVal(dati, "inPossessoDi") || "") : "",
-      note_chiavi: getVal(dati, "noteChiavi") || "",
-      operatore: getVal(dati, "operatore") || "",
-      operatore_assegnato: getVal(dati, "operatoreAssegnato") || "",
-      commerciale: getVal(dati, "commerciale") || "",
-      quotazione_importo: getVal(dati, "quotazioneImporto") ? parseFloat(getVal(dati, "quotazioneImporto")) : null,
-      quotazione_tipo: getVal(dati, "quotazioneTipo") || "Mensile",
-      tipo_tassazione: getVal(dati, "tipoTassazione") || "IVA",
-      percentuale_tassazione: getVal(dati, "percentualeTassazione") !== '' && getVal(dati, "percentualeTassazione") !== undefined && getVal(dati, "percentualeTassazione") !== null ? parseFloat(getVal(dati, "percentualeTassazione")) : null,
-      tassazione_altro: getVal(dati, "tassazioneAltro") || ""
-    });
+    try {
+      await knex('clienti').insert({
+        id,
+        ragione_sociale: ragioneSociale,
+        nome_attivita: getVal(dati, "nomeAttivita") || "",
+        partita_iva: partitaIva ? partitaIva : (isBozza ? `BOZZA_${Date.now()}` : ""),
+        codice_fiscale: getVal(dati, "codiceFiscale"),
+        indirizzo_sede: getVal(dati, "indirizzoSede"),
+        civico_sede: getVal(dati, "civicoSede"),
+        cap: getVal(dati, "cap"),
+        citta: getVal(dati, "citta"),
+        provincia: getVal(dati, "provincia"),
+        sede_legale: getVal(dati, "sedeLegale"),
+        sede_operativa: typeof getVal(dati, "sedeOperativa") === 'object' ? JSON.stringify(getVal(dati, "sedeOperativa")) : getVal(dati, "sedeOperativa"),
+        titolare: getVal(dati, "titolare"),
+        telefono_titolare: getVal(dati, "telefonoTitolare"),
+        telefono: getVal(dati, "telefono"),
+        email: getVal(dati, "email"),
+        email_secondaria: getVal(dati, "emailSecondaria"),
+        banca: getVal(dati, "banca"),
+        referente: getVal(dati, "referente"),
+        ruolo_referente: getVal(dati, "ruoloReferente"),
+        telefono_referente: getVal(dati, "telefonoReferente"),
+        tariffa_oraria_operatore: getVal(dati, "tariffaOrariaOperatore") || 0,
+        tariffa_oraria_commerciale: getVal(dati, "tariffaOrariaCommerciale") || 0,
+        attivo: isBozza ? "Bozza" : "SI",
+        cestinato: 0,
+        creato_da: "LocalServer",
+        data_firma_contratto: getVal(dati, "dataFirmaContratto"),
+        scadenza_contratto: getVal(dati, "scadenzaContratto"),
+        tipo_contratto: getVal(dati, "tipoContratto") || 'Rinnovo Tacito',
+        metodo_pagamento: getVal(dati, "metodoPagamento"),
+        iban: getVal(dati, "iban"),
+        pec: getVal(dati, "pec"),
+        codice_sdi: getVal(dati, "sdi"),
+        note: getVal(dati, "note"),
+        note_fisse_elaborato: getVal(dati, "noteFisseElaborato"),
+        foto_servizio: JSON.stringify(getVal(dati, "fotoServizio") || []),
+        possesso_chiavi: getVal(dati, "possessoChiavi") || "NO",
+        copie: parseInt(getVal(dati, "copie"), 10) || 0,
+        in_possesso_di: getVal(dati, "possessoChiavi") === "SI" ? (getVal(dati, "inPossessoDi") || "") : "",
+        note_chiavi: getVal(dati, "noteChiavi") || "",
+        operatore: getVal(dati, "operatore") || "",
+        operatore_assegnato: getVal(dati, "operatoreAssegnato") || "",
+        commerciale: getVal(dati, "commerciale") || "",
+        quotazione_importo: getVal(dati, "quotazioneImporto") ? parseFloat(getVal(dati, "quotazioneImporto")) : null,
+        quotazione_tipo: getVal(dati, "quotazioneTipo") || "Mensile",
+        tipo_tassazione: getVal(dati, "tipoTassazione") || "IVA",
+        percentuale_tassazione: getVal(dati, "percentualeTassazione") !== '' && getVal(dati, "percentualeTassazione") !== undefined && getVal(dati, "percentualeTassazione") !== null ? parseFloat(getVal(dati, "percentualeTassazione")) : null,
+        tassazione_altro: getVal(dati, "tassazioneAltro") || ""
+      });
+    } catch (e) {
+      if (e.message && e.message.includes('UNIQUE constraint failed: clienti.partita_iva')) {
+        throw new Error(`Esiste già un cliente con la Partita IVA ${partitaIva}.`);
+      }
+      if (e.message && e.message.includes('UNIQUE constraint failed: clienti.ragione_sociale')) {
+        throw new Error(`Esiste già un cliente con la Ragione Sociale "${ragioneSociale}".`);
+      }
+      throw e;
+    }
 
     await knex('log_attivita').insert({
       categoria: "Clienti",
@@ -298,56 +308,65 @@ module.exports = {
       newStato = 'SI';
     }
 
-    await knex('clienti')
-      .where('id', id)
-      .update({
-        ragione_sociale: ragioneSociale,
-        nome_attivita: getVal(dati, "nomeAttivita") || "",
-        attivo: newStato,
-        partita_iva: partitaIva ? partitaIva : (isBozza ? `BOZZA_${Date.now()}` : ""),
-        codice_fiscale: getVal(dati, "codiceFiscale"),
-        indirizzo_sede: getVal(dati, "indirizzoSede"),
-        civico_sede: getVal(dati, "civicoSede"),
-        cap: getVal(dati, "cap"),
-        citta: getVal(dati, "citta"),
-        provincia: getVal(dati, "provincia"),
-        sede_legale: getVal(dati, "sedeLegale"),
-        sede_operativa: typeof getVal(dati, "sedeOperativa") === 'object' ? JSON.stringify(getVal(dati, "sedeOperativa")) : getVal(dati, "sedeOperativa"),
-        titolare: getVal(dati, "titolare"),
-        telefono_titolare: getVal(dati, "telefonoTitolare"),
-        telefono: getVal(dati, "telefono"),
-        email: getVal(dati, "email"),
-        email_secondaria: getVal(dati, "emailSecondaria"),
-        banca: getVal(dati, "banca"),
-        referente: getVal(dati, "referente"),
-        ruolo_referente: getVal(dati, "ruoloReferente"),
-        telefono_referente: getVal(dati, "telefonoReferente"),
-        tariffa_oraria_operatore: getVal(dati, "tariffaOrariaOperatore"),
-        tariffa_oraria_commerciale: getVal(dati, "tariffaOrariaCommerciale"),
-        data_firma_contratto: getVal(dati, "dataFirmaContratto"),
-        scadenza_contratto: getVal(dati, "scadenzaContratto"),
-        tipo_contratto: getVal(dati, "tipoContratto"),
-        metodo_pagamento: getVal(dati, "metodoPagamento"),
-        banca: getVal(dati, "banca"),
-        iban: getVal(dati, "iban"),
-        pec: getVal(dati, "pec"),
-        codice_sdi: getVal(dati, "sdi"),
-        note: getVal(dati, "note"),
-        note_fisse_elaborato: getVal(dati, "noteFisseElaborato"),
-        foto_servizio: JSON.stringify(getVal(dati, "fotoServizio") || []),
-        possesso_chiavi: getVal(dati, "possessoChiavi") || "NO",
-        copie: parseInt(getVal(dati, "copie"), 10) || 0,
-        in_possesso_di: getVal(dati, "possessoChiavi") === "SI" ? (getVal(dati, "inPossessoDi") || "") : "",
-        note_chiavi: getVal(dati, "noteChiavi") || "",
-        operatore: getVal(dati, "operatore") || "",
-        operatore_assegnato: getVal(dati, "operatoreAssegnato") || "",
-        commerciale: getVal(dati, "commerciale") || "",
-        quotazione_importo: getVal(dati, "quotazioneImporto") ? parseFloat(getVal(dati, "quotazioneImporto")) : null,
-        quotazione_tipo: getVal(dati, "quotazioneTipo") || "Mensile",
-        tipo_tassazione: getVal(dati, "tipoTassazione") || "IVA",
-        percentuale_tassazione: getVal(dati, "percentualeTassazione") !== '' && getVal(dati, "percentualeTassazione") !== undefined && getVal(dati, "percentualeTassazione") !== null ? parseFloat(getVal(dati, "percentualeTassazione")) : null,
-        tassazione_altro: getVal(dati, "tassazioneAltro") || ""
-      });
+    try {
+      await knex('clienti')
+        .where('id', id)
+        .update({
+          ragione_sociale: ragioneSociale,
+          nome_attivita: getVal(dati, "nomeAttivita") || "",
+          attivo: newStato,
+          partita_iva: partitaIva ? partitaIva : (isBozza ? `BOZZA_${Date.now()}` : ""),
+          codice_fiscale: getVal(dati, "codiceFiscale"),
+          indirizzo_sede: getVal(dati, "indirizzoSede"),
+          civico_sede: getVal(dati, "civicoSede"),
+          cap: getVal(dati, "cap"),
+          citta: getVal(dati, "citta"),
+          provincia: getVal(dati, "provincia"),
+          sede_legale: getVal(dati, "sedeLegale"),
+          sede_operativa: typeof getVal(dati, "sedeOperativa") === 'object' ? JSON.stringify(getVal(dati, "sedeOperativa")) : getVal(dati, "sedeOperativa"),
+          titolare: getVal(dati, "titolare"),
+          telefono_titolare: getVal(dati, "telefonoTitolare"),
+          telefono: getVal(dati, "telefono"),
+          email: getVal(dati, "email"),
+          email_secondaria: getVal(dati, "emailSecondaria"),
+          banca: getVal(dati, "banca"),
+          referente: getVal(dati, "referente"),
+          ruolo_referente: getVal(dati, "ruoloReferente"),
+          telefono_referente: getVal(dati, "telefonoReferente"),
+          tariffa_oraria_operatore: getVal(dati, "tariffaOrariaOperatore"),
+          tariffa_oraria_commerciale: getVal(dati, "tariffaOrariaCommerciale"),
+          data_firma_contratto: getVal(dati, "dataFirmaContratto"),
+          scadenza_contratto: getVal(dati, "scadenzaContratto"),
+          tipo_contratto: getVal(dati, "tipoContratto"),
+          metodo_pagamento: getVal(dati, "metodoPagamento"),
+          iban: getVal(dati, "iban"),
+          pec: getVal(dati, "pec"),
+          codice_sdi: getVal(dati, "sdi"),
+          note: getVal(dati, "note"),
+          note_fisse_elaborato: getVal(dati, "noteFisseElaborato"),
+          foto_servizio: JSON.stringify(getVal(dati, "fotoServizio") || []),
+          possesso_chiavi: getVal(dati, "possessoChiavi") || "NO",
+          copie: parseInt(getVal(dati, "copie"), 10) || 0,
+          in_possesso_di: getVal(dati, "possessoChiavi") === "SI" ? (getVal(dati, "inPossessoDi") || "") : "",
+          note_chiavi: getVal(dati, "noteChiavi") || "",
+          operatore: getVal(dati, "operatore") || "",
+          operatore_assegnato: getVal(dati, "operatoreAssegnato") || "",
+          commerciale: getVal(dati, "commerciale") || "",
+          quotazione_importo: getVal(dati, "quotazioneImporto") ? parseFloat(getVal(dati, "quotazioneImporto")) : null,
+          quotazione_tipo: getVal(dati, "quotazioneTipo") || "Mensile",
+          tipo_tassazione: getVal(dati, "tipoTassazione") || "IVA",
+          percentuale_tassazione: getVal(dati, "percentualeTassazione") !== '' && getVal(dati, "percentualeTassazione") !== undefined && getVal(dati, "percentualeTassazione") !== null ? parseFloat(getVal(dati, "percentualeTassazione")) : null,
+          tassazione_altro: getVal(dati, "tassazioneAltro") || ""
+        });
+    } catch (e) {
+      if (e.message && e.message.includes('UNIQUE constraint failed: clienti.partita_iva')) {
+        throw new Error(`Esiste già un cliente con la Partita IVA ${partitaIva}.`);
+      }
+      if (e.message && e.message.includes('UNIQUE constraint failed: clienti.ragione_sociale')) {
+        throw new Error(`Esiste già un cliente con la Ragione Sociale "${ragioneSociale}".`);
+      }
+      throw e;
+    }
 
     await knex('log_attivita').insert({
       categoria: "Clienti", icona: "✏️", colore: "#3b82f6",

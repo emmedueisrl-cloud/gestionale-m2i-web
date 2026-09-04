@@ -242,48 +242,14 @@ module.exports = {
   },
 
   async eliminaDipendente(id) {
-    // 1. Verifica se ci sono ore lavorate nel registro_ore
-    const oreLavorate = await knex('registro_ore')
-      .where('dipendente_id', id)
-      .andWhere('ore_totali', '>', 0)
-      .first();
-
-    // 2. Verifica se ci sono mesi chiusi per questo dipendente
-    const mesiChiusi = await knex('dettaglio_mesi_chiusi_dipendenti')
-      .where('dipendente_id', id)
-      .first();
-
-    const haLavorato = !!oreLavorate || !!mesiChiusi;
-
-    if (haLavorato) {
-      // Soft Delete
-      await knex('dipendenti').where('id', id).update({ cestinato: 1 });
-      await knex('log_attivita').insert({
-        categoria: "Dipendenti", icona: "🗑️", colore: "#ef4444",
-        descrizione: `Dipendente spostato nel cestino (Soft Delete): <b>${id}</b>`, eseguito_da: "LocalServer"
-      });
-      return { success: true, type: 'soft', message: 'Il dipendente aveva uno storico ed è stato spostato nel Cestino.' };
-    } else {
-      // Hard Delete
-      await knex('dipendenti').where('id', id).del();
-      
-      // Elimina anche le eventuali proroghe collegate
-      await knex('proroghe_contratti').where('dipendente_id', id).del();
-
-      // Elimina fisicamente i documenti
-      const safeId = path.basename(String(id));
-      const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
-      if (fs.existsSync(dir)) {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
-
-      await knex('log_attivita').insert({
-        categoria: "Dipendenti", icona: "☠️", colore: "#dc2626",
-        descrizione: `Eliminazione definitiva dipendente (Hard Delete): <b>${id}</b>`, eseguito_da: "LocalServer"
-      });
-
-      return { success: true, type: 'hard', message: 'Il dipendente e tutti i suoi file sono stati eliminati definitivamente.' };
-    }
+    // Ora il cliente vuole che i dipendenti vengano SEMPRE messi nel cestino,
+    // a prescindere dal fatto che abbiano lavorato o meno.
+    await knex('dipendenti').where('id', id).update({ cestinato: 1 });
+    await knex('log_attivita').insert({
+      categoria: "Dipendenti", icona: "🗑️", colore: "#ef4444",
+      descrizione: `Dipendente spostato nel cestino: <b>${id}</b>`, eseguito_da: "LocalServer"
+    });
+    return { success: true, type: 'soft', message: 'Il dipendente è stato spostato nel Cestino.' };
   },
 
   async ripristinaDipendente(id) {
