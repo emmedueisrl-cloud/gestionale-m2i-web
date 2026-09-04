@@ -17,6 +17,14 @@ let dbPath = path.join(__dirname, 'gestionale.db');
 
 if (process.env.DATA_DIR) {
   const dataDir = process.env.DATA_DIR.trim();
+  
+  // PROTEZIONE AGGIUNTIVA: assicuriamoci che l'URL inserito su Render sia un percorso reale 
+  // e non una stringa casuale o relativa come "DATA_DIR"
+  if (!path.isAbsolute(dataDir)) {
+    console.error("=== ERRORE CRITICO: La variabile DATA_DIR impostata ('" + dataDir + "') NON è un percorso assoluto. Deve essere /var/lib/data ===");
+    process.exit(1);
+  }
+
   const persistDbPath = path.join(dataDir, 'gestionale.db');
 
   // 1. Verifica che la directory DATA_DIR esista e sia scrivibile.
