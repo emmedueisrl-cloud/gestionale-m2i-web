@@ -5,3 +5,4 @@ uploads/
 # *.db (Permettiamo l'upload del database iniziale)
 *.sqlite
 .DS_Store
+*backup*.db

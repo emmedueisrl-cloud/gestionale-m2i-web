@@ -100,6 +100,7 @@ export default function ModificaDipendente() {
           TariffaOrariaOperatore: data.tariffa_oraria_operatore || '',
           TipoPaga: data.tipo_paga || 'Oraria',
           Importo: data.paga_oraria_reale || 0,
+          Note: data.note || '',
           noteFisseElaborato: data.note_fisse_elaborato || ''
         });
 
