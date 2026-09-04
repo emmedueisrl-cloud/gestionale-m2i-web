@@ -30,33 +30,7 @@ app.use('/uploads', express.static(baseUploadPath));
 
 // Configurazione Multer per l'upload dei file
 
-// ============================================================
-// DOWNLOAD DB TEMPORANEO - Solo per backup pre-restore
-// GET /api/download-db?token=M2I_BACKUP_2024 → scarica il file SQLite completo
-// ATTENZIONE: rimuovere questo endpoint dopo aver completato il backup!
-// ============================================================
-app.get('/api/download-db', (req, res) => {
-  const SECRET_TOKEN = 'M2I_BACKUP_2024_SECURE';
-  if (req.query.token !== SECRET_TOKEN) {
-    return res.status(403).json({ error: 'Accesso negato.' });
-  }
-  const fs = require('fs');
-  const dbFilePath = process.env.DATA_DIR
-    ? require('path').join(process.env.DATA_DIR.trim(), 'gestionale.db')
-    : require('path').join(__dirname, 'gestionale.db');
 
-  if (!fs.existsSync(dbFilePath)) {
-    return res.status(404).json({ error: 'File DB non trovato: ' + dbFilePath });
-  }
-  const stats = fs.statSync(dbFilePath);
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="gestionale_backup_${timestamp}.db"`);
-  res.setHeader('Content-Length', stats.size);
-  fs.createReadStream(dbFilePath).pipe(res);
-});
-
-// ============================================================
 // HEALTH CHECK - Verifica stato DB persistente
 // GET /api/health → restituisce percorso DB, dimensione, conteggio clienti/dipendenti
 // ============================================================
