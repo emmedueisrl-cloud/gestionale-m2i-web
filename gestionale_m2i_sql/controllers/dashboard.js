@@ -24,15 +24,33 @@ module.exports = {
       .select('id', 'cognome', 'nome', 'allegato_documenti', 'allegato_contratto', 'iban')
       .whereNot('stato', 'Cessato');
       
-    const checklist = dipList.map(d => ({
-      id: d.id,
-      nomeCompleto: `${d.cognome} ${d.nome}`.toUpperCase(),
-      docsMancanti: [
-        (!d.allegato_documenti ? "Documento Identità" : null),
-        (!d.allegato_contratto ? "Contratto Firmato" : null),
-        (!d.iban ? "IBAN Mancante" : null)
-      ].filter(Boolean)
-    })).filter(c => c.docsMancanti.length > 0);
+    const checklist = dipList.map(d => {
+      let haDocumento = !!d.allegato_documenti;
+      let haContratto = !!d.allegato_contratto;
+      
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const safeId = path.basename(String(d.id));
+        const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
+        
+        if (fs.existsSync(dir)) {
+          const files = fs.readdirSync(dir);
+          if (files.some(f => f.toLowerCase().includes('doc'))) haDocumento = true;
+          if (files.some(f => f.toLowerCase().includes('contratto'))) haContratto = true;
+        }
+      } catch(e) {}
+
+      return {
+        id: d.id,
+        nomeCompleto: `${d.cognome} ${d.nome}`.toUpperCase(),
+        docsMancanti: [
+          (!haDocumento ? "Documento Identità" : null),
+          (!haContratto ? "Contratto Firmato" : null),
+          (!d.iban ? "IBAN Mancante" : null)
+        ].filter(Boolean)
+      };
+    }).filter(c => c.docsMancanti.length > 0);
 
     return {
       kpi: { totali, attivi, prova, cessati, scaduti: 0 },
@@ -87,9 +105,27 @@ module.exports = {
 
       // Checklist dipendenti
       let docsMancanti = [];
-      if (!d.allegato_documenti) docsMancanti.push("Documento Identità/CF");
+      let haDocumento = !!d.allegato_documenti;
+      let haContratto = !!d.allegato_contratto;
+      
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const safeId = path.basename(String(d.id));
+        const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
+        
+        if (fs.existsSync(dir)) {
+          const files = fs.readdirSync(dir);
+          const hasDoc = files.some(f => f.toLowerCase().includes('doc'));
+          const hasContratto = files.some(f => f.toLowerCase().includes('contratto'));
+          if (hasDoc) haDocumento = true;
+          if (hasContratto) haContratto = true;
+        }
+      } catch(e) {}
+
+      if (!haDocumento) docsMancanti.push("Documento Identità/CF");
       if (!d.iban) docsMancanti.push("Codice IBAN");
-      if (!d.allegato_contratto) docsMancanti.push("Contratto Assunzione Firmato");
+      if (!haContratto) docsMancanti.push("Contratto Assunzione Firmato");
       
       if (docsMancanti.length > 0) {
         checklistDip.push({
@@ -128,7 +164,23 @@ module.exports = {
 
     let checklistCli = [];
     activeClis.forEach(c => {
-      if (!c.allegato_contratto_cliente) {
+      let haContratto = !!c.allegato_contratto_cliente;
+      
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const safeId = path.basename(String(c.id));
+        const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
+        
+        if (fs.existsSync(dir)) {
+          const files = fs.readdirSync(dir);
+          if (files.some(f => f.toLowerCase().includes('contratto'))) {
+            haContratto = true;
+          }
+        }
+      } catch(e) {}
+
+      if (!haContratto) {
         checklistCli.push({
           id: c.id,
           ragioneSociale: (c.ragione_sociale || "Senza Nome").toUpperCase(),
