@@ -400,7 +400,10 @@ function ModificaCliente() {
       setFileAmministratore(null);
       setAltriDocumenti([{ id: Date.now(), file: null, nome: '' }]);
 
-      if (filesUploaded > 0) {
+      if (filesUploaded > 0 || photosUploaded > 0) {
+        setFileContratto(null);
+        setFileAmministratore(null);
+        setAltriDocumenti([{ id: Date.now(), file: null, nome: '' }]);
         const docs = await recuperaDocumentiCliente(dati.id);
         setDocumentiEsistenti(docs || []);
       }

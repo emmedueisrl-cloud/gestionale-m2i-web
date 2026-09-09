@@ -24,7 +24,13 @@ const INITIAL_STATE = {
 
 const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, onSubmit, onCancel, onOpenProgrammaFisso, hasProgrammaFisso = false, onGenerateAssunzione, documentiEsistenti = [], onDeleteDocument }, ref) => {
   useImperativeHandle(ref, () => ({
-    triggerCancel: () => mode === 'inserimento' ? setDraftModal(true) : onCancel()
+    triggerCancel: () => mode === 'inserimento' ? setDraftModal(true) : onCancel(),
+    clearFiles: () => {
+      setFileDocs(null);
+      setFileContratto(null);
+      setFileUnilav(null);
+      setFileAltro(null);
+    }
   }));
   const [formData, setFormData] = useState(INITIAL_STATE);
   const [inProva, setInProva] = useState(false);
@@ -185,28 +191,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
   };
 
   const handleAltroSelect = (file) => {
-    if (file) {
-      setAltroModal({ isOpen: true, pendingFile: file, tempName: '' });
-    } else {
-      setFileAltro(null);
-      setNomeFileAltro('');
-    }
-  };
-
-  const confirmAltroName = () => {
-    if (!altroModal.tempName.trim()) {
-      setAlertModal({
-        isOpen: true,
-        type: 'warning',
-        title: 'Attenzione',
-        content: 'Inserisci un nome per il documento',
-        primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
-      });
-      return;
-    }
-    setFileAltro(altroModal.pendingFile);
-    setNomeFileAltro(altroModal.tempName.trim().replace(/\s+/g, '_'));
-    setAltroModal({ isOpen: false, pendingFile: null, tempName: '' });
+    setFileAltro(file);
   };
 
   const isScadenzaDisabled = inProva || formData.TipoContratto !== 'Determinato';
@@ -544,39 +529,6 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
           {mode === 'inserimento' ? 'Crea Dipendente Definitivo' : 'Salva Modifiche'}
         </button>
       </div>
-
-      <ModernModal 
-        isOpen={altroModal.isOpen}
-        type="info"
-        title="Nome Documento"
-        subtitle="Che tipo di documento stai caricando?"
-        content="Inserisci una breve descrizione (es. 'Patente', 'Corso Sicurezza', 'Visita Medica'). Questo testo verrà usato per rinominare il file automaticamente."
-        primaryAction={{
-          label: 'Conferma',
-          onClick: confirmAltroName
-        }}
-        secondaryAction={{
-          label: 'Annulla',
-          onClick: () => {
-            setAltroModal({ isOpen: false, pendingFile: null, tempName: '' });
-          }
-        }}
-      >
-        <input 
-          type="text" 
-          value={altroModal.tempName}
-          onChange={(e) => setAltroModal({ ...altroModal, tempName: e.target.value })}
-          placeholder="Es: Corso Sicurezza"
-          className="w-full p-3 rounded-lg border border-slate-600 bg-slate-900/50 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              confirmAltroName();
-            }
-          }}
-        />
-      </ModernModal>
 
       <ModernModal 
         isOpen={draftModal}

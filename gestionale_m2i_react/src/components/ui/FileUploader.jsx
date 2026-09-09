@@ -38,20 +38,32 @@ export default function FileUploader({
     setError(null);
     const filesArray = Array.from(fileList);
     
-    if (multiple) {
-      const validFiles = filesArray.filter(validateFile);
-      if (validFiles.length > 0) {
-        // If there were already files, append them
-        const existingFiles = Array.isArray(file) ? file : (file ? [file] : []);
-        onFileSelect([...existingFiles, ...validFiles]);
+    const renamedFiles = [];
+    for (const f of filesArray) {
+      if (validateFile(f)) {
+        let defaultName = f.name.split('.').slice(0, -1).join('.');
+        const ext = '.' + f.name.split('.').pop().toLowerCase();
+        
+        const userInput = window.prompt(`Scegli il nome per il file:\n(Originale: ${f.name})`, defaultName);
+        
+        if (userInput !== null) {
+          let finalName = userInput.trim();
+          if (finalName === "") finalName = f.name;
+          else {
+            if (!finalName.toLowerCase().endsWith(ext)) finalName += ext;
+          }
+          const newFile = new File([f], finalName, { type: f.type });
+          renamedFiles.push(newFile);
+        }
       }
-    } else {
-      const selectedFile = filesArray[0];
-      if (validateFile(selectedFile)) {
-        onFileSelect(selectedFile);
+    }
+    
+    if (renamedFiles.length > 0) {
+      if (multiple) {
+        const existingFiles = Array.isArray(file) ? file : (file ? [file] : []);
+        onFileSelect([...existingFiles, ...renamedFiles]);
       } else {
-        if (fileInputRef.current) fileInputRef.current.value = null;
-        onFileSelect(null);
+        onFileSelect(renamedFiles[0]);
       }
     }
   };

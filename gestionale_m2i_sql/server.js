@@ -106,19 +106,11 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const ext = require('path').extname(file.originalname);
-    if (req.body.tipoDocumento && (req.body.nome || req.body.cognome)) {
-      const safeTipo = req.body.tipoDocumento.replace(/[^a-zA-Z0-9_-]/g, '');
-      const safeCognome = (req.body.cognome || '').replace(/[^a-zA-Z0-9 _-]/g, '').trim();
-      const safeNome = (req.body.nome || '').replace(/[^a-zA-Z0-9 _-]/g, '').trim();
-      const timestamp = Date.now();
-      
-      const parts = [safeTipo, safeCognome, safeNome].filter(Boolean).join(' ');
-      cb(null, `${parts}_${timestamp}${ext}`);
-    } else {
-      const timestamp = Date.now();
-      cb(null, `${timestamp}_${file.originalname}`);
-    }
+    const originalName = file.originalname || 'documento';
+    // Sanitizza il nome mantenendo spazi, trattini, underscore e punti
+    let safeName = originalName.replace(/[^a-zA-Z0-9.\-_ ]/g, '').trim();
+    if (!safeName) safeName = `doc_${Date.now()}`;
+    cb(null, safeName);
   }
 });
 const upload = multer({ storage: storage });

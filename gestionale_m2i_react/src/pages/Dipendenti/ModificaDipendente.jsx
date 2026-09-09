@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { UserPen, Search, Loader2, CalendarDays } from 'lucide-react';
 import DipendenteForm from '../../components/ui/DipendenteForm';
 import ModernModal from '../../components/ui/ModernModal';
@@ -15,6 +15,7 @@ export default function ModificaDipendente() {
   const [selectedId, setSelectedId] = useState('');
   const [dipendenteData, setDipendenteData] = useState(null);
   const [documenti, setDocumenti] = useState([]);
+  const formRef = useRef(null);
   
   const [isLoadingList, setIsLoadingList] = useState(true);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -213,6 +214,12 @@ export default function ModificaDipendente() {
         }
       }
       
+      if (filesUploaded > 0) {
+        if (formRef.current) formRef.current.clearFiles();
+        const updatedDocs = await recuperaDocumentiDipendente(selectedId);
+        setDocumenti(updatedDocs || []);
+      }
+
       const isBozza = payload.isBozza;
       setModal({
         isOpen: true,
@@ -294,6 +301,7 @@ export default function ModificaDipendente() {
       {dipendenteData && !isLoadingData && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             <DipendenteForm 
+              ref={formRef}
               mode="modifica" 
               initialData={dipendenteData}
               onSubmit={handleSubmit} 
