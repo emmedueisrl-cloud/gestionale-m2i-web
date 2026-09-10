@@ -243,7 +243,8 @@ export default function NuovoCliente() {
           formData.append('files', file);
         });
 
-        const uploadRes = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3000') + (import.meta.env.VITE_API_URL || '') + '/api/upload-multiple', {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+        const uploadRes = await fetch(apiUrl + '/api/upload-multiple', {
           method: 'POST',
           body: formData
         });

@@ -342,18 +342,17 @@ function ModificaCliente() {
     if (!isBozza && !hasPiva) {
       setModalState({ isOpen: true, type: 'warning', message: 'Il campo Partita IVA è obbligatorio.' });
       return;
-    }
-
     setIsSaving(true);
     try {
       let finalFotoUrls = [...fotoEsistenti];
-      
+      let photosUploadedCount = 0;
       if (nuoveFoto.length > 0) {
         const formData = new FormData();
         formData.append('idCliente', dati.id);
         nuoveFoto.forEach(file => formData.append('files', file));
 
-        const uploadRes = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3000') + (import.meta.env.VITE_API_URL || '') + '/api/upload-multiple', {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+        const uploadRes = await fetch(apiUrl + '/api/upload-multiple', {
           method: 'POST',
           body: formData
         });
@@ -361,6 +360,7 @@ function ModificaCliente() {
         const uploadData = await uploadRes.json();
         if (uploadData.success) {
           finalFotoUrls = [...finalFotoUrls, ...uploadData.paths];
+          photosUploadedCount = uploadData.paths.length;
         } else {
           throw new Error('Errore durante il caricamento delle nuove foto: ' + uploadData.error);
         }
@@ -400,7 +400,7 @@ function ModificaCliente() {
       setFileAmministratore(null);
       setAltriDocumenti([{ id: Date.now(), file: null, nome: '' }]);
 
-      if (filesUploaded > 0 || photosUploaded > 0) {
+      if (filesUploaded > 0 || photosUploadedCount > 0) {
         setFileContratto(null);
         setFileAmministratore(null);
         setAltriDocumenti([{ id: Date.now(), file: null, nome: '' }]);
