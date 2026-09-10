@@ -342,6 +342,8 @@ function ModificaCliente() {
     if (!isBozza && !hasPiva) {
       setModalState({ isOpen: true, type: 'warning', message: 'Il campo Partita IVA è obbligatorio.' });
       return;
+    }
+
     setIsSaving(true);
     try {
       let finalFotoUrls = [...fotoEsistenti];
