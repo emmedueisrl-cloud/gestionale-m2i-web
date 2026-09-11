@@ -36,8 +36,10 @@ module.exports = {
         
         if (fs.existsSync(dir)) {
           const files = fs.readdirSync(dir);
-          if (files.some(f => f.toLowerCase().includes('doc'))) haDocumento = true;
-          if (files.some(f => f.toLowerCase().includes('contratto'))) haContratto = true;
+          const docKeywords = ['doc', 'carta', 'identit', 'patente', 'passaporto', 'c.i', 'ci_'];
+          const contrKeywords = ['contratto', 'assunz', 'accordo', 'unilav', 'incarico'];
+          if (files.some(f => docKeywords.some(k => f.toLowerCase().includes(k)))) haDocumento = true;
+          if (files.some(f => contrKeywords.some(k => f.toLowerCase().includes(k)))) haContratto = true;
         }
       } catch(e) {}
 
@@ -113,14 +115,15 @@ module.exports = {
         const path = require('path');
         const safeId = path.basename(String(d.id));
         const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
-        
-        if (fs.existsSync(dir)) {
-          const files = fs.readdirSync(dir);
-          const hasDoc = files.some(f => f.toLowerCase().includes('doc'));
-          const hasContratto = files.some(f => f.toLowerCase().includes('contratto'));
-          if (hasDoc) haDocumento = true;
-          if (hasContratto) haContratto = true;
-        }
+                if (fs.existsSync(dir)) {
+            const files = fs.readdirSync(dir);
+            const docKeywords = ['doc', 'carta', 'identit', 'patente', 'passaporto', 'c.i', 'ci_'];
+            const contrKeywords = ['contratto', 'assunz', 'accordo', 'unilav', 'incarico'];
+            const hasDoc = files.some(f => docKeywords.some(k => f.toLowerCase().includes(k)));
+            const hasContratto = files.some(f => contrKeywords.some(k => f.toLowerCase().includes(k)));
+            if (hasDoc) haDocumento = true;
+            if (hasContratto) haContratto = true;
+          }
       } catch(e) {}
 
       if (!haDocumento) docsMancanti.push("Documento Identità/CF");
@@ -171,13 +174,13 @@ module.exports = {
         const path = require('path');
         const safeId = path.basename(String(c.id));
         const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
-        
-        if (fs.existsSync(dir)) {
-          const files = fs.readdirSync(dir);
-          if (files.some(f => f.toLowerCase().includes('contratto'))) {
-            haContratto = true;
+                if (fs.existsSync(dir)) {
+            const files = fs.readdirSync(dir);
+            const contrKeywords = ['contratto', 'assunz', 'accordo', 'unilav', 'incarico'];
+            if (files.some(f => contrKeywords.some(k => f.toLowerCase().includes(k)))) {
+              haContratto = true;
+            }
           }
-        }
       } catch(e) {}
 
       if (!haContratto) {
