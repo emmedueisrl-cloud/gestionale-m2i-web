@@ -37,7 +37,7 @@ module.exports = {
         if (fs.existsSync(dir)) {
           const files = fs.readdirSync(dir);
           const docKeywords = ['doc', 'carta', 'identit', 'patente', 'passaporto', 'c.i', 'ci_'];
-          const contrKeywords = ['contratto', 'assunz', 'accordo', 'unilav', 'incarico'];
+          const contrKeywords = ['contratto'];
           if (files.some(f => docKeywords.some(k => f.toLowerCase().includes(k)))) haDocumento = true;
           if (files.some(f => contrKeywords.some(k => f.toLowerCase().includes(k)))) haContratto = true;
         }
@@ -118,7 +118,7 @@ module.exports = {
                 if (fs.existsSync(dir)) {
             const files = fs.readdirSync(dir);
             const docKeywords = ['doc', 'carta', 'identit', 'patente', 'passaporto', 'c.i', 'ci_'];
-            const contrKeywords = ['contratto', 'assunz', 'accordo', 'unilav', 'incarico'];
+            const contrKeywords = ['contratto'];
             const hasDoc = files.some(f => docKeywords.some(k => f.toLowerCase().includes(k)));
             const hasContratto = files.some(f => contrKeywords.some(k => f.toLowerCase().includes(k)));
             if (hasDoc) haDocumento = true;
@@ -176,7 +176,7 @@ module.exports = {
         const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
                 if (fs.existsSync(dir)) {
             const files = fs.readdirSync(dir);
-            const contrKeywords = ['contratto', 'assunz', 'accordo', 'unilav', 'incarico'];
+            const contrKeywords = ['contratto'];
             if (files.some(f => contrKeywords.some(k => f.toLowerCase().includes(k)))) {
               haContratto = true;
             }
