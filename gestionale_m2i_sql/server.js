@@ -124,6 +124,57 @@ app.get('/api/backup-db', (req, res) => {
 });
 // ============================================================
 
+// ============================================================
+// BACKUP DATABASE IN EXCEL
+// ============================================================
+app.get('/api/backup-excel', async (req, res) => {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Gestionale M2I';
+    workbook.created = new Date();
+
+    // Recupera tutte le tabelle dal database
+    const tables = await knex.raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
+    const tableNames = tables.map(t => t.name);
+
+    for (const tableName of tableNames) {
+      const data = await knex(tableName).select('*');
+      if (data.length > 0) {
+        const sheet = workbook.addWorksheet(tableName);
+        
+        // Estrai intestazioni dalle chiavi del primo record
+        const columns = Object.keys(data[0]).map(key => ({
+          header: key,
+          key: key,
+          width: 20
+        }));
+        sheet.columns = columns;
+
+        // Aggiungi i dati
+        sheet.addRows(data);
+      } else {
+        // Se la tabella è vuota, aggiungi solo un foglio vuoto con un messaggio
+        const sheet = workbook.addWorksheet(tableName);
+        sheet.getCell('A1').value = 'Nessun dato presente in questa tabella.';
+      }
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="gestionale_backup_${timestamp}.xlsx"`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Errore durante la generazione del backup Excel:", error);
+    if (!res.headersSent) {
+      res.status(500).send("Errore interno del server durante la generazione del file Excel.");
+    }
+  }
+});
+// ============================================================
+
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {

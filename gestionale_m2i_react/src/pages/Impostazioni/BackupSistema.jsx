@@ -2,12 +2,16 @@ import React, { useState } from 'react';
 
 const BackupSistema = () => {
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingExcel, setIsDownloadingExcel] = useState(false);
 
-  const handleBackup = async () => {
-    setIsDownloading(true);
+  const handleBackup = async (type = 'sqlite') => {
+    if (type === 'excel') setIsDownloadingExcel(true);
+    else setIsDownloading(true);
+
     try {
       const baseUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${baseUrl}/api/backup-db`, {
+      const endpoint = type === 'excel' ? '/api/backup-excel' : '/api/backup-db';
+      const response = await fetch(`${baseUrl}${endpoint}`, {
         method: 'GET',
       });
 
@@ -16,14 +20,10 @@ const BackupSistema = () => {
         throw new Error(`(Status ${response.status}) ${errorText || 'Errore sconosciuto dal server'}`);
       }
 
-      // Convert the response into a blob
       const blob = await response.blob();
-      
-      // Create a temporary URL for the blob
       const url = window.URL.createObjectURL(blob);
       
-      // Retrieve the filename from the content-disposition header if available, otherwise use a default
-      let filename = 'gestionale_backup.db';
+      let filename = type === 'excel' ? 'gestionale_backup.xlsx' : 'gestionale_backup.db';
       const disposition = response.headers.get('content-disposition');
       if (disposition && disposition.indexOf('attachment') !== -1) {
         const matches = /filename="([^"]*)"/.exec(disposition);
@@ -37,23 +37,21 @@ const BackupSistema = () => {
         }
       }
 
-      // Create a temporary link element
       const link = document.createElement('a');
       link.href = url;
       link.download = filename;
       
-      // Append to body, click and remove
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      // Clean up the URL object
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Errore:', error);
       alert('Si è verificato un errore durante il backup: ' + error.message);
     } finally {
-      setIsDownloading(false);
+      if (type === 'excel') setIsDownloadingExcel(false);
+      else setIsDownloading(false);
     }
   };
 
@@ -61,25 +59,45 @@ const BackupSistema = () => {
     <div style={styles.container}>
       <h2 style={styles.title}>Backup Dati in Locale</h2>
       <p style={styles.description}>
-        Scarica una copia completa del database attuale (file SQLite). Questo file contiene tutti i dati del sistema: clienti, dipendenti, fatture, ore, etc. 
-        Ti consigliamo di effettuare backup regolari per prevenire la perdita di dati.
+        Scarica una copia completa del database attuale. Ti consigliamo di effettuare backup regolari per prevenire la perdita di dati.
       </p>
 
-      <div style={styles.card}>
-        <div style={styles.iconContainer}>
-          <span style={styles.icon}>💾</span>
+      <div style={styles.cardContainer}>
+        {/* Card SQLite */}
+        <div style={styles.card}>
+          <div style={styles.iconContainer}>
+            <span style={styles.icon}>💾</span>
+          </div>
+          <div style={styles.infoContainer}>
+            <h3 style={styles.cardTitle}>Esporta in SQLite (.db)</h3>
+            <p style={styles.cardText}>Il file di backup originale e completo per sviluppatori.</p>
+          </div>
+          <button 
+            style={{ ...styles.button, ...(isDownloading ? styles.buttonDisabled : {}) }} 
+            onClick={() => handleBackup('sqlite')} 
+            disabled={isDownloading || isDownloadingExcel}
+          >
+            {isDownloading ? 'Scaricamento...' : 'Esegui Backup SQLite'}
+          </button>
         </div>
-        <div style={styles.infoContainer}>
-          <h3 style={styles.cardTitle}>Esporta Database (SQLite)</h3>
-          <p style={styles.cardText}>L'operazione scaricherà un file .db sul tuo computer.</p>
+
+        {/* Card Excel */}
+        <div style={styles.card}>
+          <div style={{ ...styles.iconContainer, background: '#dcfce7' }}>
+            <span style={styles.icon}>📊</span>
+          </div>
+          <div style={styles.infoContainer}>
+            <h3 style={styles.cardTitle}>Esporta in Excel (.xlsx)</h3>
+            <p style={styles.cardText}>Apri tabelle e dati direttamente in Excel.</p>
+          </div>
+          <button 
+            style={{ ...styles.button, background: '#16a34a', ...(isDownloadingExcel ? styles.buttonDisabled : {}) }} 
+            onClick={() => handleBackup('excel')} 
+            disabled={isDownloading || isDownloadingExcel}
+          >
+            {isDownloadingExcel ? 'Scaricamento...' : 'Esegui Backup Excel'}
+          </button>
         </div>
-        <button 
-          style={{ ...styles.button, ...(isDownloading ? styles.buttonDisabled : {}) }} 
-          onClick={handleBackup} 
-          disabled={isDownloading}
-        >
-          {isDownloading ? 'Scaricamento...' : 'Esegui Backup'}
-        </button>
       </div>
     </div>
   );
@@ -104,6 +122,11 @@ const styles = {
     marginBottom: '32px',
     lineHeight: '1.6',
     maxWidth: '800px'
+  },
+  cardContainer: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px'
   },
   card: {
     display: 'flex',
