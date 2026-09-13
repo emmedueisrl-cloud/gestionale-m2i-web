@@ -12,7 +12,8 @@ const BackupSistema = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Errore durante il download del backup');
+        const errorText = await response.text();
+        throw new Error(`(Status ${response.status}) ${errorText || 'Errore sconosciuto dal server'}`);
       }
 
       // Convert the response into a blob
