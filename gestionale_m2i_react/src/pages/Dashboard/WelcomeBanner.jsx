@@ -30,7 +30,7 @@ const WelcomeBanner = () => {
   return (
     <div style={styles.banner}>
       <div style={styles.textContainer}>
-        <h1 style={styles.greeting}>Riepilogo Generale M2I</h1>
+        <h1 style={styles.greeting}>Riepilogo Generale M2I srl</h1>
         <p style={styles.subtitle}>
           Dashboard amministrativa e stato operativo aggiornato al <span style={styles.highlight}>{getFullDate(time)}</span>
         </p>

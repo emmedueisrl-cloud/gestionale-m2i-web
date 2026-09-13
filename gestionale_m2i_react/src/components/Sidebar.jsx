@@ -55,7 +55,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
       >
         <div className="flex items-center justify-center h-16 border-b border-slate-800 bg-slate-900 shrink-0">
           <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-500 to-indigo-400 bg-clip-text text-transparent tracking-tighter">
-            M2I
+            M2I srl
           </h1>
         </div>
         <div className="flex-1 overflow-y-auto py-4 px-3 custom-scrollbar">
