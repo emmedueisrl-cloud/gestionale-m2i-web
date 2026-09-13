@@ -49,6 +49,7 @@ import EmailConfig from './pages/Impostazioni/EmailConfig';
 // Impostazioni
 import ImpostazioniLayout from './pages/Impostazioni/ImpostazioniLayout';
 import LogSistema from './pages/Impostazioni/LogSistema';
+import BackupSistema from './pages/Impostazioni/BackupSistema';
 
 function App() {
   return (
@@ -107,6 +108,7 @@ function App() {
         <Route path="impostazioni" element={<ImpostazioniLayout />}>
           <Route path="email" element={<EmailConfig />} />
           <Route path="log" element={<LogSistema />} />
+          <Route path="backup" element={<BackupSistema />} />
         </Route>
 
         {/* Tutte le altre route per ora mostrano "In costruzione" */}

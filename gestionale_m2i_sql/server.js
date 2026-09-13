@@ -93,6 +93,38 @@ app.get('/api/inspect-disk', (req, res) => {
 });
 // ============================================================
 
+// ============================================================
+// BACKUP DATABASE LOCALE
+// ============================================================
+app.get('/api/backup-db', (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const dbFilePath = process.env.DATA_DIR
+      ? path.join(process.env.DATA_DIR.trim(), 'gestionale.db')
+      : path.join(__dirname, 'gestionale.db');
+
+    if (fs.existsSync(dbFilePath)) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      res.download(dbFilePath, `gestionale_backup_${timestamp}.db`, (err) => {
+        if (err) {
+          console.error("Errore nel download del backup:", err);
+          if (!res.headersSent) {
+            res.status(500).send("Errore nel download del database.");
+          }
+        }
+      });
+    } else {
+      res.status(404).send("Database non trovato.");
+    }
+  } catch (error) {
+    console.error("Errore durante la generazione del backup:", error);
+    res.status(500).send("Errore interno del server.");
+  }
+});
+// ============================================================
+
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const rawId = req.body.idCliente || req.body.idDipendente || 'unknown';
