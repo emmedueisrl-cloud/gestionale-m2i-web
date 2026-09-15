@@ -10,7 +10,7 @@ const fonts = {
   }
 };
 
-pdfmake.setFonts(fonts);
+
 
 const defaultStyles = {
   header: { fontSize: 18, bold: true, color: '#1e293b', margin: [0, 0, 0, 10] },
@@ -105,6 +105,7 @@ function buildFatturaPDF(fattura) {
     defaultStyle: { font: 'Roboto' }
   };
 
+  pdfmake.setFonts(fonts);
   return pdfmake.createPdf(docDefinition);
 }
 
@@ -140,6 +141,7 @@ function buildElaboratoDipendentePDF(data) {
     defaultStyle: { font: 'Roboto' }
   };
 
+  pdfmake.setFonts(fonts);
   return pdfmake.createPdf(docDefinition);
 }
 
@@ -172,6 +174,7 @@ function buildElaboratoClientePDF(data) {
     defaultStyle: { font: 'Roboto' }
   };
 
+  pdfmake.setFonts(fonts);
   return pdfmake.createPdf(docDefinition);
 }
 
@@ -204,6 +207,7 @@ function buildProvvigioniPDF(data) {
     defaultStyle: { font: 'Roboto' }
   };
 
+  pdfmake.setFonts(fonts);
   return pdfmake.createPdf(docDefinition);
 }
 
@@ -248,6 +252,7 @@ function buildFoglioPresenzePDF(data) {
     defaultStyle: { font: 'Roboto' }
   };
 
+  pdfmake.setFonts(fonts);
   return pdfmake.createPdf(docDefinition);
 }
 
@@ -321,6 +326,7 @@ function buildStampaElaboratoClientiPDF(datiCompleti, mese, anno) {
     styles: defaultStyles,
     defaultStyle: { font: 'Roboto' }
   };
+  pdfmake.setFonts(fonts);
   return pdfmake.createPdf(docDefinition);
 }
 
@@ -419,6 +425,7 @@ function buildStampaElaboratoDipendentiPDF(datiCompleti, mese, anno) {
     styles: defaultStyles,
     defaultStyle: { font: 'Roboto' }
   };
+  pdfmake.setFonts(fonts);
   return pdfmake.createPdf(docDefinition);
 }
 
