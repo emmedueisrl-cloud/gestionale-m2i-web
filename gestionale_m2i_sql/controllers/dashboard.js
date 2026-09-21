@@ -2,16 +2,16 @@ const { knex } = require('../db');
 
 module.exports = {
   async recuperaDatiDashboard() {
-    const tTot = await knex('dipendenti').count('* as c').first();
+    const tTot = await knex('dipendenti').count('* as c').where('cestinato', 0).first();
     const totali = tTot ? tTot.c : 0;
     
-    const tAtt = await knex('dipendenti').count('* as c').whereNot('stato', 'Cessato').first();
+    const tAtt = await knex('dipendenti').count('* as c').whereNot('stato', 'Cessato').andWhere('cestinato', 0).first();
     const attivi = tAtt ? tAtt.c : 0;
     
-    const tPrv = await knex('dipendenti').count('* as c').where('stato', 'Prova').first();
+    const tPrv = await knex('dipendenti').count('* as c').where('stato', 'Prova').andWhere('cestinato', 0).first();
     const prova = tPrv ? tPrv.c : 0;
     
-    const tCes = await knex('dipendenti').count('* as c').where('stato', 'Cessato').first();
+    const tCes = await knex('dipendenti').count('* as c').where('stato', 'Cessato').andWhere('cestinato', 0).first();
     const cessati = tCes ? tCes.c : 0;
     
     const scadenze = await knex('dipendenti')
