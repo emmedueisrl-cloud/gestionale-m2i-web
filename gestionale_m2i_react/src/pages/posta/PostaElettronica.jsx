@@ -234,9 +234,6 @@ export default function PostaElettronica() {
     if (type !== 'custom') {
       setOggetto(templates[type].subject);
       setCorpo(templates[type].body);
-    } else {
-      setOggetto('');
-      setCorpo('');
     }
   };
 
@@ -1411,6 +1408,20 @@ export default function PostaElettronica() {
                       ))}
                     </select>
                   </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: '#cbd5e1' }}>Modello di messaggio</label>
+                  <select
+                    value={selectedTemplate}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px', backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#f8fafc', fontSize: '14px' }}
+                  >
+                    <option value="custom">Messaggio libero</option>
+                    {Object.entries(templates).map(([key, template]) => (
+                      <option key={key} value={key}>{template.label}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Destinatario */}

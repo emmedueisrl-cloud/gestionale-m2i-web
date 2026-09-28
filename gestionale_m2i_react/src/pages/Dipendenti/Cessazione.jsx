@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, UserMinus, Save, Loader2, Calendar, FileText, Search, AlertCircle, CalendarClock } from 'lucide-react';
+import { UserMinus, Loader2, Search, AlertCircle, CalendarClock } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import ModernModal from '../../components/ui/ModernModal';
 import { recuperaElencoDipendenti, recuperaDatiCompletiDipendente, registraCessazione, uploadFile } from '../../api/dipendenti';
@@ -33,7 +33,7 @@ export default function Cessazione() {
         if (idFromUrl) {
           handleSelectChange({ target: { value: idFromUrl } });
         }
-      } catch (error) {
+      } catch  {
         setModal({
           isOpen: true,
           type: 'error',
@@ -45,7 +45,7 @@ export default function Cessazione() {
       }
     }
     loadList();
-  }, []);
+  }, [searchParams]);
 
   // Helper per leggere il tipo contratto indipendentemente dal nome del campo
   const getTipoContratto = (d) => d.tipo_contratto || d.TipoContratto || d.tipoContratto || d.stato || '';

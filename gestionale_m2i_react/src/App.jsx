@@ -1,60 +1,72 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import LoginPage from './pages/LoginPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/AppShell';
-import DashboardPage from './pages/Dashboard/DashboardPage';
 import ComingSoonPage from './components/ComingSoonPage';
-import DipendentiPage from './pages/Dipendenti/DipendentiPage';
-import SchedaDipendente from './pages/Dipendenti/SchedaDipendente';
-import NuovoDipendente from './pages/Dipendenti/NuovoDipendente';
-import ModificaDipendente from './pages/Dipendenti/ModificaDipendente';
-import Proroghe from './pages/Dipendenti/Proroghe';
-import Trasformazione from './pages/Dipendenti/Trasformazione';
-import Cessazione from './pages/Dipendenti/Cessazione';
-import MaggiorazioniDetrazioni from './pages/Dipendenti/MaggiorazioniDetrazioni';
-import Chiavi from './pages/Dipendenti/Chiavi';
+const DashboardPage = lazy(() => import('./pages/Dashboard/DashboardPage'));
+const DipendentiPage = lazy(() => import('./pages/Dipendenti/DipendentiPage'));
+const SchedaDipendente = lazy(() => import('./pages/Dipendenti/SchedaDipendente'));
+const NuovoDipendente = lazy(() => import('./pages/Dipendenti/NuovoDipendente'));
+const ModificaDipendente = lazy(() => import('./pages/Dipendenti/ModificaDipendente'));
+const Proroghe = lazy(() => import('./pages/Dipendenti/Proroghe'));
+const Trasformazione = lazy(() => import('./pages/Dipendenti/Trasformazione'));
+const Cessazione = lazy(() => import('./pages/Dipendenti/Cessazione'));
+const MaggiorazioniDetrazioni = lazy(() => import('./pages/Dipendenti/MaggiorazioniDetrazioni'));
+const Chiavi = lazy(() => import('./pages/Dipendenti/Chiavi'));
 
 // Fase 3
-import RegistroOre from './pages/Ore/RegistroOre';
-import AgendaCaposquadra from './pages/Ore/AgendaCaposquadra';
-import ProspettoSettimanale from './pages/Ore/ProspettoSettimanale';
-import ElaboratoDipendenti from './pages/Elaborati/ElaboratoDipendenti';
-import ElaboratoClienti from './pages/Elaborati/ElaboratoClienti';
+const RegistroOre = lazy(() => import('./pages/Ore/RegistroOre'));
+const AgendaCaposquadra = lazy(() => import('./pages/Ore/AgendaCaposquadra'));
+const ProspettoSettimanale = lazy(() => import('./pages/Ore/ProspettoSettimanale'));
+const ElaboratoDipendenti = lazy(() => import('./pages/Elaborati/ElaboratoDipendenti'));
+const ElaboratoClienti = lazy(() => import('./pages/Elaborati/ElaboratoClienti'));
 
 // Fase 4
-import ClientiPage from './pages/Clienti/ClientiPage';
-import MagazzinoPage from './pages/Magazzino/MagazzinoPage';
-import SchedaCliente from './pages/Clienti/SchedaCliente';
-import NuovoCliente from './pages/Clienti/NuovoCliente';
-import ModificaCliente from './pages/Clienti/ModificaCliente';
-import ScontiMaggiorazioniClienti from './pages/Clienti/ScontiMaggiorazioniClienti';
-import Fatture from './pages/Commerciale/Fatture';
-import Pagamenti from './pages/Commerciale/Pagamenti';
-import Provvigioni from './pages/Commerciale/Provvigioni';
-
-import Preventivi from './pages/Commerciale/Preventivi';
+const ClientiPage = lazy(() => import('./pages/Clienti/ClientiPage'));
+const MagazzinoPage = lazy(() => import('./pages/Magazzino/MagazzinoPage'));
+const SchedaCliente = lazy(() => import('./pages/Clienti/SchedaCliente'));
+const NuovoCliente = lazy(() => import('./pages/Clienti/NuovoCliente'));
+const ModificaCliente = lazy(() => import('./pages/Clienti/ModificaCliente'));
+const ScontiMaggiorazioniClienti = lazy(() => import('./pages/Clienti/ScontiMaggiorazioniClienti'));
+const Fatture = lazy(() => import('./pages/Commerciale/Fatture'));
+const Pagamenti = lazy(() => import('./pages/Commerciale/Pagamenti'));
+const Provvigioni = lazy(() => import('./pages/Commerciale/Provvigioni'));
+const Preventivi = lazy(() => import('./pages/Commerciale/Preventivi'));
 
 // Fase 5
-import BustePaga from './pages/BustePaga/BustePaga';
-import ModuliDipendenti from './pages/Dipendenti/ModuliDipendenti';
-import SchedaAzienda from './pages/Azienda/SchedaAzienda';
+const BustePaga = lazy(() => import('./pages/BustePaga/BustePaga'));
+const ModuliDipendenti = lazy(() => import('./pages/Dipendenti/ModuliDipendenti'));
+const SchedaAzienda = lazy(() => import('./pages/Azienda/SchedaAzienda'));
 
 // AI
-import ReportIA from './pages/Report/ReportIA';
+const ReportIA = lazy(() => import('./pages/Report/ReportIA'));
 
 // Posta
-import PostaElettronica from './pages/posta/PostaElettronica';
-import EmailConfig from './pages/Impostazioni/EmailConfig';
+const PostaElettronica = lazy(() => import('./pages/posta/PostaElettronica'));
+const EmailConfig = lazy(() => import('./pages/Impostazioni/EmailConfig'));
 
 // Impostazioni
-import ImpostazioniLayout from './pages/Impostazioni/ImpostazioniLayout';
-import LogSistema from './pages/Impostazioni/LogSistema';
-import BackupSistema from './pages/Impostazioni/BackupSistema';
+const ImpostazioniLayout = lazy(() => import('./pages/Impostazioni/ImpostazioniLayout'));
+const LogSistema = lazy(() => import('./pages/Impostazioni/LogSistema'));
+const BackupSistema = lazy(() => import('./pages/Impostazioni/BackupSistema'));
+const Utenti = lazy(() => import('./pages/Impostazioni/Utenti'));
+const ContabilitaElaborati = lazy(() => import('./pages/Contabilita/ContabilitaElaborati'));
 
 function App() {
   return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 text-slate-200 flex items-center justify-center">Caricamento...</div>}>
     <Routes>
       <Route path="/" element={<LoginPage />} />
+      <Route path="/contabilita" element={
+        <ProtectedRoute allowedRoles={['admin', 'user', 'contabilita']}>
+          <AppShell area="contabilita" />
+        </ProtectedRoute>
+      }>
+        <Route index element={<Navigate to="clienti" replace />} />
+        <Route path="clienti" element={<ContabilitaElaborati tipo="cliente" />} />
+        <Route path="dipendenti" element={<ContabilitaElaborati tipo="dipendente" />} />
+      </Route>
       <Route path="/admin" element={
         <ProtectedRoute>
           <AppShell area="amministrazione" />
@@ -106,9 +118,11 @@ function App() {
         
         {/* Impostazioni di Sistema */}
         <Route path="impostazioni" element={<ImpostazioniLayout />}>
+          <Route index element={<Navigate to="utenti" replace />} />
           <Route path="email" element={<EmailConfig />} />
           <Route path="log" element={<LogSistema />} />
           <Route path="backup" element={<BackupSistema />} />
+          <Route path="utenti" element={<Utenti />} />
         </Route>
 
         {/* Tutte le altre route per ora mostrano "In costruzione" */}
@@ -116,6 +130,7 @@ function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   );
 }
 

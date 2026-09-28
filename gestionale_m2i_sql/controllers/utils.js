@@ -1,5 +1,3 @@
-const { knex } = require('../db');
-
 module.exports = {
   async recuperaDatiInizialiCrm() {
     return { commerciali: [], outbound: [], pipeline: [], appuntamenti: [] };
@@ -36,26 +34,5 @@ module.exports = {
   },
   async generaReportDirezionalePdf() { return "http://localhost:3000/App.html"; },
   async esportaGoogleSheetElaborato() { return "http://localhost:3000/"; },
-  async esportaGoogleSheetElaboratoClienti() { return "http://localhost:3000/"; },
-
-  // Svuota tutte le tabelle per i test di collaudo
-  async resetDatabaseForTest() {
-    console.log("[TEST] Svuotamento di tutte le tabelle in corso...");
-    await knex.raw("PRAGMA foreign_keys = OFF;");
-    const tables = [
-      "dipendenti", "clienti", "registro_ore", "fatture", "buste_paga",
-      "programma_fisso", "agenda_caposquadra", "preventivi",
-      "crm_outbound", "crm_commerciali", "crm_pipeline", "crm_appuntamenti_commerciali", "crm_preventivi_commerciali",
-      "mesi_chiusi_dipendenti", "dettaglio_mesi_chiusi_dipendenti", "mesi_chiusi_clienti", "dettaglio_mesi_chiusi_clienti",
-      "mesi_chiusi_provvigioni", "dettaglio_mesi_chiusi_provvigioni", "log_attivita",
-      "regolazioni_stipendi", "regolazioni_clienti", "regolazioni_provvigioni"
-    ];
-    for (const t of tables) {
-      await knex(t).del();
-      await knex.raw(`DELETE FROM sqlite_sequence WHERE name='${t}'`);
-    }
-    await knex.raw("PRAGMA foreign_keys = ON;");
-    console.log("[TEST] Svuotamento completato.");
-    return true;
-  }
+  async esportaGoogleSheetElaboratoClienti() { return "http://localhost:3000/"; }
 };

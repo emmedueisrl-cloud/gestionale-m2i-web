@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Settings2, Save, Loader2, ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { recuperaElencoClienti, recuperaRegolazioniClienti, salvaRegolazioneCliente, eliminaRegolazioneCliente } from '../../api/clienti';
@@ -60,11 +60,7 @@ export default function ScontiMaggiorazioniClienti() {
     loadFiltri();
   }, []);
 
-  useEffect(() => {
-    caricaRegolazioni();
-  }, [mese, anno, idClienteSelezionato]);
-
-  async function caricaRegolazioni() {
+  const caricaRegolazioni = useCallback(async () => {
     setIsLoading(true);
     try {
       const dati = await recuperaRegolazioniClienti(idClienteSelezionato || '', mese, anno);
@@ -82,7 +78,11 @@ export default function ScontiMaggiorazioniClienti() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [idClienteSelezionato, mese, anno]);
+
+  useEffect(() => {
+    caricaRegolazioni();
+  }, [caricaRegolazioni]);
 
   const handleSalva = async () => {
     if (!idClienteSelezionato || !nuovaRegolazione.importo) {

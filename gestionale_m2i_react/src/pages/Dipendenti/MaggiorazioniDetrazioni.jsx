@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { DollarSign, Save, Loader2, Search, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { DollarSign, Save, Loader2, Plus, Trash2 } from 'lucide-react';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { recuperaRegolazioniStipendi, salvaRegolazioneStipendio, eliminaRegolazioneStipendio } from '../../api/ore'; // Assuming endpoints will be here
 import ModernModal from '../../components/ui/ModernModal';
@@ -45,11 +45,7 @@ export default function MaggiorazioniDetrazioni() {
 
   const [idDipendenteSelezionato, setIdDipendenteSelezionato] = useState('');
 
-  useEffect(() => {
-    caricaRegolazioni();
-  }, [mese, anno, idDipendenteSelezionato]);
-
-  async function caricaRegolazioni() {
+  const caricaRegolazioni = useCallback(async () => {
     if (!idDipendenteSelezionato) {
       setRegolazioni([]);
       return;
@@ -71,7 +67,11 @@ export default function MaggiorazioniDetrazioni() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [idDipendenteSelezionato, mese, anno]);
+
+  useEffect(() => {
+    caricaRegolazioni();
+  }, [caricaRegolazioni]);
 
   const handleSalva = async () => {
     if (!idDipendenteSelezionato || !nuovaRegolazione.importo) {

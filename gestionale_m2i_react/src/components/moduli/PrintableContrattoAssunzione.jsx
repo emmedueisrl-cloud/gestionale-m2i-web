@@ -1,5 +1,6 @@
 import React from 'react';
 import RegolamentoInterno from './RegolamentoInterno';
+import { companyStampUrl } from '../../utils/companyStampUrl';
 
 export default function PrintableContrattoAssunzione({ formData, aziendaData }) {
   if (!formData) return null;
@@ -16,7 +17,7 @@ export default function PrintableContrattoAssunzione({ formData, aziendaData }) 
   const obbligato = isMaschio ? 'obbligato' : 'obbligata';
   const autorizzato = isMaschio ? 'autorizzato' : 'autorizzata';
 
-  const timbroUrl = aziendaData?.timbro_path ? `/${aziendaData.timbro_path.replace(/\\/g, '/')}` : null;
+  const timbroUrl = companyStampUrl(aziendaData?.timbro_path);
 
   return (
     <div id="contratto-assunzione-pdf" className="print-only bg-white text-black p-10 max-w-4xl mx-auto min-h-screen text-[14px] leading-relaxed font-sans relative">

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Package, Plus, Link2, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Package, Plus, Trash2 } from 'lucide-react';
 import { getAttrezzatureCliente, eliminaAttrezzatura } from '../../api/magazzino';
 import NuovaAttrezzaturaModal from '../../pages/Magazzino/NuovaAttrezzaturaModal';
 import ModernModal from '../ui/ModernModal';
@@ -10,7 +10,7 @@ export default function AttrezzatureCliente({ clienteId }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const data = await getAttrezzatureCliente(clienteId);
@@ -20,13 +20,13 @@ export default function AttrezzatureCliente({ clienteId }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [clienteId]);
 
   useEffect(() => {
     if (clienteId) {
       loadData();
     }
-  }, [clienteId]);
+  }, [clienteId, loadData]);
 
   const handleRimozione = (id) => {
     setModal({
@@ -41,7 +41,7 @@ export default function AttrezzatureCliente({ clienteId }) {
           try {
             await eliminaAttrezzatura(id);
             loadData();
-          } catch (err) {
+          } catch  {
             setModal({
               isOpen: true,
               type: 'error',
@@ -107,7 +107,7 @@ export default function AttrezzatureCliente({ clienteId }) {
                     {att.foto.map((url, i) => (
                       <img 
                         key={i} 
-                        src={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${url}`} 
+                        src={`${import.meta.env.VITE_API_URL || ''}${url}`}
                         alt="Foto att" 
                         className="w-12 h-12 rounded-lg object-cover border border-slate-700" 
                       />

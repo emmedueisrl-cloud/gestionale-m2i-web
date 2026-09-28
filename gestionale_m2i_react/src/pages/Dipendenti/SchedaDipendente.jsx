@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { attachmentUrl } from '../../utils/attachmentUrl';
 import { useParams, useNavigate } from 'react-router-dom';
-import { User, Phone, Mail, MapPin, Briefcase, Calendar, CreditCard, ArrowLeft, Loader2, Edit, FileText, Download, Trash2, CalendarDays, Key } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Briefcase, Calendar, ArrowLeft, Loader2, Edit, FileText, Download, Trash2, CalendarDays, Key } from 'lucide-react';
 import { recuperaDatiCompletiDipendente, recuperaDocumentiDipendente, eliminaDocumentoDipendente, recuperaStoricoChiaviDipendente } from '../../api/dipendenti';
 import ModernModal from '../../components/ui/ModernModal';
 import ProgrammaFissoModal from '../../components/ui/ProgrammaFissoModal';
@@ -29,7 +30,7 @@ export default function SchedaDipendente() {
         setData(dip);
         setDocumenti(docs || []);
         setChiavi(chiaviAssegnate || []);
-      } catch (err) {
+      } catch  {
         setError('Dipendente non trovato o errore di caricamento.');
       } finally {
         setIsLoading(false);
@@ -55,7 +56,7 @@ export default function SchedaDipendente() {
             await eliminaDocumentoDipendente(id, nomeFile);
             const docs = await recuperaDocumentiDipendente(id);
             setDocumenti(docs || []);
-          } catch (err) {
+          } catch  {
             setModal({
               isOpen: true,
               type: 'error',
@@ -336,7 +337,7 @@ export default function SchedaDipendente() {
               {documenti.map((doc, index) => (
                 <div key={index} className="flex relative items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700 hover:border-indigo-500 hover:bg-slate-800 transition-all group">
                   <a 
-                    href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${doc.path}`} 
+                    href={attachmentUrl(doc.path)}
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="flex items-center gap-3 w-full"

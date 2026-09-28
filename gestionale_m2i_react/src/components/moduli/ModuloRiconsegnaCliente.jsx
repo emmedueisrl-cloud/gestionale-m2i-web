@@ -1,7 +1,9 @@
 import React from 'react';
+import { companyStampUrl } from '../../utils/companyStampUrl';
 
 export default function ModuloRiconsegnaCliente({ clienteData, aziendaData, infoRiconsegna }) {
   if (!clienteData) return null;
+  const timbroUrl = companyStampUrl(aziendaData?.timbro_path);
 
   const formatDate = (isoString) => {
     if (!isoString) return '';
@@ -65,7 +67,7 @@ export default function ModuloRiconsegnaCliente({ clienteData, aziendaData, info
           <p className="mb-16 font-bold">Per {aziendaData?.ragione_sociale || 'M2I S.R.L.'} (Consegnatario)</p>
           
           <div className="absolute top-8 left-1/2 -translate-x-1/2 opacity-90 mix-blend-multiply flex items-center justify-center h-24">
-            <img src="/timbro.png" alt="Timbro" className="max-h-24 max-w-full" />
+            {timbroUrl && <img src={timbroUrl} alt="Timbro" className="max-h-24 max-w-full" />}
           </div>
           
           <p className="text-sm border-t border-black pt-2 w-48 mx-auto">(Timbro e Firma)</p>

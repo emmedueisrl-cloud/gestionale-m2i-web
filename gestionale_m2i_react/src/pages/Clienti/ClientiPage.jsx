@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Building2, Loader2, Plus, Eye, Edit, Trash2, Power } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable';
@@ -11,9 +11,8 @@ export default function ClientiPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [viewCestino, setViewCestino] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
-  const [actionCliente, setActionCliente] = useState(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       let data = [];
@@ -28,11 +27,11 @@ export default function ClientiPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [viewCestino]);
 
   useEffect(() => {
     loadData();
-  }, [viewCestino]);
+  }, [loadData]);
 
   const handleElimina = async (idToEliminate) => {
     if (!idToEliminate) return;
@@ -47,7 +46,6 @@ export default function ClientiPage() {
           label: 'Chiudi',
           onClick: () => {
             setModal({ isOpen: false });
-            setActionCliente(null);
             loadData();
           }
         }
@@ -67,7 +65,7 @@ export default function ClientiPage() {
     try {
       await cessaCliente(id);
       loadData();
-    } catch (error) {
+    } catch  {
       setModal({
         isOpen: true,
         type: 'error',
@@ -82,7 +80,7 @@ export default function ClientiPage() {
     try {
       await riattivaCliente(id);
       loadData();
-    } catch (error) {
+    } catch  {
       setModal({
         isOpen: true,
         type: 'error',
@@ -97,7 +95,7 @@ export default function ClientiPage() {
     try {
       await ripristinaCliente(cli.id);
       loadData();
-    } catch (error) {
+    } catch  {
       setModal({
         isOpen: true,
         type: 'error',
@@ -151,7 +149,6 @@ export default function ClientiPage() {
               {row.attivo !== 'Cessato' ? (
                 <button 
                   onClick={() => {
-                    setActionCliente(row);
                     setModal({
                       isOpen: true,
                       type: 'warning',
@@ -161,7 +158,6 @@ export default function ClientiPage() {
                         label: 'Cessa Cliente',
                         onClick: () => {
                           setModal({ isOpen: false });
-                          setActionCliente(null);
                           handleCessa(row.id);
                         }
                       },
@@ -169,7 +165,6 @@ export default function ClientiPage() {
                         label: 'Annulla',
                         onClick: () => {
                           setModal({ isOpen: false });
-                          setActionCliente(null);
                         }
                       }
                     });
@@ -191,7 +186,6 @@ export default function ClientiPage() {
 
               <button 
                 onClick={() => {
-                  setActionCliente(row);
                   setModal({
                     isOpen: true,
                     type: 'warning',
@@ -205,7 +199,6 @@ export default function ClientiPage() {
                       label: 'Annulla',
                       onClick: () => {
                         setModal({ isOpen: false });
-                        setActionCliente(null);
                       }
                     }
                   });

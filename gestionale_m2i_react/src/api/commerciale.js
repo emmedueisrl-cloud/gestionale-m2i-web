@@ -14,18 +14,21 @@ export async function aggiornaStatoFattura(idFattura, stato) {
   return await apiCall('aggiornaStatoFattura', [idFattura, stato]);
 }
 
-export async function uploadFatturaXml(file) {
+export async function uploadFatturaXml(file, scelta) {
   const formData = new FormData();
   formData.append('file', file);
+  if (scelta) formData.append('scelta', scelta);
   
   const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/upload-fattura-xml', {
     method: 'POST',
     body: formData
   });
-  if (!res.ok) {
-    throw new Error(`HTTP error! status: ${res.status}`);
-  }
   const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.error || `Errore HTTP ${res.status}`);
+    error.conflitti = data.conflitti;
+    throw error;
+  }
   if (!data.success) {
     throw new Error(data.error || 'Errore durante l\'importazione della fattura XML');
   }
@@ -52,16 +55,18 @@ export async function anteprimaFattureCsv(file, mese, anno) {
   return data;
 }
 
-export async function confermaFattureCsv(fatture) {
+export async function confermaFattureCsv(fatture, risoluzioni = {}, mese, anno) {
   const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/conferma-fatture-csv', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fatture })
+    body: JSON.stringify({ fatture, risoluzioni, mese, anno })
   });
-  if (!res.ok) {
-    throw new Error(`HTTP error! status: ${res.status}`);
-  }
   const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.error || `Errore HTTP ${res.status}`);
+    error.conflitti = data.conflitti;
+    throw error;
+  }
   if (!data.success) {
     throw new Error(data.error || 'Errore durante la conferma del file CSV');
   }
@@ -111,16 +116,18 @@ export async function anteprimaFattureXml(files, mese, anno) {
   return data;
 }
 
-export async function confermaFattureXml(righe, aggiornamenti_clienti) {
+export async function confermaFattureXml(righe, aggiornamenti_clienti, risoluzioni = {}, mese, anno) {
   const res = await fetch((import.meta.env.VITE_API_URL || '') + '/api/conferma-fatture-xml', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ righe, aggiornamenti_clienti })
+    body: JSON.stringify({ righe, aggiornamenti_clienti, risoluzioni, mese, anno })
   });
-  if (!res.ok) {
-    throw new Error(`HTTP error! status: ${res.status}`);
-  }
   const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.error || `Errore HTTP ${res.status}`);
+    error.conflitti = data.conflitti;
+    throw error;
+  }
   if (!data.success) {
     throw new Error(data.error || 'Errore durante il salvataggio dei file XML');
   }

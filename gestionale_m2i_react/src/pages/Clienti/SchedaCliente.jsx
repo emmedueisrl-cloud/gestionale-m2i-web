@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { attachmentUrl } from '../../utils/attachmentUrl';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Building2, Phone, Mail, MapPin, Landmark, ArrowLeft, Loader2, Edit, FileText, Download, Trash2, Camera, User, Key } from 'lucide-react';
 import { recuperaDatiCompletiCliente, recuperaDocumentiCliente, eliminaDocumentoCliente, recuperaStoricoChiaviCliente } from '../../api/clienti';
@@ -54,7 +55,7 @@ export default function SchedaCliente() {
             await eliminaDocumentoCliente(id, nomeFile);
             const docs = await recuperaDocumentiCliente(id);
             setDocumenti(docs || []);
-          } catch (err) {
+          } catch  {
             setModal({
               isOpen: true,
               type: 'error',
@@ -375,9 +376,8 @@ export default function SchedaCliente() {
                               </div>
                               
                               <div className="pl-4 border-l-2 border-slate-700 space-y-3 relative ml-2">
-                                {movimenti.map((mov, idx) => {
+                                {movimenti.map((mov) => {
                                   const nomeDisplay = mov.possessore_nome;
-                                  const isUltimo = idx === movimenti.length - 1;
                                   const isAttivo = mov.attivo === 1;
 
                                   return (
@@ -444,7 +444,7 @@ export default function SchedaCliente() {
                 {documenti.map((doc, index) => (
                   <div key={index} className="flex relative items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700 hover:border-indigo-500 hover:bg-slate-800 transition-all group">
                     <a 
-                      href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${doc.path}`} 
+                      href={attachmentUrl(doc.path)}
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="flex items-center gap-3 w-full"
@@ -493,7 +493,7 @@ export default function SchedaCliente() {
                 {fotoServizio.map((url, index) => (
                   <div key={index} className="aspect-square bg-slate-900 rounded-xl overflow-hidden border border-slate-700">
                     <img 
-                      src={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${url.replace(/^\/?/, '')}`} 
+                      src={`${import.meta.env.VITE_API_URL || ''}/${url.replace(/^\/?/, '')}`}
                       alt={`Foto ${index + 1}`} 
                       className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
                     />

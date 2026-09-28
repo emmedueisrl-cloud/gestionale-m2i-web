@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext, forwardRef, useImperativeHandle } from 'react';
 import { User, Briefcase, FileText, FileSignature, Save, X, CalendarDays, FileStack, Download, Trash2 } from 'lucide-react';
-import { TopbarContext } from '../../context/TopbarContext';
+import { TopbarContext } from '../../context/topbarContextValue';
 import { useNavigate } from 'react-router-dom';
 import FileUploader from './FileUploader';
 import ModernModal from './ModernModal';
@@ -22,7 +22,7 @@ const INITIAL_STATE = {
   Note: ''
 };
 
-const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, onSubmit, onCancel, onOpenProgrammaFisso, hasProgrammaFisso = false, onGenerateAssunzione, documentiEsistenti = [], onDeleteDocument }, ref) => {
+const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, initialDivisione = 'Esterno', onDivisioneChange, onSubmit, onCancel, onOpenProgrammaFisso, hasProgrammaFisso = false, onGenerateAssunzione, documentiEsistenti = [], onDeleteDocument }, ref) => {
   useImperativeHandle(ref, () => ({
     triggerCancel: () => mode === 'inserimento' ? setDraftModal(true) : onCancel(),
     clearFiles: () => {
@@ -32,16 +32,12 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
       setFileAltro(null);
     }
   }));
-  const [formData, setFormData] = useState(INITIAL_STATE);
+  const [formData, setFormData] = useState(() => ({ ...INITIAL_STATE, divisione: initialDivisione }));
   const [inProva, setInProva] = useState(false);
   const [fileDocs, setFileDocs] = useState(null);
   const [fileContratto, setFileContratto] = useState(null);
   const [fileUnilav, setFileUnilav] = useState(null);
   const [fileAltro, setFileAltro] = useState(null);
-  const [nomeFileAltro, setNomeFileAltro] = useState('');
-  
-  // Custom Modal per nome file generico
-  const [altroModal, setAltroModal] = useState({ isOpen: false, pendingFile: null, tempName: '' });
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
   
   const [draftModal, setDraftModal] = useState(false);
@@ -140,6 +136,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
       }
       return updated;
     });
+    if (name === 'divisione') onDivisioneChange?.(newValue);
 
     // Validate on change
     const error = validateField(name, newValue);
@@ -187,7 +184,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
     }
 
     const payload = { ...formData, isBozza };
-    onSubmit(payload, fileDocs, fileContratto, fileUnilav, fileAltro, nomeFileAltro || 'Documento_Generico');
+    onSubmit(payload, fileDocs, fileContratto, fileUnilav, fileAltro, 'Documento_Generico');
   };
 
   const handleAltroSelect = (file) => {
@@ -405,7 +402,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
                   {documentiEsistenti.map((doc, index) => (
                     <div key={index} className="flex relative items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-slate-700 hover:border-indigo-500 hover:bg-slate-800 transition-all group">
                       <a 
-                        href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${doc.path}`} 
+                        href={`${import.meta.env.VITE_API_URL || ''}${doc.path}`}
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 w-full"
@@ -457,7 +454,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, o
             <div className="border-t border-slate-700/50 pt-6">
               <div className="max-w-md">
                 <FileUploader 
-                  label={`Altri Documenti (${nomeFileAltro ? nomeFileAltro.replace(/_/g, ' ') : 'Generici'})`} 
+                  label="Altri Documenti (Generici)"
                   file={fileAltro} 
                   onFileSelect={handleAltroSelect} 
                   multiple={true}

@@ -245,12 +245,21 @@ module.exports = {
     let limit = 50;
     
     // Check if arguments were passed
-    if (Array.isArray(req) && req.length > 0) {
+    if (typeof req === 'number' || typeof req === 'string') {
+      page = Number(req) || 1;
+      limit = Number(res) || 50;
+    } else if (Array.isArray(req) && req.length > 0) {
       page = req[0] || 1;
       limit = req[1] || 50;
     } else if (req && req.page) {
       page = req.page;
       limit = req.limit || 50;
+    }
+
+    page = Number(page);
+    limit = Number(limit);
+    if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error('Pagina o limite dei log non valido');
     }
 
     const offset = (page - 1) * limit;
@@ -294,10 +303,7 @@ module.exports = {
     };
   },
 
-  async svuotaLogSistema(password) {
-    if (password !== '8989') {
-      throw new Error("Password non valida per il reset dei log.");
-    }
+  async svuotaLogSistema() {
     await knex('log_attivita').del();
     return { success: true, message: "Log svuotati con successo." };
   }

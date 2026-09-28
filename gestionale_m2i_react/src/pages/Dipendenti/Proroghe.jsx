@@ -34,7 +34,7 @@ export default function Proroghe() {
           setSelectedId(idFromUrl);
           handleSelectChange({ target: { value: idFromUrl } });
         }
-      } catch (error) {
+      } catch  {
         setModal({
           isOpen: true,
           type: 'error',

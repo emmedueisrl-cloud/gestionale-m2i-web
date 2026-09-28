@@ -1,13 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Search, Loader2, DollarSign, CalendarClock } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { CreditCard, Loader2, DollarSign } from 'lucide-react';
 import { recuperaPagamenti, registraPagamento } from '../../api/commerciale';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
 
 export default function Pagamenti() {
-  const navigate = useNavigate();
-  
   const [pagamenti, setPagamenti] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [modalState, setModalState] = useState({ isOpen: false, type: '', message: '' });
@@ -16,7 +13,16 @@ export default function Pagamenti() {
     setIsLoading(true);
     try {
       const dati = await recuperaPagamenti();
-      setPagamenti(dati || []);
+      setPagamenti((dati?.fatture || []).map(f => ({
+        idFattura: f.id,
+        cliente: f.ragioneSociale,
+        numeroFattura: f.numeroFattura,
+        dataEmissione: f.dataFattura,
+        dataScadenza: f.dataScadenza,
+        importo: Number(f.importoTotale || 0),
+        importoPagato: Number(f.importoPagato || 0),
+        stato: f.statoPagamento === 'Pagata' ? 'Saldato' : f.statoPagamento
+      })));
     } catch (err) {
       console.error(err);
     } finally {
@@ -36,8 +42,26 @@ export default function Pagamenti() {
       setModalState({ isOpen: true, type: 'success', message: 'Incasso registrato con successo.' });
     } catch (err) {
       console.error(err);
-      setModalState({ isOpen: true, type: 'error', message: 'Errore registrazione.' });
+      setModalState({ isOpen: true, type: 'error', message: err.message || 'Errore registrazione.' });
     }
+  };
+
+  const proponiIncasso = row => {
+    const residuo = Math.round((row.importo - row.importoPagato) * 100) / 100;
+    if (residuo <= 0) {
+      setModalState({ isOpen: true, type: 'warning', message: 'Questa fattura non ha un residuo da incassare.' });
+      return;
+    }
+    if (residuo < row.importo) {
+      setModalState({
+        isOpen: true, type: 'warning',
+        message: `Incongruenza: la fattura è di € ${row.importo.toFixed(2)}, ma sono già stati registrati € ${row.importoPagato.toFixed(2)}. Il residuo è € ${residuo.toFixed(2)}. Vuoi registrare soltanto il residuo?`,
+        primaryAction: { label: `Incassa € ${residuo.toFixed(2)}`, onClick: () => { setModalState({ isOpen: false }); void handleRegistraIncasso(row.idFattura, residuo); } },
+        secondaryAction: { label: 'Annulla', onClick: () => setModalState({ isOpen: false }) }
+      });
+      return;
+    }
+    void handleRegistraIncasso(row.idFattura, residuo);
   };
 
   const columns = [
@@ -77,7 +101,7 @@ export default function Pagamenti() {
         <div className="flex items-center gap-2">
           {row.stato !== 'Saldato' && (
             <button 
-              onClick={() => handleRegistraIncasso(row.idFattura, row.importo)}
+              onClick={() => proponiIncasso(row)}
               className="flex items-center gap-1.5 p-2 bg-slate-900 border border-slate-700 text-emerald-400 hover:text-emerald-300 hover:border-emerald-500/50 hover:bg-emerald-500/10 rounded-lg transition-all shadow-sm text-xs font-bold uppercase tracking-wider"
               title="Registra Incasso Completo"
             >
@@ -89,8 +113,8 @@ export default function Pagamenti() {
     }
   ];
 
-  const statSaldati = pagamenti.filter(p => p.stato === 'Saldato').reduce((acc, p) => acc + parseFloat(p.importo), 0);
-  const statDaIncassare = pagamenti.filter(p => p.stato !== 'Saldato').reduce((acc, p) => acc + parseFloat(p.importo), 0);
+  const statSaldati = pagamenti.reduce((acc, p) => acc + p.importoPagato, 0);
+  const statDaIncassare = pagamenti.reduce((acc, p) => acc + Math.max(0, p.importo - p.importoPagato), 0);
 
   return (
     <div className="p-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col">
@@ -136,6 +160,8 @@ export default function Pagamenti() {
         type={modalState.type}
         title={modalState.type === 'error' ? 'Errore' : 'Avviso'}
         message={modalState.message}
+        primaryAction={modalState.primaryAction}
+        secondaryAction={modalState.secondaryAction}
         onClose={() => setModalState({ ...modalState, isOpen: false })}
       />
     </div>

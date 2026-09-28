@@ -47,6 +47,10 @@ export default function RegistroOre() {
   const [selectedDayIndex, setSelectedDayIndex] = useState(null);
 
   const [isSaving, setIsSaving] = useState(false);
+  const saveQueueRef = useRef(Promise.resolve());
+  const pendingSavesRef = useRef(0);
+  const editVersionRef = useRef(0);
+  const autosaveTimerRef = useRef(null);
   const [modalState, setModalState] = useState({ isOpen: false, type: '', message: '' });
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [scaricaModalOpen, setScaricaModalOpen] = useState(false);
@@ -64,17 +68,6 @@ export default function RegistroOre() {
 
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saving', 'saved', 'error'
 
-  // Autosave
-  useEffect(() => {
-    if (!isDirty || !metodoInserimento) return;
-    
-    const timeout = setTimeout(() => {
-      salvaOre(true);
-    }, 1500);
-
-    return () => clearTimeout(timeout);
-  }, [giorniData, totaleMensileData, isDirty, metodoInserimento]);
-  
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -87,7 +80,7 @@ export default function RegistroOre() {
     formData.append('anno', anno);
     
     try {
-      const res = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3000') + (import.meta.env.VITE_API_URL || '') + '/api/excel/carica-presenze', {
+      const res = await fetch(`${(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')}/api/excel/carica-presenze`, {
         method: 'POST',
         body: formData
       });
@@ -324,8 +317,15 @@ export default function RegistroOre() {
     }
   };
 
-  const salvaOre = async (isAutosave = false) => {
+  const salvaOre = useCallback(async (isAutosave = false) => {
     if (!idDipendente || !metodoInserimento) return;
+    if (!isAutosave && autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    const editVersion = editVersionRef.current;
+    pendingSavesRef.current += 1;
+    setIsSaving(true);
     setSaveStatus('saving');
     try {
       let payload;
@@ -352,20 +352,42 @@ export default function RegistroOre() {
         };
       }
       
-      await salvaRegistroOreMensili(payload);
-      setIsDirty(false);
-      setSaveStatus('saved');
+      const saveTask = saveQueueRef.current.then(() => salvaRegistroOreMensili(payload));
+      saveQueueRef.current = saveTask.catch(() => {});
+      await saveTask;
+      if (editVersion === editVersionRef.current) {
+        setIsDirty(false);
+        setSaveStatus('saved');
+      }
       if (!isAutosave) {
         setModalState({ isOpen: true, type: 'success', message: 'Ore mensili salvate con successo!' });
       }
     } catch (err) {
       console.error(err);
-      setSaveStatus('error');
+      if (editVersion === editVersionRef.current && pendingSavesRef.current === 1) setSaveStatus('error');
       if (!isAutosave) {
         setModalState({ isOpen: true, type: 'error', message: 'Errore nel salvataggio delle ore.' });
       }
+    } finally {
+      pendingSavesRef.current -= 1;
+      setIsSaving(pendingSavesRef.current > 0);
     }
-  };
+  }, [idDipendente, metodoInserimento, mese, anno, totaleMensileData, giorniData, calendarToRighe]);
+
+  useEffect(() => {
+    editVersionRef.current += 1;
+  }, [idDipendente, mese, anno, metodoInserimento, giorniData, totaleMensileData]);
+
+  useEffect(() => {
+    if (!isDirty || !metodoInserimento) return;
+
+    const timeout = setTimeout(() => salvaOre(true), 1500);
+    autosaveTimerRef.current = timeout;
+    return () => {
+      clearTimeout(timeout);
+      if (autosaveTimerRef.current === timeout) autosaveTimerRef.current = null;
+    };
+  }, [isDirty, metodoInserimento, salvaOre]);
 
   const handleResetMetodo = async () => {
     setResetModalOpen(false);
@@ -680,7 +702,7 @@ export default function RegistroOre() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {totaleMensileData.map((riga, index) => (
+                    {totaleMensileData.map((riga) => (
                       <div key={riga.id} className="flex flex-wrap md:flex-nowrap gap-3 items-center bg-slate-900/80 p-3 rounded-lg border border-slate-700">
                         <div className="w-full md:w-1/3">
                           <label className="block text-xs font-medium text-slate-400 mb-1">Cliente / Destinazione</label>
@@ -881,9 +903,12 @@ export default function RegistroOre() {
 
         {/* Footer Actions */}
         {idDipendente && metodoInserimento && !isReadOnly && (
-          <div className="p-4 border-t border-slate-700 bg-slate-800 flex justify-end">
+          <div className="p-4 border-t border-slate-700 bg-slate-800 flex justify-end items-center gap-4">
+            <span role="status" aria-live="polite" className={saveStatus === 'error' ? 'text-sm text-red-400' : isDirty ? 'text-sm text-amber-400' : 'text-sm text-slate-400'}>
+              {isSaving ? 'Salvataggio in corso...' : saveStatus === 'error' ? 'Salvataggio non riuscito' : isDirty ? 'Modifiche da salvare' : 'Salvato'}
+            </span>
             <button 
-              onClick={salvaOre}
+              onClick={() => salvaOre(false)}
               disabled={isSaving}
               className={`flex items-center gap-2 text-white px-6 py-2.5 rounded-xl font-semibold transition-colors shadow-sm disabled:opacity-50
                 ${metodoInserimento === 'Mensile Totale' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}
@@ -1063,14 +1088,14 @@ export default function RegistroOre() {
         primaryAction={{
           label: "Sì, precompila",
           onClick: () => {
-            window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/excel/scarica-presenze?mese=${mese}&anno=${anno}&dipendente_id=${idDipendente}&precompila=true`);
+            window.open(`${import.meta.env.VITE_API_URL || ''}/api/excel/scarica-presenze?mese=${mese}&anno=${anno}&dipendente_id=${idDipendente}&precompila=true`);
             setScaricaModalOpen(false);
           }
         }}
         secondaryAction={{
           label: "No, vuoto",
           onClick: () => {
-            window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/excel/scarica-presenze?mese=${mese}&anno=${anno}&dipendente_id=${idDipendente}&precompila=false`);
+            window.open(`${import.meta.env.VITE_API_URL || ''}/api/excel/scarica-presenze?mese=${mese}&anno=${anno}&dipendente_id=${idDipendente}&precompila=false`);
             setScaricaModalOpen(false);
           }
         }}

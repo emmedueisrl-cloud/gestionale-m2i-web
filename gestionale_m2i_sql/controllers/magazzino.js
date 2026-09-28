@@ -1,6 +1,7 @@
 const { knex, generaIDIncrementale } = require('../db');
 const fs = require('fs');
 const path = require('path');
+const { uploadedPath } = require('../upload_paths');
 
 module.exports = {
   // Ottiene tutto il magazzino
@@ -54,16 +55,17 @@ module.exports = {
   async creaAttrezzatura(req, res) {
     try {
       const { nome, descrizione, codice_custom, cliente_id } = req.body;
+      if (typeof nome !== 'string' || !nome.trim()) return res.status(400).json({ error: 'Il nome dell’attrezzatura è obbligatorio.' });
       const newId = await generaIDIncrementale('magazzino_attrezzature', 'MAG');
 
       let fotoPaths = [];
       if (req.files && req.files.length > 0) {
-        fotoPaths = req.files.map(f => `/uploads/magazzino/${f.filename}`);
+        fotoPaths = req.files.map(f => '/' + uploadedPath(path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads'), f));
       }
 
       const newData = {
         id: newId,
-        nome: nome || '',
+        nome: nome.trim(),
         descrizione: descrizione || '',
         codice_custom: codice_custom || '',
         foto: JSON.stringify(fotoPaths),
@@ -90,12 +92,13 @@ module.exports = {
       const { id } = req.params;
       const { cliente_id } = req.body;
 
-      await knex('magazzino_attrezzature')
+      const aggiornate = await knex('magazzino_attrezzature')
         .where('id', id)
         .update({
           cliente_id: cliente_id || null,
           data_assegnazione: cliente_id ? new Date().toISOString() : null
         });
+      if (!aggiornate) return res.status(404).json({ error: 'Attrezzatura non trovata.' });
 
       await knex('log_attivita').insert({
         categoria: "Magazzino", icona: "🔄", colore: "#f59e0b",

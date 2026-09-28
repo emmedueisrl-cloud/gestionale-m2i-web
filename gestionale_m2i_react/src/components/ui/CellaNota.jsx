@@ -7,7 +7,7 @@ import { Plus, Check, X } from 'lucide-react';
  *   testo: string (nota salvata)
  *   onSave: async (testo) => void
  */
-export default function CellaNota({ testo, onSave }) {
+export default function CellaNota({ testo, notaFissa = '', onSave, readOnly = false }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(testo || '');
   const [isSaving, setIsSaving] = useState(false);
@@ -16,6 +16,10 @@ export default function CellaNota({ testo, onSave }) {
   useEffect(() => {
     setDraft(testo || '');
   }, [testo]);
+
+  useEffect(() => {
+    if (readOnly) setIsEditing(false);
+  }, [readOnly]);
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -45,7 +49,7 @@ export default function CellaNota({ testo, onSave }) {
     }
   };
 
-  if (isEditing) {
+  if (isEditing && !readOnly) {
     return (
       <div className="flex items-start gap-1 min-w-[160px]">
         <textarea
@@ -78,26 +82,17 @@ export default function CellaNota({ testo, onSave }) {
     );
   }
 
-  // Visualizzazione: se non c'è testo mostra +, altrimenti testo troncato cliccabile
-  if (!testo || !testo.trim()) {
-    return (
-      <button
-        onClick={() => setIsEditing(true)}
-        className="flex items-center justify-center w-6 h-6 rounded border border-dashed border-slate-600 text-slate-500 hover:border-indigo-500 hover:text-indigo-400 transition-colors"
-        title="Aggiungi nota"
-      >
-        <Plus className="w-3.5 h-3.5" />
-      </button>
-    );
-  }
-
   return (
-    <button
-      onClick={() => setIsEditing(true)}
-      title={testo}
-      className="max-w-[130px] text-left text-xs text-slate-300 hover:text-indigo-300 truncate block transition-colors"
-    >
-      {testo}
-    </button>
+    <div className="max-w-[220px] text-xs space-y-1">
+      {notaFissa && <div className="text-slate-400 whitespace-pre-wrap break-words" title={notaFissa}>Fissa: {notaFissa}</div>}
+      {testo?.trim() ? (
+        readOnly ? <div className="text-slate-300 whitespace-pre-wrap break-words" title={testo}>Mese: {testo}</div> :
+          <button onClick={() => setIsEditing(true)} title={testo} className="text-left text-slate-300 hover:text-indigo-300 whitespace-pre-wrap break-words">Mese: {testo}</button>
+      ) : !readOnly ? (
+        <button onClick={() => setIsEditing(true)} className="flex items-center gap-1 text-slate-500 hover:text-indigo-400" title="Aggiungi nota del mese">
+          <Plus className="w-3.5 h-3.5" /> Nota del mese
+        </button>
+      ) : null}
+    </div>
   );
 }

@@ -3,7 +3,7 @@ import { X, FileText, User, MapPin, Euro, Briefcase, ListTodo, Building2 } from 
 import { recuperaElencoClienti } from '../../api/clienti';
 import ModernModal from '../../components/ui/ModernModal';
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
 const NuovoPreventivoModal = ({ onClose, onSuccess }) => {
   const [isCliente, setIsCliente] = useState(false);

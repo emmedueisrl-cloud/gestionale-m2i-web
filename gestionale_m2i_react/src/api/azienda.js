@@ -22,7 +22,7 @@ export async function uploadDocumentoAzienda(file, nomeDocumento) {
   formData.append('file', file);
   formData.append('nome', nomeDocumento);
 
-  const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3000') ;
+  const API_URL = import.meta.env.VITE_API_URL || '' ;
   const res = await fetch(`${API_URL}/api/upload`, {
     method: 'POST',
     body: formData
@@ -56,7 +56,7 @@ export async function uploadModuloStandard(file, nomeDocumento) {
   formData.append('file', file);
   formData.append('nome', nomeDocumento);
 
-  const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3000') ;
+  const API_URL = import.meta.env.VITE_API_URL || '' ;
   const res = await fetch(`${API_URL}/api/upload`, {
     method: 'POST',
     body: formData

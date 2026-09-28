@@ -8,7 +8,8 @@ export default function FileUploader({
   maxSizeMB = 10,
   onFileSelect,
   file, // can be single file or array of files
-  multiple = false
+  multiple = false,
+  askRename = true
 }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [error, setError] = useState(null);
@@ -44,7 +45,7 @@ export default function FileUploader({
         let defaultName = f.name.split('.').slice(0, -1).join('.');
         const ext = '.' + f.name.split('.').pop().toLowerCase();
         
-        const userInput = window.prompt(`Scegli il nome per il file:\n(Originale: ${f.name})`, defaultName);
+        const userInput = askRename ? window.prompt(`Scegli il nome per il file:\n(Originale: ${f.name})`, defaultName) : defaultName;
         
         if (userInput !== null) {
           let finalName = userInput.trim();
@@ -72,6 +73,7 @@ export default function FileUploader({
     if (e.target.files && e.target.files.length > 0) {
       processFiles(e.target.files);
     }
+    e.target.value = '';
   };
 
   const handleDrop = (e) => {
@@ -138,9 +140,8 @@ export default function FileUploader({
           <>
             <UploadCloud className={`w-5 h-5 mb-1 ${error ? 'text-red-500' : 'text-indigo-400'}`} />
             <div className={`text-[12.5px] ${error ? 'text-red-400' : 'text-slate-400'}`}>
-              {error ? error : (
-                <>Trascina qui o <b className="text-indigo-400">clicca per sfogliare</b></>
-              )}
+              {error && <div role="alert">{error}</div>}
+              <>Trascina qui o <b className="text-indigo-400">clicca per sfogliare</b></>
             </div>
           </>
         ) : (

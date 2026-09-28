@@ -155,29 +155,55 @@ async function anteprimaFattureCsv(req, res) {
 
 async function confermaFattureCsv(req, res) {
   try {
-    const { fatture } = req.body;
+    const { fatture, risoluzioni = {}, mese, anno } = req.body;
     if (!Array.isArray(fatture)) {
       return res.status(400).json({ success: false, error: 'Dati non validi.' });
     }
 
     let inserite = 0;
+    let riconciliate = 0;
+    const mantenute = [];
+    const { reconcileOfficial, normalizedDate } = require('../fatture_reconciliation');
+    const { inspectChoice, requireChoices, replaceRegistration, sameOfficialInvoice } = require('../fatture_import_choice');
     
     await knex.transaction(async (trx) => {
+      const inspected = [];
+      const seen = new Set();
       for (const f of fatture) {
-        if (!f.cliente_id) continue; // Salta chi non ha un cliente associato
-        
-        // Verifica se esiste già
-        const ext = await trx('fatture').where({ numero_fattura: f.numero_fattura, cliente_id: f.cliente_id }).first();
-        if (ext) continue;
+        if (!f.cliente_id) throw new Error('Ogni fattura deve avere un cliente associato.');
+        const key = `${f.cliente_id}|${String(f.numero_fattura || '').trim()}|${normalizedDate(f.data_fattura).slice(0, 4)}`;
+        if (seen.has(key)) throw new Error(`Il file contiene due volte la fattura ${f.numero_fattura} per lo stesso cliente.`);
+        seen.add(key);
+        inspected.push(await inspectChoice(trx, { ...f, mese, anno }));
+      }
+      requireChoices(inspected, risoluzioni);
+      for (const item of inspected) if (item?.conflict && risoluzioni[item.conflict.key] === 'sostituisci' && !item.conflict.sostituibile) {
+        const error = new Error(`La fattura ${item.conflict.numero_fattura} non può essere sostituita: manca la registrazione dell’addetto o risultano incassi.`);
+        error.status = 409;
+        throw error;
+      }
+      for (const f of fatture) {
+        const item = inspected[fatture.indexOf(f)];
+        if (item?.conflict && risoluzioni[item.conflict.key] === 'mantieni') {
+          mantenute.push(f.numero_fattura);
+          continue;
+        }
+        const dataFatturaFormat = normalizedDate(f.data_fattura);
+        if (!dataFatturaFormat || !Number.isFinite(Number(f.importo_totale))) throw new Error(`Data o totale non valido per la fattura ${f.numero_fattura}.`);
+        if (item?.conflict) await replaceRegistration(trx, item.registration, f, 'CSV', req.authUser?.id, item.official);
+        const ext = item?.official;
+        if (ext) {
+          if (!sameOfficialInvoice(ext, f)) {
+            await trx('fatture').where({ id: ext.id }).update({ data_fattura: dataFatturaFormat,
+              importo_imponibile: f.importo_imponibile, importo_iva: f.importo_iva,
+              importo_totale: f.importo_totale, data_scadenza: dataFatturaFormat });
+          }
+          const outcome = await reconcileOfficial(trx, { ...ext, data_fattura: dataFatturaFormat, importo_totale: f.importo_totale });
+          if (outcome.stato === 'riconciliata') riconciliate++;
+          continue;
+        }
 
         const idFattura = "FAT_" + Date.now() + Math.floor(Math.random() * 1000);
-        
-        // Conversione data da DD/MM/YYYY a YYYY-MM-DD
-        let dataFatturaFormat = f.data_fattura;
-        if (dataFatturaFormat && dataFatturaFormat.includes('/')) {
-            const parts = dataFatturaFormat.split('/');
-            if(parts.length === 3) dataFatturaFormat = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-        }
 
         await trx('fatture').insert({
           id: idFattura,
@@ -190,6 +216,8 @@ async function confermaFattureCsv(req, res) {
           data_scadenza: dataFatturaFormat, // Come default
           stato_pagamento: 'Emessa'
         });
+        const outcome = await reconcileOfficial(trx, { id: idFattura, cliente_id: f.cliente_id, numero_fattura: f.numero_fattura, data_fattura: dataFatturaFormat, importo_totale: f.importo_totale });
+        if (outcome.stato === 'riconciliata') riconciliate++;
         inserite++;
       }
       
@@ -204,11 +232,11 @@ async function confermaFattureCsv(req, res) {
       }
     });
 
-    res.json({ success: true, inserite });
+    res.json({ success: true, inserite, riconciliate, mantenute });
 
   } catch (error) {
-    console.error("[CSV CONFERMA ERROR]", error);
-    res.status(500).json({ success: false, error: error.message });
+    if (error.status !== 409) console.error("[CSV CONFERMA ERROR]", error);
+    res.status(error.status || 500).json({ success: false, error: error.message, conflitti: error.conflicts });
   }
 }
 

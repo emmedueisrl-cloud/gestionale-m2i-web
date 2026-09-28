@@ -1,6 +1,5 @@
-import React, { createContext, useState } from 'react';
-
-export const TopbarContext = createContext();
+import React, { useState } from 'react';
+import { TopbarContext } from './topbarContextValue';
 
 export const TopbarProvider = ({ children }) => {
   const [onBackClick, setOnBackClick] = useState(null);

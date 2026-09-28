@@ -1,22 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Briefcase, Download, Loader2 } from 'lucide-react';
+import { Download, Loader2 } from 'lucide-react';
 import { calcolaProvvigioni } from '../../api/commerciale';
 import DataTable from '../../components/ui/DataTable';
 
 export default function Provvigioni() {
   const dataOdierna = new Date();
-  const [mese, setMese] = useState(dataOdierna.getMonth() === 0 ? 12 : dataOdierna.getMonth());
-  const [anno, setAnno] = useState(dataOdierna.getMonth() === 0 ? dataOdierna.getFullYear() - 1 : dataOdierna.getFullYear());
+  const [mese] = useState(dataOdierna.getMonth() === 0 ? 12 : dataOdierna.getMonth());
+  const [anno] = useState(dataOdierna.getMonth() === 0 ? dataOdierna.getFullYear() - 1 : dataOdierna.getFullYear());
   
   const [dati, setDati] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-
-  const mesi = [
-    { val: 1, label: 'Gennaio' }, { val: 2, label: 'Febbraio' }, { val: 3, label: 'Marzo' },
-    { val: 4, label: 'Aprile' }, { val: 5, label: 'Maggio' }, { val: 6, label: 'Giugno' },
-    { val: 7, label: 'Luglio' }, { val: 8, label: 'Agosto' }, { val: 9, label: 'Settembre' },
-    { val: 10, label: 'Ottobre' }, { val: 11, label: 'Novembre' }, { val: 12, label: 'Dicembre' }
-  ];
 
   const caricaElaborato = async () => {
     setIsLoading(true);
@@ -68,7 +61,7 @@ export default function Provvigioni() {
       accessor: 'azioni',
       render: (row) => (
         <button 
-          onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/pdf/provvigioni?mese=${mese}&anno=${anno}&cliente_id=${row.cliente_id}`)}
+          onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/pdf/provvigioni?mese=${mese}&anno=${anno}&cliente_id=${row.cliente_id}`)}
           className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
           title="Scarica PDF Provvigione"
         >

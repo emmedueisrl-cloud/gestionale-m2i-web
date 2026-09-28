@@ -3,14 +3,35 @@ import { useNavigate } from 'react-router-dom';
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('amministrazione@m2i.it');
-  const [password, setPassword] = useState('••••••••••••');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    sessionStorage.setItem('auth_token', 'mock-token-m2i');
-    navigate('/admin/dashboard');
+    setError('');
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email: username, password })
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'Accesso non riuscito.');
+      }
+      const user = await response.json();
+      setPassword('');
+      navigate(user.role === 'contabilita' ? '/contabilita/clienti' : '/admin/dashboard');
+    } catch (loginError) {
+      setError(loginError.message || 'Accesso non riuscito.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -42,7 +63,9 @@ const LoginPage = () => {
               <input 
                 type="text" 
                 style={styles.input} 
-                placeholder="Username"
+                placeholder="E-mail"
+                autoComplete="username"
+                required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -54,6 +77,8 @@ const LoginPage = () => {
                 type={showPassword ? "text" : "password"} 
                 style={styles.input} 
                 placeholder="Password"
+                autoComplete="current-password"
+                required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -73,7 +98,10 @@ const LoginPage = () => {
               <a href="#" style={styles.forgotPassword}>Password dimenticata?</a>
             </div>
             
-            <button type="submit" style={styles.button}>Accedi</button>
+            {error && <p role="alert" style={{ color: '#b91c1c', fontSize: '14px' }}>{error}</p>}
+            <button type="submit" style={styles.button} disabled={isLoading}>
+              {isLoading ? 'Accesso in corso...' : 'Accedi'}
+            </button>
           </form>
         </div>
       </div>

@@ -13,10 +13,7 @@ module.exports = {
       const rows = await knex('dettaglio_mesi_chiusi_dipendenti as d')
         .leftJoin('dipendenti as dip', 'd.dipendente_id', 'dip.id')
         .select('d.*', 'dip.iban')
-        .where({ 'd.mese': mese, 'd.anno': anno })
-        .andWhere(function() {
-          this.where('dip.divisione', 'Esterno').orWhereNull('dip.divisione');
-        });
+        .where({ 'd.mese': mese, 'd.anno': anno });
       return {
         chiuso: true,
         dataChiusura: chiuso.data_chiusura,
@@ -31,18 +28,23 @@ module.exports = {
           maggiorazioni: r.maggiorazioni,
           detrazioni: r.detrazioni,
           stipendioNetto: r.stipendio_netto,
-          noteGenerali: r.note_generali || ""
+          noteGenerali: r.note_generali || "",
+          notaFissa: r.nota_fissa_storica || "",
+          notaMensile: r.nota_mensile_storica || "",
+          rigaBloccata: true
         }))
       };
     }
 
     // Calcolo al volo
     const dip = await knex('dipendenti')
-      .select('id', 'cognome', 'nome', 'paga_oraria_reale', 'tipo_paga', 'iban')
+      .select('id', 'cognome', 'nome', 'paga_oraria_reale', 'tipo_paga', 'iban', 'note_fisse_elaborato')
       .whereNot('stato', 'Cessato')
       .andWhere('cestinato', 0)
       .andWhere('divisione', 'Esterno');
       
+    const noteMensili = await knex('note_elaborati').where({ tipo: 'dipendente', mese, anno });
+    const notePerDipendente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));
     const rows = [];
     for (const d of dip) {
       const oreRecords = await knex('registro_ore')
@@ -116,38 +118,66 @@ module.exports = {
         noteMaggiorazioni: noteMagg.join(" | "),
         noteDetrazioni: noteDetr.join(" | "),
         stipendioNetto: totaleSpettante,
-        noteGenerali: ""
+        noteGenerali: "",
+        notaFissa: d.note_fisse_elaborato || "",
+        notaMensile: notePerDipendente.get(d.id) || ""
       });
     }
-    return { chiuso: false, dati: rows };
+    const bloccate = await knex('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno });
+    const lockedIds = new Set(bloccate.map(r => r.soggetto_id));
+    const visible = rows.filter(r => !lockedIds.has(r.idDipendente));
+    visible.push(...bloccate.map(r => ({ ...JSON.parse(r.snapshot), rigaBloccata: true })));
+    return { chiuso: false, dati: visible };
   },
 
-  async chiudiMeseDipendenti(mese, anno, datiElaborati) {
+  async chiudiMeseDipendenti(mese, anno, datiElaborati, confermaVuoto = false) {
+    if (!Array.isArray(datiElaborati)) throw new Error('Elaborato dipendenti non valido');
+    if (datiElaborati.length === 0 && confermaVuoto !== true) {
+      throw new Error('Elaborato vuoto: conferma esplicitamente la chiusura senza dipendenti.');
+    }
     const today = new Date().toISOString();
     await knex.transaction(async trx => {
-      // Elimina eventuale storico precedente
-      await trx('mesi_chiusi_dipendenti').where({ mese, anno }).del();
-      await trx('dettaglio_mesi_chiusi_dipendenti').where({ mese, anno }).del();
+      const chiuso = await trx('mesi_chiusi_dipendenti').where({ mese, anno }).first();
+      if (chiuso) throw new Error('Mese dipendenti già chiuso: lo storico non può essere sovrascritto. Sbloccalo entro 30 giorni prima di richiuderlo.');
+      const ids = datiElaborati.map(d => d.idDipendente);
+      const roster = await trx('righe_attese_elaborati').where({ tipo: 'dipendente', mese, anno }).select('soggetto_id');
+      if (roster.length && (roster.length !== ids.length || roster.some(x => !ids.includes(x.soggetto_id)))) {
+        throw new Error('L’elaborato non corrisponde all’elenco dipendenti confermato.');
+      }
+      const blocchi = await trx('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno });
+      const snapshotPerId = new Map(blocchi.map(b => [b.soggetto_id, JSON.parse(b.snapshot)]));
+      if (blocchi.some(b => !ids.includes(b.soggetto_id))) throw new Error('La chiusura non può escludere righe già blindate.');
+      const persone = ids.length ? await trx('dipendenti').select('id', 'note_fisse_elaborato').whereIn('id', ids) : [];
+      const note = await trx('note_elaborati').where({ tipo: 'dipendente', mese, anno });
+      const fissePerId = new Map(persone.map(p => [p.id, p.note_fisse_elaborato || '']));
+      const mensiliPerId = new Map(note.map(n => [n.soggetto_id, n.testo || '']));
 
       await trx('mesi_chiusi_dipendenti').insert({
         mese, anno, stato: "Chiuso", data_chiusura: today, chiuso_da: "LocalServer"
       });
 
       for (const d of datiElaborati) {
+        const r = snapshotPerId.get(d.idDipendente) || d;
         await trx('dettaglio_mesi_chiusi_dipendenti').insert({
           mese, anno,
-          dipendente_id: d.idDipendente,
-          cognome_nome: d.cognomeNome,
-          paga_oraria_reale: d.pagaOraria,
-          ore_lavorate: d.oreLavorate,
-          paga_lavorato: d.pagaLavorato,
-          paga_ferie_permessi_malattia: d.pagaFPM || 0,
-          maggiorazioni: d.maggiorazioni,
-          detrazioni: d.detrazioni,
-          stipendio_netto: d.stipendioNetto,
+          dipendente_id: r.idDipendente,
+          cognome_nome: r.cognomeNome,
+          paga_oraria_reale: r.pagaOraria,
+          ore_lavorate: r.oreLavorate,
+          paga_lavorato: r.pagaLavorato,
+          paga_ferie_permessi_malattia: r.pagaFPM || 0,
+          maggiorazioni: r.maggiorazioni,
+          detrazioni: r.detrazioni,
+          stipendio_netto: r.stipendioNetto,
+          nota_fissa_storica: snapshotPerId.has(d.idDipendente) ? r.notaFissa || '' : fissePerId.get(d.idDipendente) || '',
+          nota_mensile_storica: snapshotPerId.has(d.idDipendente) ? r.notaMensile || '' : mensiliPerId.get(d.idDipendente) || '',
           data_chiusura: today,
           chiuso_da: "LocalServer"
         });
+        if (!snapshotPerId.has(d.idDipendente)) {
+          await trx('righe_bloccate_elaborati').insert({ tipo: 'dipendente', mese, anno, soggetto_id: d.idDipendente,
+            snapshot: JSON.stringify({ ...r, notaFissa: fissePerId.get(d.idDipendente) || '', notaMensile: mensiliPerId.get(d.idDipendente) || '', rigaBloccata: true }), bloccata_at: today });
+        }
       }
     });
     await knex('log_attivita').insert({
@@ -164,7 +194,8 @@ module.exports = {
 
     const closeDate = new Date(chiuso.data_chiusura);
     const now = new Date();
-    const diffTime = Math.abs(now - closeDate);
+    if (!Number.isFinite(closeDate.getTime()) || closeDate > now) throw new Error('Data di chiusura non valida: sblocco non consentito.');
+    const diffTime = now - closeDate;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     if (diffDays > 30) {
@@ -172,8 +203,11 @@ module.exports = {
     }
 
     await knex.transaction(async trx => {
+      const payments = await trx('pagamenti_elaborati_dipendenti').where({ mese, anno }).first();
+      if (payments) throw new Error('Mese con pagamenti registrati: non può essere sbloccato senza rettifica.');
       await trx('mesi_chiusi_dipendenti').where({ mese, anno }).del();
       await trx('dettaglio_mesi_chiusi_dipendenti').where({ mese, anno }).del();
+      await trx('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno }).del();
     });
     await knex('log_attivita').insert({
       categoria: "Elaborati", icona: "🔓", colore: "#f59e0b",
@@ -210,15 +244,20 @@ module.exports = {
           percentualeTassazione: parseFloat(r.percentuale_tassazione) || 0,
           importoIva: r.importo_iva,
           importoTotale: r.importo_totale,
-          note: r.note_generali || ""
+          note: r.note || "",
+          notaFissa: r.nota_fissa_storica || "",
+          notaMensile: r.nota_mensile_storica || "",
+          rigaBloccata: true
         }))
       };
     }
 
     const cli = await knex('clienti')
-      .select('id', 'ragione_sociale', 'tariffa_oraria_operatore', 'quotazione_tipo', 'quotazione_importo', 'tipo_tassazione', 'percentuale_tassazione')
+      .select('id', 'ragione_sociale', 'tariffa_oraria_operatore', 'quotazione_tipo', 'quotazione_importo', 'tipo_tassazione', 'percentuale_tassazione', 'note_fisse_elaborato')
       .where('attivo', 'SI');
       
+    const noteMensili = await knex('note_elaborati').where({ tipo: 'cliente', mese, anno });
+    const notePerCliente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));
     const rows = [];
     for (const c of cli) {
       const o = await knex('registro_ore')
@@ -305,38 +344,67 @@ module.exports = {
         percentualeTassazione: parseFloat(c.percentuale_tassazione) || 0,
         importoIva: importoIva,
         importoTotale: importoTotale,
-        note: ""
+        note: "",
+        notaFissa: c.note_fisse_elaborato || "",
+        notaMensile: notePerCliente.get(c.id) || ""
       });
     }
-    return { chiuso: false, dati: rows };
+    const bloccate = await knex('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno });
+    const lockedIds = new Set(bloccate.map(r => r.soggetto_id));
+    const visible = rows.filter(r => !lockedIds.has(r.idCliente));
+    visible.push(...bloccate.map(r => ({ ...JSON.parse(r.snapshot), rigaBloccata: true })));
+    return { chiuso: false, dati: visible };
   },
 
-  async chiudiMeseClienti(mese, anno, datiElaborati) {
+  async chiudiMeseClienti(mese, anno, datiElaborati, confermaVuoto = false) {
+    if (!Array.isArray(datiElaborati)) throw new Error('Elaborato clienti non valido');
+    if (datiElaborati.length === 0 && confermaVuoto !== true) {
+      throw new Error('Elaborato vuoto: conferma esplicitamente la chiusura senza clienti.');
+    }
     const today = new Date().toISOString();
     await knex.transaction(async trx => {
-      await trx('mesi_chiusi_clienti').where({ mese, anno }).del();
-      await trx('dettaglio_mesi_chiusi_clienti').where({ mese, anno }).del();
+      const chiuso = await trx('mesi_chiusi_clienti').where({ mese, anno }).first();
+      if (chiuso) throw new Error('Mese clienti già chiuso: lo storico non può essere sovrascritto. Sbloccalo entro 30 giorni prima di richiuderlo.');
+      const ids = datiElaborati.map(d => d.idCliente);
+      const roster = await trx('righe_attese_elaborati').where({ tipo: 'cliente', mese, anno }).select('soggetto_id');
+      if (roster.length && (roster.length !== ids.length || roster.some(x => !ids.includes(x.soggetto_id)))) {
+        throw new Error('L’elaborato non corrisponde all’elenco clienti confermato.');
+      }
+      const blocchi = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno });
+      const snapshotPerId = new Map(blocchi.map(b => [b.soggetto_id, JSON.parse(b.snapshot)]));
+      if (blocchi.some(b => !ids.includes(b.soggetto_id))) throw new Error('La chiusura non può escludere righe già blindate.');
+      const persone = ids.length ? await trx('clienti').select('id', 'note_fisse_elaborato').whereIn('id', ids) : [];
+      const note = await trx('note_elaborati').where({ tipo: 'cliente', mese, anno });
+      const fissePerId = new Map(persone.map(p => [p.id, p.note_fisse_elaborato || '']));
+      const mensiliPerId = new Map(note.map(n => [n.soggetto_id, n.testo || '']));
 
       await trx('mesi_chiusi_clienti').insert({
         mese, anno, stato: "Chiuso", data_chiusura: today, chiuso_da: "LocalServer"
       });
 
       for (const d of datiElaborati) {
+        const r = snapshotPerId.get(d.idCliente) || d;
         await trx('dettaglio_mesi_chiusi_clienti').insert({
           mese, anno,
-          cliente_id: d.idCliente,
-          ragione_sociale: d.ragioneSociale,
-          valore_contrattuale: d.tariffaOraria,
-          ore_lavorate: d.oreLavorate,
-          base_imponibile: d.baseImponibile,
-          maggiorazioni: d.maggiorazioni,
-          sconti: d.sconti,
-          imponibile: d.imponibile,
-          importo_iva: d.importoIva,
-          importo_totale: d.importoTotale,
+          cliente_id: r.idCliente,
+          ragione_sociale: r.ragioneSociale,
+          valore_contrattuale: r.tariffaOraria,
+          ore_lavorate: r.oreLavorate,
+          base_imponibile: r.baseImponibile,
+          maggiorazioni: r.maggiorazioni,
+          sconti: r.sconti,
+          imponibile: r.imponibile,
+          importo_iva: r.importoIva,
+          importo_totale: r.importoTotale,
+          nota_fissa_storica: snapshotPerId.has(d.idCliente) ? r.notaFissa || '' : fissePerId.get(d.idCliente) || '',
+          nota_mensile_storica: snapshotPerId.has(d.idCliente) ? r.notaMensile || '' : mensiliPerId.get(d.idCliente) || '',
           data_chiusura: today,
           chiuso_da: "LocalServer"
         });
+        if (!snapshotPerId.has(d.idCliente)) {
+          await trx('righe_bloccate_elaborati').insert({ tipo: 'cliente', mese, anno, soggetto_id: d.idCliente,
+            snapshot: JSON.stringify({ ...r, notaFissa: fissePerId.get(d.idCliente) || '', notaMensile: mensiliPerId.get(d.idCliente) || '', rigaBloccata: true }), bloccata_at: today });
+        }
       }
     });
     await knex('log_attivita').insert({
@@ -352,7 +420,8 @@ module.exports = {
 
     const closeDate = new Date(chiuso.data_chiusura);
     const now = new Date();
-    const diffTime = Math.abs(now - closeDate);
+    if (!Number.isFinite(closeDate.getTime()) || closeDate > now) throw new Error('Data di chiusura non valida: sblocco non consentito.');
+    const diffTime = now - closeDate;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
     if (diffDays > 30) {
@@ -360,8 +429,11 @@ module.exports = {
     }
 
     await knex.transaction(async trx => {
+      const invoices = await trx('fatture_aruba_elaborati').where({ mese, anno }).first();
+      if (invoices) throw new Error('Mese con fatture registrate: non può essere sbloccato senza rettifica.');
       await trx('mesi_chiusi_clienti').where({ mese, anno }).del();
       await trx('dettaglio_mesi_chiusi_clienti').where({ mese, anno }).del();
+      await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno }).del();
     });
     await knex('log_attivita').insert({
       categoria: "Elaborati", icona: "🔓", colore: "#f59e0b",
@@ -465,13 +537,26 @@ module.exports = {
   // ==========================================
 
   async recuperaNoteElaborato(tipo, mese, anno) {
-    // Ritorna tutte le note per un certo tipo (cliente/dipendente) e mese/anno
+    if (!['cliente', 'dipendente'].includes(tipo)) throw new Error('Tipo elaborato non valido');
+    const suffisso = tipo === 'dipendente' ? 'dipendenti' : 'clienti';
+    const chiuso = await knex(`mesi_chiusi_${suffisso}`).where({ mese, anno }).first();
+    if (chiuso) {
+      const id = tipo === 'dipendente' ? 'dipendente_id' : 'cliente_id';
+      const righe = await knex(`dettaglio_mesi_chiusi_${suffisso}`).where({ mese, anno }).select(id, 'nota_mensile_storica', 'data_chiusura');
+      return righe.map(r => ({ soggetto_id: r[id], testo: r.nota_mensile_storica || '', data_modifica: r.data_chiusura }));
+    }
     return knex('note_elaborati')
       .where({ tipo, mese, anno })
       .select('soggetto_id', 'testo', 'data_modifica');
   },
 
   async salvaNoteElaborato(tipo, soggettoId, mese, anno, testo) {
+    if (!['cliente', 'dipendente'].includes(tipo)) throw new Error('Tipo elaborato non valido');
+    const suffisso = tipo === 'dipendente' ? 'dipendenti' : 'clienti';
+    const chiuso = await knex(`mesi_chiusi_${suffisso}`).where({ mese, anno }).first();
+    if (chiuso) throw new Error('Mese chiuso: le note storiche non possono essere modificate.');
+    const bloccata = await knex('righe_bloccate_elaborati').where({ tipo, mese, anno, soggetto_id: soggettoId }).first();
+    if (bloccata) throw new Error('Riga blindata: le note storiche non possono essere modificate.');
     // INSERT OR REPLACE: crea o aggiorna la nota per quel soggetto/mese/anno
     await knex('note_elaborati')
       .insert({

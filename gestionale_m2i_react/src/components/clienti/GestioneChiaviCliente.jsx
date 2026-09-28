@@ -69,7 +69,7 @@ export default function GestioneChiaviCliente({ clienteId, clienteData, dipenden
       const sediOp = clienteData.sedeOperativa || clienteData.sede_operativa;
       let parsedSedi = [];
       if (typeof sediOp === 'string') {
-        try { parsedSedi = JSON.parse(sediOp); } catch (e) {}
+        try { parsedSedi = JSON.parse(sediOp); } catch  {}
       } else if (Array.isArray(sediOp)) {
         parsedSedi = sediOp;
       }

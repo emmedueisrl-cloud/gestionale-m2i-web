@@ -8,7 +8,7 @@ const PreventiviCliente = ({ clienteId }) => {
   useEffect(() => {
     const fetchPreventivi = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/clienti/${clienteId}/preventivi`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/clienti/${clienteId}/preventivi`);
         const data = await res.json();
         setPreventivi(data);
       } catch (err) {
@@ -52,7 +52,7 @@ const PreventiviCliente = ({ clienteId }) => {
                   <div className="text-sm text-slate-300">{p.oggetto || 'Preventivo per pulizie ordinarie'} - <strong className="text-indigo-400">€ {Number(p.costo_mensile).toLocaleString('it-IT', {minimumFractionDigits: 2})}</strong></div>
                 </div>
                 {p.allegato_preventivo && (
-                  <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${p.allegato_preventivo}`} target="_blank" rel="noreferrer" className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500 hover:text-white transition-colors" title="Scarica PDF">
+                  <a href={`${import.meta.env.VITE_API_URL || ''}${p.allegato_preventivo}`} target="_blank" rel="noreferrer" className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500 hover:text-white transition-colors" title="Scarica PDF">
                     <Download size={20} />
                   </a>
                 )}

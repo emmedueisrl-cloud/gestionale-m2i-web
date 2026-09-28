@@ -125,8 +125,8 @@ function buildElaboratoDipendentePDF(data) {
           widths: ['*', 'auto'],
           body: [
             [{ text: 'Voce Retributiva', style: 'tabellaHeader' }, { text: 'Importo', style: 'tabellaHeader' }],
-            ['Ore Ordinarie Lavorate', `€ ${parseFloat(data.paga_lavorato).toFixed(2)}`],
-            ['Ferie, Permessi, Malattia', `€ ${parseFloat(data.paga_ferie_permessi_malattia).toFixed(2)}`],
+            ['Ore Ordinarie Lavorate', `€ ${parseFloat(data.paga_lavorato || 0).toFixed(2)}`],
+            ['Ferie, Permessi, Malattia', `€ ${parseFloat(data.paga_ferie_permessi_malattia || 0).toFixed(2)}`],
             ['Maggiorazioni/Bonus', `€ ${parseFloat(data.maggiorazioni || 0).toFixed(2)}`],
             ['Trattenute/Detrazioni', `€ -${parseFloat(data.detrazioni || 0).toFixed(2)}`]
           ]
@@ -135,7 +135,9 @@ function buildElaboratoDipendentePDF(data) {
         margin: [0, 10, 0, 20]
       },
 
-      { text: `Netto da Pagare: € ${parseFloat(data.da_pagare).toFixed(2)}`, style: 'totale' }
+      { text: `Netto da Pagare: € ${parseFloat(data.da_pagare ?? data.stipendio_netto ?? 0).toFixed(2)}`, style: 'totale' },
+      ...(data.notaFissa ? [{ text: `Note fisse: ${data.notaFissa}`, style: 'testo', margin: [0, 15, 0, 3] }] : []),
+      ...(data.notaMensile ? [{ text: `Note del mese: ${data.notaMensile}`, style: 'testo', margin: [0, 3, 0, 3] }] : [])
     ],
     styles: defaultStyles,
     defaultStyle: { font: 'Roboto' }
@@ -168,7 +170,9 @@ function buildElaboratoClientePDF(data) {
         margin: [0, 10, 0, 20]
       },
       
-      { text: `Totale Imponibile: € ${parseFloat(data.imponibile).toFixed(2)}`, style: 'totale' }
+      { text: `Totale Imponibile: € ${parseFloat(data.imponibile).toFixed(2)}`, style: 'totale' },
+      ...(data.notaFissa ? [{ text: `Note fisse: ${data.notaFissa}`, style: 'testo', margin: [0, 15, 0, 3] }] : []),
+      ...(data.notaMensile ? [{ text: `Note del mese: ${data.notaMensile}`, style: 'testo', margin: [0, 3, 0, 3] }] : [])
     ],
     styles: defaultStyles,
     defaultStyle: { font: 'Roboto' }

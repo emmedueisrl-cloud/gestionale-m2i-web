@@ -1,18 +1,43 @@
 const express = require('express');
-const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
 const api = require('./backend_api');
 const multer = require('multer');
+const { ownerFolder, finalizeUpload } = require('./upload_paths');
 const excelGenerator = require('./excel_generator');
 const { knex } = require('./db');
+const { createAuth } = require('./auth');
+const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./email_attachment_link');
+const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
+const workflowElaborati = require('./workflow_elaborati');
+const { ensureIndexes } = require('./db_indexes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.set('trust proxy', 1);
+
+// Le richieste mutative devono provenire dallo stesso host del gestionale.
+app.use((req, res, next) => {
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    const origin = req.get('origin');
+    if (origin) {
+      try {
+        const expectedOrigin = `${process.env.NODE_ENV === 'production' ? 'https' : req.protocol}://${req.get('host')}`;
+        if (new URL(origin).origin !== expectedOrigin) {
+          return res.status(403).json({ error: 'Origine non autorizzata.' });
+        }
+      } catch {
+        return res.status(403).json({ error: 'Origine non autorizzata.' });
+      }
+    }
+  }
+  next();
+});
 
 // Security Headers Base
 app.use((req, res, next) => {
@@ -24,9 +49,101 @@ app.use((req, res, next) => {
 
 // Serve i file statici del frontend (abilita l'accesso se il percorso contiene cartelle con il punto come .gemini)
 const reactDistPath = path.join(__dirname, '../gestionale_m2i_react/dist');
-app.use(express.static(reactDistPath, { dotfiles: 'allow' }));
+app.use(express.static(reactDistPath));
 const baseUploadPath = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'uploads') : path.join(__dirname, 'uploads');
-app.use('/uploads', express.static(baseUploadPath));
+const auth = createAuth(knex);
+app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+app.use('/api/auth', auth.router);
+app.use('/api', auth.requireAuth);
+// L'account amministrativo non accede alle altre API, neppure digitando URL diretti.
+app.use('/api', (req, res, next) => {
+  if (req.authUser.role === 'contabilita' && !req.path.startsWith('/contabilita/')) {
+    return res.status(403).json({ error: 'Accesso limitato alla sezione amministrativa.' });
+  }
+  next();
+});
+app.use('/uploads', auth.requireAuth, (req, res, next) => {
+  if (req.authUser.role === 'contabilita') return res.status(403).send('Accesso non consentito.');
+  next();
+}, express.static(baseUploadPath));
+
+const handleWorkflow = action => async (req, res) => {
+  try { res.json(await action(req)); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+};
+const { tipo, anno, mese } = { tipo: ':tipo', anno: ':anno', mese: ':mese' };
+app.get(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/stato`, handleWorkflow(req =>
+  workflowElaborati.status(req.params.tipo, req.params.mese, req.params.anno)));
+app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/elenco`, handleWorkflow(req =>
+  workflowElaborati.confirmRoster(req.params.tipo, req.params.mese, req.params.anno, req.body.ids)));
+app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/righe/:id/blinda`, handleWorkflow(req =>
+  workflowElaborati.lockRow(req.params.tipo, req.params.mese, req.params.anno, req.params.id)));
+app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/righe/:id/sblocca`, handleWorkflow(req =>
+  workflowElaborati.unlockRow(req.params.tipo, req.params.mese, req.params.anno, req.params.id)));
+
+app.get('/api/contabilita/fatture', handleWorkflow(async () => {
+  const { registrationStatuses } = require('./fatture_reconciliation');
+  const rows = await knex('fatture_aruba_elaborati as f').leftJoin('clienti as c', 'f.cliente_id', 'c.id')
+    .select('f.id', 'f.cliente_id', 'c.ragione_sociale', 'f.mese', 'f.anno', 'f.numero_fattura', 'f.data_fattura', 'f.importo_totale', 'f.registrata_at', 'f.fattura_id')
+    .select(knex.raw('(SELECT COUNT(*) FROM rettifiche_fatture_aruba r WHERE r.registrazione_id = f.id) AS rettifiche'))
+    .select(knex.raw('CASE WHEN f.allegato_path IS NULL THEN 0 ELSE 1 END AS allegato'))
+    .orderBy('f.registrata_at', 'desc');
+  return registrationStatuses(knex, rows);
+}));
+app.get('/api/contabilita/fatture/:id/rettifiche', handleWorkflow(async req => {
+  const records = await knex('rettifiche_fatture_aruba').where({ registrazione_id: req.params.id }).orderBy('id', 'desc');
+  return records.map(record => {
+    const previous = JSON.parse(record.precedente);
+    const next = JSON.parse(record.successivo);
+    return { id: record.id, fonte: record.fonte, rettificataAt: record.rettificata_at,
+      precedente: { numero: previous.numero_fattura, data: previous.data_fattura, importo: Number(previous.importo_totale),
+        allegato: Boolean(previous.allegato_path),
+        xmlContabile: path.extname(previous.fattura_contabile?.allegato_fattura || '').toLowerCase() === '.xml' },
+      successivo: { data: next.data_fattura, importo: Number(next.importo_totale) } };
+  });
+}));
+app.get('/api/contabilita/fatture/:id/rettifiche/:revisionId/xml-precedente', async (req, res) => {
+  try {
+    const record = await knex('rettifiche_fatture_aruba').where({ id: req.params.revisionId, registrazione_id: req.params.id }).first();
+    const filename = record && JSON.parse(record.precedente).fattura_contabile?.allegato_fattura;
+    if (!filename || path.basename(filename) !== filename || path.extname(filename).toLowerCase() !== '.xml') {
+      return res.status(404).send('XML precedente non trovato.');
+    }
+    const root = path.resolve(baseUploadPath, 'unknown');
+    const file = path.resolve(root, filename);
+    if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) return res.status(404).send('XML precedente non disponibile.');
+    res.download(file, `Fattura_contabile_precedente_${record.id}.xml`);
+  } catch (error) { res.status(500).send(error.message); }
+});
+app.get('/api/contabilita/fatture/:id/rettifiche/:revisionId/allegato', async (req, res) => {
+  try {
+    const record = await knex('rettifiche_fatture_aruba').where({ id: req.params.revisionId, registrazione_id: req.params.id }).first();
+    const relative = record && JSON.parse(record.precedente).allegato_path;
+    if (!relative || !process.env.DATA_DIR) return res.status(404).send('Allegato storico non trovato.');
+    const root = path.resolve(process.env.DATA_DIR, 'uploads', 'fatture_aruba');
+    const file = path.resolve(process.env.DATA_DIR, relative);
+    if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) return res.status(404).send('Allegato storico non disponibile.');
+    res.download(file, `Fattura_precedente_${record.id}${path.extname(file)}`);
+  } catch (error) { res.status(500).send(error.message); }
+});
+app.get('/api/contabilita/fatture/:id/allegato', async (req, res) => {
+  try {
+    const invoice = await knex('fatture_aruba_elaborati').where({ id: req.params.id }).first();
+    if (!invoice?.allegato_path || !process.env.DATA_DIR) return res.status(404).send('Allegato non trovato.');
+    const root = path.resolve(process.env.DATA_DIR, 'uploads', 'fatture_aruba');
+    const file = path.resolve(process.env.DATA_DIR, invoice.allegato_path);
+    if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) return res.status(404).send('Allegato non disponibile.');
+    res.download(file, `Fattura_${invoice.id}${path.extname(file)}`);
+  } catch (error) { res.status(500).send(error.message); }
+});
+app.get(`/api/contabilita/${tipo}/${anno}/${mese}`, handleWorkflow(req =>
+  workflowElaborati.accountingRows(req.params.tipo, req.params.mese, req.params.anno)));
+const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWorkflow(req =>
+  workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));
+app.post('/api/contabilita/pagamenti', handleWorkflow(req =>
+  workflowElaborati.registerPayment({ ...req.body, userId: req.authUser.id })));
+app.post('/api/dipendenti/:id/collega-allegato', createAttachmentLinkHandler(knex, baseUploadPath));
 
 // Configurazione Multer per l'upload dei file
 
@@ -34,7 +151,7 @@ app.use('/uploads', express.static(baseUploadPath));
 // HEALTH CHECK - Verifica stato DB persistente
 // GET /api/health → restituisce percorso DB, dimensione, conteggio clienti/dipendenti
 // ============================================================
-app.get('/api/health', async (req, res) => {
+app.get('/api/health', auth.requireAdmin, async (req, res) => {
   try {
     const fs = require('fs');
     const dbFilePath = process.env.DATA_DIR
@@ -74,7 +191,7 @@ app.get('/api/health', async (req, res) => {
 });
 // ============================================================
 // INSPECT DISK
-app.get('/api/inspect-disk', (req, res) => {
+app.get('/api/inspect-disk', auth.requireAdmin, (req, res) => {
   const fs = require('fs');
   const path = require('path');
   function getFiles(dir) {
@@ -96,17 +213,26 @@ app.get('/api/inspect-disk', (req, res) => {
 // ============================================================
 // BACKUP DATABASE LOCALE
 // ============================================================
-app.get('/api/backup-db', (req, res) => {
+app.get('/api/backup-db', auth.requireAdmin, async (req, res) => {
+  let snapshotDir;
+  let snapshotPath;
+  const cleanupSnapshot = () => {
+    if (snapshotPath) fs.rmSync(snapshotPath, { force: true });
+    if (snapshotDir) fs.rmdirSync(snapshotDir);
+  };
   try {
-    const fs = require('fs');
-    const path = require('path');
     const dbFilePath = process.env.DATA_DIR
       ? path.join(process.env.DATA_DIR.trim(), 'gestionale.db')
       : path.join(__dirname, 'gestionale.db');
 
     if (fs.existsSync(dbFilePath)) {
+      snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'm2i-backup-'));
+      snapshotPath = path.join(snapshotDir, 'gestionale.db');
+      // VACUUM INTO crea una copia transazionalmente coerente anche se il DB è in uso.
+      await knex.raw('VACUUM INTO ?', [snapshotPath]);
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      res.download(dbFilePath, `gestionale_backup_${timestamp}.db`, (err) => {
+      res.download(snapshotPath, `gestionale_backup_${timestamp}.db`, (err) => {
+        try { cleanupSnapshot(); } catch (cleanupError) { console.error('Pulizia backup temporaneo fallita:', cleanupError); }
         if (err) {
           console.error("Errore nel download del backup:", err);
           if (!res.headersSent) {
@@ -118,6 +244,7 @@ app.get('/api/backup-db', (req, res) => {
       res.status(404).send("Database non trovato.");
     }
   } catch (error) {
+    try { cleanupSnapshot(); } catch (cleanupError) { console.error('Pulizia backup temporaneo fallita:', cleanupError); }
     console.error("Errore durante la generazione del backup:", error);
     res.status(500).send("Errore interno del server.");
   }
@@ -127,7 +254,7 @@ app.get('/api/backup-db', (req, res) => {
 // ============================================================
 // BACKUP DATABASE IN EXCEL
 // ============================================================
-app.get('/api/backup-excel', async (req, res) => {
+app.get('/api/backup-excel', auth.requireAdmin, async (req, res) => {
   try {
     const ExcelJS = require('exceljs');
     const workbook = new ExcelJS.Workbook();
@@ -178,9 +305,9 @@ app.get('/api/backup-excel', async (req, res) => {
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const rawId = req.body.idCliente || req.body.idDipendente || 'unknown';
-    // Fix: Path Traversal prevention (solo alfanumerici e trattini)
-    const idSafe = rawId.replace(/[^a-zA-Z0-9_-]/g, '');
+    const rawId = req.path === '/api/magazzino' ? 'magazzino' : (req.body.idCliente || req.body.idDipendente || req.body.idAzienda || 'unknown');
+    let idSafe;
+    try { idSafe = ownerFolder(rawId); } catch (error) { return cb(error); }
     const uploadDir = path.join(baseUploadPath, idSafe);
     
     if (!fs.existsSync(uploadDir)) {
@@ -190,13 +317,36 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     const originalName = file.originalname || 'documento';
-    // Sanitizza il nome mantenendo spazi, trattini, underscore e punti
-    let safeName = originalName.replace(/[^a-zA-Z0-9.\-_ ]/g, '').trim();
-    if (!safeName) safeName = `doc_${Date.now()}`;
+    // Un suffisso casuale evita di sovrascrivere un allegato omonimo già presente.
+    const extension = path.extname(originalName).toLowerCase();
+    const baseName = path.basename(originalName, path.extname(originalName))
+      .replace(/[^a-zA-Z0-9\-_ ]/g, '').trim().slice(0, 100) || 'documento';
+    const safeName = `${baseName}_${crypto.randomBytes(8).toString('hex')}${extension}`;
     cb(null, safeName);
   }
 });
-const upload = multer({ storage: storage });
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const DOCUMENT_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt', '.odt']);
+function allowedExtensions(req) {
+  if (req.path === '/api/upload-fattura-xml' || req.path === '/api/anteprima-fatture-xml') return new Set(['.xml']);
+  if (req.path === '/api/anteprima-fatture-csv') return new Set(['.csv']);
+  if (req.path === '/api/magazzino' || req.path === '/api/upload-multiple') return IMAGE_EXTENSIONS;
+  return DOCUMENT_EXTENSIONS;
+}
+function uploadFilter(req, file, cb) {
+  if (!allowedExtensions(req).has(path.extname(file.originalname || '').toLowerCase())) {
+    const error = new Error('Formato file non consentito per questa funzione.');
+    error.code = 'UNSUPPORTED_FILE_TYPE';
+    return cb(error);
+  }
+  cb(null, true);
+}
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const upload = multer({
+  storage,
+  fileFilter: uploadFilter,
+  limits: { fileSize: MAX_FILE_BYTES, files: 100, fields: 20, fieldSize: 64 * 1024, parts: 120 }
+});
 
 const { processFatturaXml } = require('./controllers/fatture_xml');
 const { anteprimaFattureCsv, confermaFattureCsv } = require('./controllers/fatture_csv');
@@ -220,9 +370,9 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
       return res.status(400).json({ success: false, error: 'Nessun file inviato.' });
     }
     
-    const rawId = req.body.idCliente || req.body.idDipendente || 'unknown';
-    const idSafe = rawId.replace(/[^a-zA-Z0-9_-]/g, '');
-    const filePath = `uploads/${idSafe}/${req.file.filename}`;
+    const rawId = req.body.idCliente || req.body.idDipendente || req.body.idAzienda || 'unknown';
+    // I campi multipart possono arrivare dopo il file: finalizza nella cartella corretta.
+    const filePath = finalizeUpload(baseUploadPath, req.file, rawId);
     
     console.log(`[API UPLOAD] Salvato file: ${filePath}`);
     res.json({ success: true, path: filePath });
@@ -239,12 +389,10 @@ app.post('/api/upload-multiple', upload.array('files', 20), (req, res) => {
       return res.status(400).json({ success: false, error: 'Nessun file inviato.' });
     }
     
-    const rawId = req.body.idCliente || req.body.idDipendente || 'unknown';
-    const idSafe = rawId.replace(/[^a-zA-Z0-9_-]/g, '');
+    const rawId = req.body.idCliente || req.body.idDipendente || req.body.idAzienda || 'unknown';
+    const filePaths = req.files.map(file => finalizeUpload(baseUploadPath, file, rawId));
     
-    const filePaths = req.files.map(file => `uploads/${idSafe}/${file.filename}`);
-    
-    console.log(`[API UPLOAD-MULTIPLE] Salvati ${req.files.length} file in uploads/${idSafe}`);
+    console.log(`[API UPLOAD-MULTIPLE] Salvati ${req.files.length} file`);
     res.json({ success: true, paths: filePaths });
   } catch (error) {
     console.error(`[API UPLOAD-MULTIPLE ERROR]:`, error);
@@ -273,16 +421,29 @@ app.get('/', (req, res) => {
   }
 });
 
+// Le route React interne devono funzionare anche dopo un refresh o un link diretto.
+app.get(/^\/admin(?:\/.*)?$/, (req, res) => {
+  const filePath = path.join(reactDistPath, 'index.html');
+  if (!fs.existsSync(filePath)) return res.status(404).send('Frontend non compilato.');
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(filePath);
+});
+
 // Endpoint proxy centralizzato per le chiamate client-side google.script.run
 app.post('/api/run', async (req, res) => {
   const { functionName, args } = req.body;
-  console.log(`[API CALL] Chiamata a funzione: ${functionName}`, args ? JSON.stringify(args) : '');
+  console.log(`[API CALL] Chiamata a funzione: ${functionName}`);
 
   try {
+    if (functionName === 'svuotaLogSistema' && req.authUser.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Permesso amministratore richiesto.' });
+    }
     // Intercetta speciale per il caricamento dei moduli HTML (Single Page Application)
     if (functionName === "prendiHtmlContenutoInApp") {
       const moduleName = args ? args[0] : null;
-      if (!moduleName) return res.json({ success: false, error: "Modulo HTML mancante" });
+      if (typeof moduleName !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(moduleName)) {
+        return res.status(400).json({ success: false, error: "Nome modulo HTML non valido" });
+      }
       const filePath = path.join(__dirname, `${moduleName}.html`);
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, 'utf8');
@@ -302,7 +463,7 @@ app.post('/api/run', async (req, res) => {
     // Risposta mockata di successo per le funzioni non vitali o puramente estetiche
     const mockFunctions = [
       "nascondiFogliFrazionati", "configuraFoglioIngressoEstetico", 
-      "mostraTuttiIFogli", "riparaDatabaseClienti", "registraAttivita"
+      "mostraTuttiIFogli"
     ];
 
     if (mockFunctions.includes(functionName)) {
@@ -323,6 +484,33 @@ app.post('/api/run', async (req, res) => {
 // ENDPOINT GENERAZIONE PDF (Fase 6)
 // ==========================================
 const pdfGenerator = require('./pdf_generator');
+
+app.get(['/api/contabilita/pdf/:tipo/:anno/:mese', '/api/contabilita/pdf/:tipo/:anno/:mese/:id'], async (req, res) => {
+  try {
+    const { tipo, anno, mese, id } = req.params;
+    workflowElaborati.period(tipo, mese, anno);
+    const rows = await workflowElaborati.lockedRows(tipo, mese, anno);
+    const one = id ? rows.find(r => String(tipo === 'cliente' ? r.idCliente : r.idDipendente) === id) : null;
+    if (id && !one) return res.status(404).send('Riga non disponibile.');
+    let doc;
+    if (!id) doc = tipo === 'cliente'
+      ? pdfGenerator.buildStampaElaboratoClientiPDF(rows, mese, anno)
+      : pdfGenerator.buildStampaElaboratoDipendentiPDF(rows, mese, anno);
+    else if (tipo === 'cliente') doc = pdfGenerator.buildElaboratoClientePDF({
+      mese, anno, ragione_sociale: one.ragioneSociale, ore_lavorate: one.oreLavorate,
+      imponibile: one.imponibile, notaFissa: one.notaFissa, notaMensile: one.notaMensile
+    });
+    else doc = pdfGenerator.buildElaboratoDipendentePDF({
+      mese, anno, cognome_nome: one.cognomeNome, paga_lavorato: one.pagaLavorato,
+      paga_ferie_permessi_malattia: one.pagaFPM, maggiorazioni: one.maggiorazioni,
+      detrazioni: one.detrazioni, stipendio_netto: one.stipendioNetto,
+      notaFissa: one.notaFissa, notaMensile: one.notaMensile
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Elaborato_${tipo}_${mese}_${anno}.pdf"`);
+    res.send(await doc.getBuffer());
+  } catch (error) { res.status(400).send(error.message); }
+});
 
 app.get('/api/pdf/fattura/:id', async (req, res) => {
   try {
@@ -366,7 +554,9 @@ app.get('/api/pdf/elaborato-dipendente', async (req, res) => {
     
     if (!data) return res.status(404).send('Dati non trovati');
     
-    const doc = pdfGenerator.buildElaboratoDipendentePDF(data);
+    const doc = pdfGenerator.buildElaboratoDipendentePDF({
+      ...data, notaFissa: data.nota_fissa_storica || '', notaMensile: data.nota_mensile_storica || ''
+    });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="BustaPaga_${data.cognome_nome.replace(/\s+/g, '_')}_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -383,7 +573,9 @@ app.get('/api/pdf/elaborato-cliente', async (req, res) => {
     
     if (!data) return res.status(404).send('Dati non trovati');
     
-    const doc = pdfGenerator.buildElaboratoClientePDF(data);
+    const doc = pdfGenerator.buildElaboratoClientePDF({
+      ...data, notaFissa: data.nota_fissa_storica || '', notaMensile: data.nota_mensile_storica || ''
+    });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Fattura_Cortesia_${data.ragione_sociale.replace(/\s+/g, '_')}_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -396,18 +588,9 @@ app.get('/api/pdf/stampa-elaborato-clienti', async (req, res) => {
   try {
     const { mese, anno } = req.query;
     const elaborato = await api.ottieniElaboratoClienti(mese, anno);
-    const dati = elaborato.dati;
+    const dati = elaborato.chiuso ? await workflowElaborati.lockedRows('cliente', mese, anno) : elaborato.dati;
     
-    const noteMensili = await knex('note_elaborati').where({ tipo: 'cliente', mese, anno });
-    const noteFisse = await knex('clienti').select('id', 'note_fisse_elaborato');
-    
-    const datiCompleti = dati.map(d => {
-      const notaMensile = noteMensili.find(n => n.soggetto_id == d.idCliente)?.testo || '';
-      const notaFissa = noteFisse.find(n => n.id == d.idCliente)?.note_fisse_elaborato || '';
-      return { ...d, notaMensile, notaFissa };
-    });
-    
-    const doc = pdfGenerator.buildStampaElaboratoClientiPDF(datiCompleti, mese, anno);
+    const doc = pdfGenerator.buildStampaElaboratoClientiPDF(dati, mese, anno);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Stampa_Elaborato_Clienti_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -420,18 +603,9 @@ app.get('/api/pdf/stampa-elaborato-dipendenti', async (req, res) => {
   try {
     const { mese, anno } = req.query;
     const elaborato = await api.ottieniElaboratoMensile(mese, anno);
-    const dati = elaborato.dati;
+    const dati = elaborato.chiuso ? await workflowElaborati.lockedRows('dipendente', mese, anno) : elaborato.dati;
     
-    const noteMensili = await knex('note_elaborati').where({ tipo: 'dipendente', mese, anno });
-    const noteFisse = await knex('dipendenti').select('id', 'note_fisse_elaborato');
-    
-    const datiCompleti = dati.map(d => {
-      const notaMensile = noteMensili.find(n => n.soggetto_id == d.idDipendente)?.testo || '';
-      const notaFissa = noteFisse.find(n => n.id == d.idDipendente)?.note_fisse_elaborato || '';
-      return { ...d, notaMensile, notaFissa };
-    });
-    
-    const doc = pdfGenerator.buildStampaElaboratoDipendentiPDF(datiCompleti, mese, anno);
+    const doc = pdfGenerator.buildStampaElaboratoDipendentiPDF(dati, mese, anno);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Stampa_Elaborato_Dipendenti_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -491,10 +665,54 @@ app.get('/api/excel/scarica-presenze', async (req, res) => {
   }
 });
 
-const uploadMem = multer({ storage: multer.memoryStorage() });
+const uploadMem = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    if (!new Set(['.xlsx', '.xls']).has(path.extname(file.originalname || '').toLowerCase())) {
+      const error = new Error('Caricare un file Excel.');
+      error.code = 'UNSUPPORTED_FILE_TYPE';
+      return cb(error);
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 10, parts: 11 }
+});
+
+const payrollStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    try {
+      if (!req.payrollTempDir) req.payrollTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'm2i-payroll-'));
+      cb(null, req.payrollTempDir);
+    } catch (error) { cb(error); }
+  },
+  filename: (req, file, cb) => cb(null, `${crypto.randomBytes(16).toString('hex')}.pdf`)
+});
+const uploadPayroll = multer({
+  storage: payrollStorage,
+  fileFilter: (req, file, cb) => {
+    if (path.extname(file.originalname || '').toLowerCase() !== '.pdf') {
+      const error = new Error('Per le buste paga sono ammessi solo file PDF.');
+      error.code = 'UNSUPPORTED_FILE_TYPE';
+      return cb(error);
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_BYTES, files: 100, fields: 10, parts: 110 }
+});
+async function cleanupPayrollUpload(req) {
+  const dir = req.payrollTempDir && path.resolve(req.payrollTempDir);
+  const tempRoot = path.resolve(os.tmpdir());
+  if (dir && dir.startsWith(`${tempRoot}${path.sep}`) && path.basename(dir).startsWith('m2i-payroll-')) {
+    await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+}
 
 const bustePagaUploadCtrl = require('./controllers/buste_paga_upload');
-app.post('/api/buste-paga/upload', uploadMem.array('files', 100), bustePagaUploadCtrl.anteprimaBustePaga);
+app.post('/api/buste-paga/upload', uploadPayroll.array('files', 100), async (req, res, next) => {
+  try { await bustePagaUploadCtrl.anteprimaBustePaga(req, res); }
+  catch (error) { next(error); }
+  finally { await cleanupPayrollUpload(req); }
+});
 app.post('/api/buste-paga/conferma', bustePagaUploadCtrl.confermaBustePaga);
 app.get('/api/buste-paga/mese', bustePagaUploadCtrl.getBusteMese);
 app.get('/api/buste-paga/dipendente/:dipendenteId', bustePagaUploadCtrl.getBusteDipendente);
@@ -507,6 +725,11 @@ app.post('/api/excel/carica-presenze', uploadMem.single('file'), async (req, res
   try {
     const { dipendente_id, mese, anno } = req.body;
     if (!req.file) return res.status(400).send('Nessun file caricato');
+    const meseNum = Number(mese);
+    const annoNum = Number(anno);
+    if (!dipendente_id || !Number.isInteger(meseNum) || meseNum < 1 || meseNum > 12 || !Number.isInteger(annoNum) || annoNum < 2000) {
+      return res.status(400).send('Dipendente o periodo non valido');
+    }
 
     const ExcelJS = require('exceljs');
     const workbook = new ExcelJS.Workbook();
@@ -532,7 +755,7 @@ app.post('/api/excel/carica-presenze', uploadMem.single('file'), async (req, res
     }
 
     const righeMap = {};
-    const numGiorniMese = new Date(anno, mese, 0).getDate();
+    const numGiorniMese = new Date(annoNum, meseNum, 0).getDate();
 
     for (const [colIndex, nomeCol] of Object.entries(colMap)) {
       const clienteRow = await knex('clienti').whereRaw('UPPER(ragione_sociale) = ?', [nomeCol]).first();
@@ -565,13 +788,14 @@ app.post('/api/excel/carica-presenze', uploadMem.single('file'), async (req, res
       
       for (const [colIndex, key] of Object.entries(colMap)) {
         const cell = row.getCell(Number(colIndex));
-        let val = 0;
+        let rawValue = cell.value;
         if (cell.value && typeof cell.value === 'object' && cell.value.result !== undefined) {
-            val = parseFloat(cell.value.result);
-        } else {
-            val = parseFloat(cell.value);
+            rawValue = cell.value.result;
         }
-        if (isNaN(val)) val = 0;
+        const val = rawValue === null || rawValue === undefined || rawValue === '' ? 0 : Number(rawValue);
+        if (!Number.isFinite(val) || val < 0) {
+          return res.status(400).send(`Ore non valide al giorno ${giorno}`);
+        }
         
         if (val > 0) {
           righeMap[key].giorni[giorno - 1] += val;
@@ -580,8 +804,6 @@ app.post('/api/excel/carica-presenze', uploadMem.single('file'), async (req, res
     }
 
     const righeDaSalvare = Object.values(righeMap).filter(r => r.giorni.some(h => h > 0));
-    console.log("COL MAP:", colMap);
-    console.log("RIGHE DA SALVARE:", JSON.stringify(righeDaSalvare, null, 2));
 
     if (righeDaSalvare.length === 0) {
       if (Object.keys(colMap).length === 0) {
@@ -590,46 +812,19 @@ app.post('/api/excel/carica-presenze', uploadMem.single('file'), async (req, res
       return res.status(400).send('Il file non contiene ore inserite. Inserisci le ore nei giorni del mese e ricarica il file.');
     }
 
-    const meseNum = parseInt(mese, 10);
-    const annoNum = parseInt(anno, 10);
-
-    // Cancella righe esistenti
-    await knex('registro_ore').where({ dipendente_id, mese: meseNum, anno: annoNum }).del();
-
-    // Recupera paga oraria del dipendente
-    const dipInfo = await knex('dipendenti').select('paga_oraria_reale').where('id', dipendente_id).first();
-    const pagaOraria = dipInfo ? (parseFloat(dipInfo.paga_oraria_reale) || 0) : 0;
-
-    // Inserisce le righe
-    for (const r of righeDaSalvare) {
-      const dbRow = {
-        mese: meseNum,
-        anno: annoNum,
-        dipendente_id: dipendente_id,
-        cliente_id: r.idCliente || null,
-        causale_assenza: (r.idCliente ? 'Ordinario' : r.causale) || null,
-        note: 'Da Excel',
-        metodo_inserimento: 'Calendarizzata',
-        ore_totali: 0,
-        costo_totale: 0
-      };
-
-      let oreTot = 0;
-      for (let i = 1; i <= 31; i++) {
-        const ore = parseFloat(r.giorni[i - 1]) || 0;
-        dbRow[`giorno_${i}`] = ore;
-        oreTot += ore;
-      }
-      dbRow.ore_totali = oreTot;
-      dbRow.costo_totale = oreTot * pagaOraria;
-
-      await knex('registro_ore').insert(dbRow);
-    }
+    // Riusa la validazione e la transazione del salvataggio manuale.
+    await api.salvaPresenzeMensili({
+      idDipendente: dipendente_id,
+      mese: meseNum,
+      anno: annoNum,
+      metodoInserimento: 'Calendarizzata',
+      righe: righeDaSalvare
+    });
 
     res.json({ success: true, message: 'Dati caricati con successo' });
   } catch (e) {
     console.error(e);
-    res.status(500).send(e.message);
+    res.status(/ore|periodo|dipendente|giorn/i.test(e.message) ? 400 : 500).send(e.message);
   }
 });
 
@@ -638,8 +833,8 @@ app.post('/api/excel/carica-presenze', uploadMem.single('file'), async (req, res
 const emailCtrl = require('./controllers/emailController');
 
 // --- EMAIL ROUTES ---
-app.get('/api/configurazione-email', emailCtrl.getConfigurazione);
-app.post('/api/configurazione-email', emailCtrl.salvaConfigurazione);
+app.get('/api/configurazione-email', auth.requireAdmin, emailCtrl.getConfigurazione);
+app.post('/api/configurazione-email', auth.requireAdmin, emailCtrl.salvaConfigurazione);
 app.get('/api/emails', emailCtrl.getEmails);
 app.post('/api/emails/sync', emailCtrl.syncEmails);
 app.post('/api/emails/send', emailCtrl.sendEmail);
@@ -661,7 +856,7 @@ app.use((req, res, next) => {
     const filePath = path.resolve(__dirname, '../gestionale_m2i_react/dist/index.html');
     if (fs.existsSync(filePath)) {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-      res.sendFile(filePath, { dotfiles: 'allow' });
+      res.sendFile(filePath);
     } else {
       res.status(404).send(`File index.html non trovato: ${filePath}`);
     }
@@ -670,11 +865,18 @@ app.use((req, res, next) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log("====================================================");
-  console.log(`âœ¨ GESTIONALE M2I SQL ATTIVO IN LOCALE âœ¨`);
-  console.log(`Apri il browser all'indirizzo: http://localhost:${PORT}`);
-  console.log("====================================================");
+Promise.resolve().then(async () => {
+  await auth.initialize();
+  await ensureAttachmentColumns(knex);
+  await ensureElaboratiNoteStoriche(knex);
+  await workflowElaborati.initialize();
+  await ensureIndexes(knex);
+  app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
+    console.log(`Gestionale M2I attivo sulla porta ${PORT}`);
+  });
+}).catch(error => {
+  console.error('Avvio bloccato: inizializzazione database non riuscita.', error.message);
+  process.exitCode = 1;
 });
 
 
@@ -682,14 +884,25 @@ app.listen(PORT, () => {
 // ENDPOINTS REPORT IA (GEMINI)
 // ==========================================
 const aiController = require('./controllers/ai');
-app.get('/api/ai/settings', async (req, res) => {
+app.get('/api/ai/settings', auth.requireAdmin, async (req, res) => {
   try { res.json(await aiController.getSettings()); } catch(e) { res.status(500).json({ error: e.message }); }
 });
-app.post('/api/ai/settings', async (req, res) => {
+app.post('/api/ai/settings', auth.requireAdmin, async (req, res) => {
   try { res.json(await aiController.saveSettings(req.body)); } catch(e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/ai/ask', async (req, res) => {
   try { res.json(await aiController.askChat(req.body)); } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.use(async (error, req, res, next) => {
+  if (req.payrollTempDir) await cleanupPayrollUpload(req);
+  if (error instanceof multer.MulterError) {
+    return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ success: false, error: error.message });
+  }
+  if (error.code === 'UNSUPPORTED_FILE_TYPE') {
+    return res.status(415).json({ success: false, error: error.message });
+  }
+  next(error);
 });
 
 

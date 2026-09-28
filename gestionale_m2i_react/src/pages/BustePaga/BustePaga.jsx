@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { attachmentUrl } from '../../utils/attachmentUrl';
 import { FileText, UploadCloud, CheckCircle2, AlertCircle, Download, RefreshCw, Save, Trash2, Mail, X } from 'lucide-react';
 import FileUploader from '../../components/ui/FileUploader';
 import ModernModal from '../../components/ui/ModernModal';
+
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { recuperaTuttiIDipendenti } from '../../api/dipendenti';
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
 export default function BustePaga() {
   const [mese, setMese] = useState(new Date().getMonth() + 1);
@@ -42,6 +44,20 @@ export default function BustePaga() {
   const [sendResultModal, setSendResultModal] = useState(null);
   const [allDipendentiMap, setAllDipendentiMap] = useState({});
 
+  const caricaBusteMese = useCallback(async () => {
+    setIsLoadingBuste(true);
+    try {
+      const res = await fetch(`${API_URL}/buste-paga/mese?mese=${mese}&anno=${anno}`);
+      const data = await res.json();
+      if (data.success) {
+        setBusteCaricate(data.buste);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setIsLoadingBuste(false);
+  }, [mese, anno]);
+
   useEffect(() => {
     // Carica dipendenti per la tendina
     recuperaElencoDipendenti()
@@ -62,7 +78,7 @@ export default function BustePaga() {
       caricaBusteMese();
     }
     setSelectedBusteIds(new Set());
-  }, [activeTab, mese, anno]);
+  }, [activeTab, caricaBusteMese]);
 
   // Selection helpers
   const toggleSelectBusta = (id) => {
@@ -91,12 +107,12 @@ export default function BustePaga() {
     const senzaEmail = [];
 
     selected.forEach(b => {
-      const dip = allDipendentiMap[b.id_dipendente];
+      const dip = allDipendentiMap[b.dipendente_id];
       const email = dip?.email;
       if (email && email.trim() !== '') {
         conEmail.push({ ...b, email, dipendente: `${b.cognome} ${b.nome}` });
       } else {
-        senzaEmail.push({ ...b, dipendente: `${b.cognome} ${b.nome}`, id_dipendente: b.id_dipendente });
+        senzaEmail.push({ ...b, dipendente: `${b.cognome} ${b.nome}`, id_dipendente: b.dipendente_id });
       }
     });
 
@@ -180,20 +196,6 @@ export default function BustePaga() {
     setIsSendingEmail(false);
   };
 
-  const caricaBusteMese = async () => {
-    setIsLoadingBuste(true);
-    try {
-      const res = await fetch(`${API_URL}/buste-paga/mese?mese=${mese}&anno=${anno}`);
-      const data = await res.json();
-      if (data.success) {
-        setBusteCaricate(data.buste);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    setIsLoadingBuste(false);
-  };
-
   const handleFileSelect = (selectedFiles) => {
     if (Array.isArray(selectedFiles)) {
       setFiles(selectedFiles);
@@ -267,16 +269,17 @@ export default function BustePaga() {
         });
       }
     } catch (err) {
-      console.error(err);
+      setAlertModal({ isOpen: true, type: 'error', title: 'Conferma non ricevuta',
+        content: 'Non è stato possibile verificare il salvataggio. Puoi riprovare con la stessa anteprima senza duplicare le buste. ' + err.message });
     }
     setIsUploading(false);
   };
 
   const eliminaBusta = async (id) => {
-    if (!window.confirm('Sei sicuro di voler eliminare questa busta paga? Il file verrà rimosso definitivamente.')) return;
+    if (!window.confirm('Eliminare questa busta dall’elenco? Una copia di recupero verrà conservata sul server.')) return;
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/buste-paga/${id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/buste-paga/${id}`, {
         method: 'DELETE'
       });
       const data = await res.json();
@@ -307,7 +310,7 @@ export default function BustePaga() {
     if (!window.confirm(`Sei assolutamente sicuro di voler eliminare TUTTE le buste paga caricate per ${mesi.find(m => m.val === mese).label} ${anno}? L'operazione non è reversibile.`)) return;
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/buste-paga/mese/${anno}/${mese}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/buste-paga/mese/${anno}/${mese}`, {
         method: 'DELETE'
       });
       const data = await res.json();
@@ -416,7 +419,9 @@ export default function BustePaga() {
                 <div className="p-6 bg-slate-800 border border-dashed border-slate-600 rounded-xl">
                   <FileUploader 
                     multiple={true}
-                    file={files.length > 0 ? files[0] : null}
+                    accept=".pdf"
+                    askRename={false}
+                    file={files}
                     onFileSelect={handleFileSelect} 
                     label={`Trascina qui le buste paga (PDF) di ${mesi.find(m => m.val === mese).label} ${anno}`}
                   />
@@ -469,7 +474,10 @@ export default function BustePaga() {
                     <tbody className="divide-y divide-slate-700/50 bg-slate-800">
                       {previewData.map((row, idx) => (
                         <tr key={idx} className={!row.dipendenteId ? 'bg-red-500/10' : ''}>
-                          <td className="px-4 py-3 truncate max-w-[150px]" title={row.originalName}>{row.originalName}</td>
+                          <td className="px-4 py-3 max-w-[250px]" title={row.originalName}>
+                            {row.originalName}
+                            {row.warnings?.map((warning, index) => <div key={index} className="text-amber-300 text-xs mt-1">{warning}</div>)}
+                          </td>
                           <td className="px-4 py-3 font-mono text-xs">{row.extractedCF || 'Non trovato'}</td>
                           <td className="px-4 py-3">
                             <select
@@ -487,7 +495,7 @@ export default function BustePaga() {
                             <input
                               type="number"
                               step="0.01"
-                              value={row.extractedNetto || ''}
+                              value={row.extractedNetto ?? ''}
                               onChange={(e) => updatePreviewRow(idx, 'extractedNetto', e.target.value)}
                               className="w-full p-2 bg-slate-900 border border-slate-600 rounded text-slate-200"
                               placeholder="0.00"
@@ -534,15 +542,15 @@ export default function BustePaga() {
                 <div className="flex gap-4 pt-4">
                   <button
                     onClick={handleConferma}
-                    disabled={isUploading || previewData.some(r => !r.dipendenteId)}
+                    disabled={isUploading || !previewData.length || previewData.some(r => !r.dipendenteId || r.extractedNetto === '' || r.extractedNetto == null || !Number.isFinite(Number(r.extractedNetto)))}
                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-lg disabled:opacity-50 flex justify-center items-center gap-2"
                   >
                     {isUploading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                     {isUploading ? 'Salvataggio...' : 'Conferma e Salva Tutto'}
                   </button>
                 </div>
-                {previewData.some(r => !r.dipendenteId) && (
-                  <p className="text-red-400 text-sm text-center">Attenzione: assegna un dipendente a tutti i file prima di salvare.</p>
+                {previewData.some(r => !r.dipendenteId || r.extractedNetto === '' || r.extractedNetto == null) && (
+                  <p className="text-red-400 text-sm text-center">Assegna un dipendente e verifica il netto di tutti i file prima di salvare. Controlla anche mese e anno selezionati.</p>
                 )}
               </div>
             )}
@@ -656,7 +664,7 @@ export default function BustePaga() {
                           <div className="flex items-center justify-center gap-2">
                             {b.allegato_busta_paga ? (
                               <a 
-                                href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${b.allegato_busta_paga}`} 
+                                href={attachmentUrl(b.allegato_busta_paga)}
                                 target="_blank" 
                                 rel="noreferrer"
                                 className="inline-flex p-2 bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 rounded-lg transition-colors"
@@ -743,6 +751,15 @@ export default function BustePaga() {
           </div>
         </div>
       )}
+
+      <ModernModal
+        isOpen={alertModal.isOpen}
+        type={alertModal.type}
+        title={alertModal.title}
+        content={alertModal.content}
+        primaryAction={alertModal.primaryAction}
+        onClose={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+      />
 
       {/* MODAL: Risultato invio */}
       {sendResultModal && (

@@ -20,13 +20,6 @@ const WelcomeBanner = () => {
     return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
-  const getGreeting = (date) => {
-    const hour = date.getHours();
-    if (hour < 12) return 'Buongiorno';
-    if (hour < 18) return 'Buon pomeriggio';
-    return 'Buonasera';
-  };
-
   return (
     <div style={styles.banner}>
       <div style={styles.textContainer}>

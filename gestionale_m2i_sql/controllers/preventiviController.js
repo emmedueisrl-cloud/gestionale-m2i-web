@@ -1,6 +1,7 @@
 const { knex } = require('../db');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const pdfmake = require('pdfmake');
 
 // Configurazione font per pdfmake
@@ -248,6 +249,8 @@ exports.generatePreventivo = async (req, res) => {
       pageMargins: [40, 40, 40, 140]
     };
 
+    // Gli altri generatori PDF modificano i font globali di pdfmake.
+    pdfmake.addFonts(fonts);
     const pdfDoc = pdfmake.createPdf(docDefinition);
     
     // Nome file sicuro
@@ -263,6 +266,7 @@ exports.generatePreventivo = async (req, res) => {
       const allegato_url = `/uploads/preventivi/${fileName}`;
       
       const insertData = {
+        id: `PREV_${crypto.randomUUID()}`,
         numero_preventivo,
         data_preventivo,
         cliente_prospect_id: cliente_prospect_id || null,
@@ -276,8 +280,7 @@ exports.generatePreventivo = async (req, res) => {
         allegato_preventivo: allegato_url
       };
 
-      const [id] = await knex('preventivi').insert(insertData);
-      insertData.id = id;
+      await knex('preventivi').insert(insertData);
 
       res.status(201).json({ message: 'Preventivo generato con successo', data: insertData });
     } catch (err) {

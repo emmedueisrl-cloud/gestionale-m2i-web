@@ -1,0 +1,2 @@
+Numero,Tipo documento,P.IVA,Codice Fiscale,Cliente,Data documento,Totale imponibile,Totale IVA,Totale documento
+TEST-2040-XML-CHOICE,Fattura,00000000000,,Cliente sintetico,31/01/2040,"118,85","26,15","145,00"

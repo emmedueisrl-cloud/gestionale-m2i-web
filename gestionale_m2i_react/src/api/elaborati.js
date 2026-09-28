@@ -30,16 +30,16 @@ export async function ottieniElaboratoProvvigioni(mese, anno) {
   return await apiCall('ottieniElaboratoProvvigioni', [mese, anno]);
 }
 
-export async function chiudiMeseDipendenti(mese, anno, datiElaborati) {
-  return await apiCall('chiudiMeseDipendenti', [mese, anno, datiElaborati]);
+export async function chiudiMeseDipendenti(mese, anno, datiElaborati, confermaVuoto = false) {
+  return await apiCall('chiudiMeseDipendenti', [mese, anno, datiElaborati, confermaVuoto]);
 }
 
 export async function sbloccaMeseDipendenti(mese, anno) {
   return await apiCall('sbloccaMeseDipendenti', [mese, anno]);
 }
 
-export async function chiudiMeseClienti(mese, anno, datiElaborati) {
-  return await apiCall('chiudiMeseClienti', [mese, anno, datiElaborati]);
+export async function chiudiMeseClienti(mese, anno, datiElaborati, confermaVuoto = false) {
+  return await apiCall('chiudiMeseClienti', [mese, anno, datiElaborati, confermaVuoto]);
 }
 
 export async function sbloccaMeseClienti(mese, anno) {

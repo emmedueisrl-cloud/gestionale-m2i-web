@@ -1,10 +1,14 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const Sidebar = ({ isOpen, setIsOpen }) => {
+const Sidebar = ({ area, isOpen, setIsOpen }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const menu = [
+  const menu = area === 'contabilita' ? [
+    { type: 'header', label: 'Elaborati pronti' },
+    { type: 'item', label: '🧾 Clienti e fatture', path: '/contabilita/clienti' },
+    { type: 'item', label: '💶 Dipendenti e pagamenti', path: '/contabilita/dipendenti' }
+  ] : [
     { type: 'item', label: '🏠 Dashboard', path: '/admin/dashboard' },
     
     { type: 'header', label: '👥 Gestione Dipendenti' },
@@ -21,6 +25,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
     { type: 'item', label: '🔒 Elaborato Mensile Clienti', path: '/admin/elaborati/clienti' },
     { type: 'item', label: '💵 Sconti/Maggiorazioni Clienti', path: '/admin/clienti/regolazioni' },
     { type: 'item', label: '🧾 Gestione Fatture', path: '/admin/fatture' },
+    { type: 'item', label: '📋 Contabilità elaborati', path: '/contabilita/clienti' },
     { type: 'item', label: '📦 Magazzino', path: '/admin/magazzino' },
     { type: 'item', label: '📄 Preventivi', path: '/admin/preventivi' },
     
@@ -89,9 +94,17 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
         <div className="p-4 border-t border-slate-800">
           <button 
             className="w-full px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors text-sm font-medium flex items-center justify-center gap-2"
-            onClick={() => {
-              sessionStorage.removeItem('auth_token');
-              navigate('/');
+            onClick={async () => {
+              try {
+                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/logout`, {
+                  method: 'POST',
+                  credentials: 'same-origin'
+                });
+                if (!response.ok) throw new Error('Logout non riuscito.');
+                navigate('/');
+              } catch (error) {
+                window.alert(error.message);
+              }
             }}
           >
             🚪 Esci / Logout

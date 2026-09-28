@@ -32,7 +32,7 @@ export default function Trasformazione() {
         if (idFromUrl) {
           handleSelectChange({ target: { value: idFromUrl } });
         }
-      } catch (error) {
+      } catch  {
         setModal({
           isOpen: true,
           type: 'error',
@@ -44,7 +44,7 @@ export default function Trasformazione() {
       }
     }
     loadList();
-  }, []);
+  }, [searchParams]);
 
   // 2. Carica i dati quando si seleziona un dipendente
   // Helper per leggere il tipo contratto indipendentemente dal campo

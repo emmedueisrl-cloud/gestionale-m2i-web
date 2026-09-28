@@ -1,6 +1,8 @@
 const fs = require('fs');
 const xml2js = require('xml2js');
 const { knex } = require('../db');
+const { reconcileOfficial } = require('../fatture_reconciliation');
+const { inspectChoice, replaceRegistration } = require('../fatture_import_choice');
 
 async function processFatturaXml(req, res) {
   if (!req.file) {
@@ -73,9 +75,12 @@ async function processFatturaXml(req, res) {
     const anagrafica = clienteDati.Anagrafica;
     const ragioneSociale = anagrafica?.Denominazione || `${anagrafica?.Cognome || ''} ${anagrafica?.Nome || ''}`.trim();
 
+    let riconciliazione;
+    let mantenuta = false;
+    await knex.transaction(async trx => {
     // Check if client exists
     let clienteId = null;
-    let clienteRow = await knex('clienti')
+    let clienteRow = await trx('clienti')
       .where(function() {
         if(pIva) this.where('partita_iva', pIva);
         if(cf) this.orWhere('codice_fiscale', cf);
@@ -87,7 +92,7 @@ async function processFatturaXml(req, res) {
     } else {
       // Create new client
       const idStr = "CLI_" + Date.now() + Math.floor(Math.random() * 1000);
-      await knex('clienti').insert({
+      await trx('clienti').insert({
         id: idStr,
         ragione_sociale: ragioneSociale,
         partita_iva: pIva,
@@ -101,15 +106,35 @@ async function processFatturaXml(req, res) {
       clienteId = idStr;
     }
 
-    // Check if fattura already exists
-    const ext = await knex('fatture').where({ numero_fattura: numero, cliente_id: clienteId }).first();
-    if (ext) {
-      return res.status(400).json({ success: false, error: `La fattura n. ${numero} è già presente nel sistema.` });
+    const incoming = { cliente_id: clienteId, numero_fattura: numero, data_fattura: dataFattura, importo_totale: importoTotale,
+      mese: req.body?.mese, anno: req.body?.anno };
+    const item = await inspectChoice(trx, incoming);
+    if (item?.conflict) {
+      const scelta = req.body?.scelta;
+      if (!['mantieni', 'sostituisci'].includes(scelta)) {
+        const conflict = new Error('Scegli esplicitamente quale fattura mantenere.');
+        conflict.status = 409;
+        conflict.conflicts = [item.conflict];
+        throw conflict;
+      }
+      if (scelta === 'mantieni') { mantenuta = true; return; }
+      if (!item.conflict.sostituibile) {
+        const conflict = new Error('La fattura non può essere sostituita: manca la registrazione dell’addetto o risultano incassi.');
+        conflict.status = 409;
+        throw conflict;
+      }
+      await replaceRegistration(trx, item.registration, incoming, 'XML singolo', req.authUser?.id, item.official);
+    }
+    const ext = item?.official;
+    if (ext && !item?.conflict) {
+      const duplicate = new Error(`La fattura n. ${numero} è già presente nel sistema.`);
+      duplicate.status = 400;
+      throw duplicate;
     }
 
     // Insert Fattura
-    const idFattura = "FAT_" + Date.now() + Math.floor(Math.random() * 1000);
-    await knex('fatture').insert({
+    const idFattura = ext?.id || "FAT_" + Date.now() + Math.floor(Math.random() * 1000);
+    const values = {
       id: idFattura,
       numero_fattura: numero,
       data_fattura: dataFattura,
@@ -119,23 +144,36 @@ async function processFatturaXml(req, res) {
       importo_totale: importoTotale,
       data_scadenza: dataScadenza,
       stato_pagamento: 'Da Pagare',
-      allegato_fattura: req.file.filename,
-      stato: 'Emessa'
-    });
+      allegato_fattura: req.file.filename
+    };
+    if (ext) {
+      delete values.id;
+      delete values.stato_pagamento;
+      await trx('fatture').where({ id: ext.id }).update(values);
+    } else {
+      await trx('fatture').insert(values);
+    }
+    riconciliazione = await reconcileOfficial(trx, { id: idFattura, cliente_id: clienteId, numero_fattura: numero, data_fattura: dataFattura, importo_totale: importoTotale });
     
-    await knex('log_attivita').insert({
+    await trx('log_attivita').insert({
       categoria: "Fatture",
       icona: "📄",
       colore: "#10b981",
       descrizione: `Caricata fattura XML n. ${numero} per ${ragioneSociale}`,
       eseguito_da: "Upload"
     });
+    });
 
-    res.json({ success: true, message: `Fattura ${numero} caricata con successo per ${ragioneSociale}` });
+    if (mantenuta) {
+      await fs.promises.unlink(req.file.path).catch(() => {});
+      return res.json({ success: true, mantenuta: true, message: `Fattura già caricata mantenuta; XML ${numero} non importato.` });
+    }
+    res.json({ success: true, message: `Fattura ${numero} caricata con successo per ${ragioneSociale}`, riconciliazione: riconciliazione.stato });
 
   } catch (error) {
-    console.error("[FATTURA XML ERROR]", error);
-    res.status(500).json({ success: false, error: error.message });
+    if (error.status !== 409) console.error("[FATTURA XML ERROR]", error);
+    if (req.file?.path) await fs.promises.unlink(req.file.path).catch(() => {});
+    res.status(error.status || 500).json({ success: false, error: error.message, conflitti: error.conflicts });
   }
 }
 

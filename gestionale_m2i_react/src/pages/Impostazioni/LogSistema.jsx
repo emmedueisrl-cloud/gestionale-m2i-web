@@ -44,11 +44,10 @@ const LogSistema = () => {
   };
 
   const handleReset = async () => {
-    const pwd = window.prompt("Attenzione: Inserisci la password per resettare completamente il registro delle attività:");
-    if (pwd) {
+    if (window.confirm('Vuoi eliminare definitivamente tutti i log? Questa azione richiede un account amministratore.')) {
       try {
         setLoading(true);
-        await dashboardApi.svuotaLogSistema(pwd);
+        await dashboardApi.svuotaLogSistema();
         const response = await dashboardApi.recuperaTuttiLogs(1, 50);
         setLogs(response.logs || response);
         setPage(1);
@@ -66,7 +65,7 @@ const LogSistema = () => {
           isOpen: true,
           type: 'error',
           title: 'Errore',
-          content: err.message || "Password errata o errore durante il reset.",
+          content: err.message || "Operazione non autorizzata o errore durante il reset.",
           primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
         });
       } finally {

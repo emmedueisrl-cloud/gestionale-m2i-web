@@ -1,9 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Calendar, Save, Plus, Trash2, Loader2, Edit, X, Clock, Building2, ChevronRight, Repeat } from 'lucide-react';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { recuperaElencoClienti } from '../../api/clienti';
 import { recuperaDatiProgramma, salvaProgrammaFisso } from '../../api/ore';
 import ModernModal from './ModernModal';
+
+const giorniSettimana = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"];
+
+const righeToGrid = (righe) => {
+  const grid = Array.from({ length: 7 }, () => []);
+  if (!righe || righe.length === 0) return grid;
+
+  righe.forEach(r => {
+    const idx = giorniSettimana.indexOf(r.giornoSettimana);
+    if (idx !== -1) {
+      grid[idx].push({
+        id: Math.random().toString(36).substring(7),
+        oraInizio: r.oraInizio || '',
+        oraFine: r.oraFine || '',
+        idCliente: r.idCliente || '',
+        frequenza: r.frequenza || 'Settimanale',
+        note: r.note || ''
+      });
+    }
+  });
+  return grid;
+};
 
 const ClientSelect = ({ value, onChange, clienti }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -78,15 +100,7 @@ export default function ProgrammaFissoModal({ isOpen, onClose, idDipendente }) {
   const [settimanaData, setSettimanaData] = useState(Array.from({ length: 7 }, () => []));
   const [localModalState, setLocalModalState] = useState({ isOpen: false, type: '', message: '' });
 
-  const giorniSettimana = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"];
-
-  useEffect(() => {
-    if (isOpen && idDipendente) {
-      loadFiltriEProgramma();
-    }
-  }, [isOpen, idDipendente]);
-
-  async function loadFiltriEProgramma() {
+  const loadFiltriEProgramma = useCallback(async () => {
     setIsLoading(true);
     setIsEditingMode(false);
     try {
@@ -106,27 +120,13 @@ export default function ProgrammaFissoModal({ isOpen, onClose, idDipendente }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [idDipendente]);
 
-  const righeToGrid = (righe) => {
-    const grid = Array.from({ length: 7 }, () => []);
-    if (!righe || righe.length === 0) return grid;
-
-    righe.forEach(r => {
-      const idx = giorniSettimana.indexOf(r.giornoSettimana);
-      if (idx !== -1) {
-        grid[idx].push({
-          id: Math.random().toString(36).substring(7),
-          oraInizio: r.oraInizio || '',
-          oraFine: r.oraFine || '',
-          idCliente: r.idCliente || '',
-          frequenza: r.frequenza || 'Settimanale',
-          note: r.note || ''
-        });
-      }
-    });
-    return grid;
-  };
+  useEffect(() => {
+    if (isOpen && idDipendente) {
+      loadFiltriEProgramma();
+    }
+  }, [isOpen, idDipendente, loadFiltriEProgramma]);
 
   const gridToRighe = (grid) => {
     const righe = [];

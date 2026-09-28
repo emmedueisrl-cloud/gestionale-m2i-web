@@ -247,6 +247,8 @@ CREATE TABLE dettaglio_mesi_chiusi_dipendenti (
     detrazioni REAL,
     maggiorazioni REAL,
     note_generali TEXT,
+    nota_fissa_storica TEXT,
+    nota_mensile_storica TEXT,
     da_pagare REAL,
     stipendio_netto REAL,
     paga_oraria_reale REAL,
@@ -281,6 +283,8 @@ CREATE TABLE dettaglio_mesi_chiusi_clienti (
     importo_iva REAL,
     importo_totale REAL,
     note TEXT,
+    nota_fissa_storica TEXT,
+    nota_mensile_storica TEXT,
     data_chiusura TEXT DEFAULT CURRENT_TIMESTAMP,
     chiuso_da TEXT,
     FOREIGN KEY (mese, anno) REFERENCES mesi_chiusi_clienti(mese, anno) ON DELETE CASCADE
@@ -409,6 +413,48 @@ CREATE TABLE note_elaborati (
   testo TEXT DEFAULT '',
   data_modifica TEXT DEFAULT (datetime('now')),
   UNIQUE(tipo, soggetto_id, mese, anno)
+);
+
+CREATE TABLE periodi_elaborati (
+  tipo TEXT NOT NULL, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  elenco_confermato_at TEXT NOT NULL,
+  PRIMARY KEY (tipo, mese, anno)
+);
+
+CREATE TABLE righe_attese_elaborati (
+  tipo TEXT NOT NULL, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  soggetto_id TEXT NOT NULL,
+  PRIMARY KEY (tipo, mese, anno, soggetto_id)
+);
+
+CREATE TABLE righe_bloccate_elaborati (
+  tipo TEXT NOT NULL, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  soggetto_id TEXT NOT NULL, snapshot TEXT NOT NULL, bloccata_at TEXT NOT NULL,
+  PRIMARY KEY (tipo, mese, anno, soggetto_id)
+);
+
+CREATE TABLE fatture_aruba_elaborati (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  numero_fattura TEXT NOT NULL, data_fattura TEXT NOT NULL,
+  importo_totale REAL NOT NULL, allegato_path TEXT,
+  registrata_at TEXT NOT NULL, registrata_da INTEGER,
+  fattura_id TEXT UNIQUE REFERENCES fatture(id) ON DELETE SET NULL,
+  UNIQUE (cliente_id, numero_fattura, data_fattura)
+);
+
+CREATE TABLE rettifiche_fatture_aruba (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  registrazione_id INTEGER NOT NULL REFERENCES fatture_aruba_elaborati(id) ON DELETE RESTRICT,
+  precedente TEXT NOT NULL, successivo TEXT NOT NULL,
+  fonte TEXT NOT NULL, rettificata_at TEXT NOT NULL, rettificata_da INTEGER
+);
+
+CREATE TABLE pagamenti_elaborati_dipendenti (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dipendente_id TEXT NOT NULL REFERENCES dipendenti(id) ON DELETE RESTRICT, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  importo_netto REAL NOT NULL, pagato_at TEXT NOT NULL, registrato_da INTEGER,
+  UNIQUE (dipendente_id, mese, anno)
 );
 
 CREATE TABLE `magazzino_attrezzature` (`id` varchar(255), `codice_custom` varchar(255), `nome` varchar(255) not null, `descrizione` text, `foto` varchar(255), `cliente_id` varchar(255), `data_assegnazione` varchar(255), `data_creazione` varchar(255), foreign key(`cliente_id`) references `clienti`(`id`), primary key (`id`));

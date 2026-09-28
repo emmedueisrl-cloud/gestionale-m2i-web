@@ -90,7 +90,7 @@ export default function SchedaAzienda() {
       await salvaDatiAzienda(dati);
       setMessaggio({ tipo: 'success', testo: 'Dati azienda salvati con successo!' });
       setTimeout(() => setMessaggio(null), 3000);
-    } catch (error) {
+    } catch  {
       setMessaggio({ tipo: 'error', testo: 'Errore nel salvataggio.' });
     } finally {
       setSalvataggio(false);
@@ -109,7 +109,7 @@ export default function SchedaAzienda() {
       setDati(prev => ({ ...prev, timbro_path: newPath }));
       setMessaggio({ tipo: 'success', testo: 'Timbro aggiornato con successo!' });
       setTimeout(() => setMessaggio(null), 3000);
-    } catch (error) {
+    } catch  {
       setAlertModal({
         isOpen: true,
         type: 'error',
@@ -132,7 +132,7 @@ export default function SchedaAzienda() {
       await caricaDati();
       setMessaggio({ tipo: 'success', testo: 'Documento caricato con successo!' });
       setTimeout(() => setMessaggio(null), 3000);
-    } catch (error) {
+    } catch  {
       setAlertModal({
         isOpen: true,
         type: 'error',
@@ -148,7 +148,7 @@ export default function SchedaAzienda() {
     try {
       await eliminaDocumentoAzienda(id);
       await caricaDati();
-    } catch (error) {
+    } catch  {
       setAlertModal({
         isOpen: true,
         type: 'error',

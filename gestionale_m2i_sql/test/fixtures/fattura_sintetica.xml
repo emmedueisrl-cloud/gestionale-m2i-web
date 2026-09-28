@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FatturaElettronica>
+  <FatturaElettronicaHeader>
+    <CessionarioCommittente>
+      <DatiAnagrafici><IdFiscaleIVA><IdCodice>00000000000</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>Cliente sintetico</Denominazione></Anagrafica></DatiAnagrafici>
+      <Sede><Indirizzo>Via Test 1</Indirizzo><CAP>00100</CAP><Comune>Roma</Comune><Provincia>RM</Provincia></Sede>
+    </CessionarioCommittente>
+  </FatturaElettronicaHeader>
+  <FatturaElettronicaBody>
+    <DatiGenerali><DatiGeneraliDocumento><Numero>TEST-2040-XML-CHOICE</Numero><Data>2040-01-31</Data><ImportoTotaleDocumento>140.00</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali>
+    <DatiBeniServizi><DatiRiepilogo><ImponibileImporto>114.75</ImponibileImporto><Imposta>25.25</Imposta></DatiRiepilogo></DatiBeniServizi>
+  </FatturaElettronicaBody>
+</FatturaElettronica>

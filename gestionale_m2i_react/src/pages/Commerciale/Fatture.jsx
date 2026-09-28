@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Receipt, Plus, Search, Loader2, Download, CheckCircle2, Upload, AlertTriangle, Trash2, Check, X, Save } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Receipt, Plus, Loader2, CheckCircle2, Upload, AlertTriangle, Trash2, X, Save } from 'lucide-react';
 import { recuperaFatture, aggiornaStatoFattura, anteprimaFattureCsv, confermaFattureCsv, anteprimaFattureXml, confermaFattureXml, eliminaFattureMulti, ottieniElaboratoClienti } from '../../api/commerciale';
 import { recuperaElencoClienti, aggiornaRagioneSocialeCliente } from '../../api/clienti';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
+import { workflowRequest } from '../../api/workflowElaborati';
+
 
 function SearchableSelect({ value, onChange, options, hasClient, idRow, isXml }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -78,7 +79,6 @@ function SearchableSelect({ value, onChange, options, hasClient, idRow, isXml })
 }
 
 export default function Fatture() {
-  const navigate = useNavigate();
   const dataOdierna = new Date();
   
   const [mese, setMese] = useState(dataOdierna.getMonth() + 1);
@@ -87,6 +87,8 @@ export default function Fatture() {
     const [selectedFatture, setSelectedFatture] = useState([]); 
   
   const [fatture, setFatture] = useState([]);
+  const [fattureAruba, setFattureAruba] = useState([]);
+  const [storicoFattura, setStoricoFattura] = useState(null);
   const [clienti, setClienti] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [modalState, setModalState] = useState({ isOpen: false, type: '', message: '' });
@@ -99,6 +101,9 @@ export default function Fatture() {
   const [stagingData, setStagingData] = useState(null); // array di righe + clientiDisponibili
   const [activeStagingTab, setActiveStagingTab] = useState('caricate');
   const [aggiornamentiClienti, setAggiornamentiClienti] = useState({});
+  const [conflittiImport, setConflittiImport] = useState([]);
+  const [risoluzioniImport, setRisoluzioniImport] = useState({});
+  const [confermaSostituzione, setConfermaSostituzione] = useState(false);
 
   // Main view state
   const [activeMainTab, setActiveMainTab] = useState('emesse');
@@ -131,6 +136,8 @@ export default function Fatture() {
     setIsLoading(true);
     try {
       const dati = await recuperaFatture(mese, anno);
+      const aruba = await workflowRequest('contabilita/fatture');
+      setFattureAruba(aruba.filter(f => Number(f.mese) === mese && Number(f.anno) === anno));
       let elaboratiDb = [];
       try {
         const elaboratoResp = await ottieniElaboratoClienti(mese, anno);
@@ -140,7 +147,7 @@ export default function Fatture() {
       }
       
       const fTrovate = dati || [];
-      const mancanti = elaboratiDb.filter(el => !fTrovate.some(f => f.cliente_id === el.idCliente));
+      const mancanti = elaboratiDb.filter(el => !fTrovate.some(f => f.cliente_id === el.idCliente) && !aruba.some(f => Number(f.mese) === mese && Number(f.anno) === anno && f.cliente_id === el.idCliente));
       setClientiMancanti(mancanti);
 
       setFatture(fTrovate.map(f => {
@@ -195,6 +202,7 @@ export default function Fatture() {
       const resp = await anteprimaFattureCsv(csvFile, csvMese, csvAnno);
       if (resp.success) {
         setStagingData({ righe: resp.dati, clientiDisponibili: resp.clienti_disponibili, elaboratiDisponibili: resp.elaborati_disponibili });
+        setConflittiImport([]); setRisoluzioniImport({});
       }
     } catch (error) {
       setModalState({ isOpen: true, type: 'error', message: error.message });
@@ -260,18 +268,13 @@ export default function Fatture() {
     }
   };
 
-  const handleDeleteStagingRow = (idRow) => {
-    if (!stagingData) return;
-    const newRighe = stagingData.righe.filter(r => r.idRow !== idRow);
-    setStagingData({ ...stagingData, righe: newRighe });
-  };
-
   
   const handleXmlFileChange = (e) => {
     if (e.target.files.length > 0) {
       setXmlFiles(Array.from(e.target.files));
       setIsXmlMonthModalOpen(true);
     }
+    e.target.value = null;
   };
 
   const handleProcessXml = async () => {
@@ -282,6 +285,7 @@ export default function Fatture() {
       if (resp.success) {
         setStagingData({ righe: resp.dati, clientiDisponibili: resp.clienti_disponibili, elaboratiDisponibili: resp.elaborati_disponibili, isXml: true });
         setAggiornamentiClienti({});
+        setConflittiImport([]); setRisoluzioniImport({});
       }
     } catch (error) {
       setModalState({ isOpen: true, type: 'error', message: error.message });
@@ -290,41 +294,57 @@ export default function Fatture() {
     }
   };
   
-  const handleConfirmXml = async () => {
+  const handleConfirmXml = async (sostituzioneConfermata = false) => {
+    if (Object.values(risoluzioniImport).includes('sostituisci') && !sostituzioneConfermata) {
+      setConfermaSostituzione(true);
+      return;
+    }
     setIsLoading(true);
     try {
       const righe = stagingData.righe; 
-      const resp = await confermaFattureXml(righe, aggiornamentiClienti);
+      const resp = await confermaFattureXml(righe, aggiornamentiClienti, risoluzioniImport, csvMese, csvAnno);
       if (resp.success) {
         setStagingData(null);
-        setModalState({ isOpen: true, type: 'success', message: 'Fatture importate con successo!' });
+        setConflittiImport([]); setRisoluzioniImport({});
+        setModalState({ isOpen: true, type: 'success', message: `Importazione completata. Riconciliate: ${resp.riconciliate || 0}. Fatture già caricate mantenute: ${resp.mantenute?.length || 0}.` });
         caricaDati();
       }
     } catch (error) {
-      setModalState({ isOpen: true, type: 'error', message: error.message });
+      if (error.conflitti?.length) {
+        setConflittiImport(error.conflitti);
+        setRisoluzioniImport(previous => ({ ...previous, ...Object.fromEntries(error.conflitti.filter(c => !c.sostituibile).map(c => [c.key, 'mantieni'])), ...Object.fromEntries(error.conflitti.filter(c => !(c.key in previous)).map(c => [c.key, 'mantieni'])) }));
+      } else setModalState({ isOpen: true, type: 'error', message: error.message });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleConfirmCsv = async () => {
+  const handleConfirmCsv = async (sostituzioneConfermata = false) => {
     if (!stagingData) return;
     const errors = stagingData.righe.filter(r => !r.cliente_id);
     if (errors.length > 0) {
       setModalState({ isOpen: true, type: 'error', message: "Ci sono righe senza un cliente associato. Sistemali o eliminale prima di salvare." });
       return;
     }
+    if (Object.values(risoluzioniImport).includes('sostituisci') && !sostituzioneConfermata) {
+      setConfermaSostituzione(true);
+      return;
+    }
     
     setIsLoading(true);
     try {
-      const resp = await confermaFattureCsv(stagingData.righe);
+      const resp = await confermaFattureCsv(stagingData.righe, risoluzioniImport, csvMese, csvAnno);
       if (resp.success) {
-        setModalState({ isOpen: true, type: 'success', message: `Importate con successo ${resp.inserite} fatture.` });
+        setModalState({ isOpen: true, type: 'success', message: `Importate ${resp.inserite} fatture; riconciliate ${resp.riconciliate || 0}. Fatture già caricate mantenute: ${resp.mantenute?.length || 0}.` });
         setStagingData(null);
+        setConflittiImport([]); setRisoluzioniImport({});
         caricaDati();
       }
     } catch (error) {
-      setModalState({ isOpen: true, type: 'error', message: error.message });
+      if (error.conflitti?.length) {
+        setConflittiImport(error.conflitti);
+        setRisoluzioniImport(previous => ({ ...previous, ...Object.fromEntries(error.conflitti.filter(c => !c.sostituibile).map(c => [c.key, 'mantieni'])), ...Object.fromEntries(error.conflitti.filter(c => !(c.key in previous)).map(c => [c.key, 'mantieni'])) }));
+      } else setModalState({ isOpen: true, type: 'error', message: error.message });
     } finally {
       setIsLoading(false);
     }
@@ -336,6 +356,9 @@ export default function Fatture() {
   });
 
   const fattureExtra = fattureFiltrate.filter(f => f.isExtra);
+  const fattureMancanti = (stagingData?.elaboratiDisponibili || []).filter(el =>
+    !stagingData.righe.some(row => String(row.cliente_id) === String(el.idCliente))
+  );
 
   const columns = [
       { header: 'ID / Numero', accessor: 'numero' },
@@ -502,7 +525,7 @@ export default function Fatture() {
             className={`py-3 font-medium border-b-2 transition-colors ${activeMainTab === 'emesse' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`} 
             onClick={() => setActiveMainTab('emesse')}
           >
-            Tutte le Fatture ({fattureFiltrate.length})
+            Fatture importate ({fattureFiltrate.length})
           </button>
           <button 
             className={`py-3 font-medium border-b-2 transition-colors ${activeMainTab === 'mancanti' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-300'}`} 
@@ -515,6 +538,9 @@ export default function Fatture() {
             onClick={() => setActiveMainTab('extra')}
           >
             Non in Elaborato ({fattureExtra.length})
+          </button>
+          <button className={`py-3 font-medium border-b-2 ${activeMainTab === 'aruba' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400'}`} onClick={() => setActiveMainTab('aruba')}>
+            Registrate da Aruba ({fattureAruba.length})
           </button>
         </div>
 
@@ -536,6 +562,13 @@ export default function Fatture() {
               onSelectionChange={setSelectedFatture}
             />
           )}
+
+          {activeMainTab === 'aruba' && <div className="overflow-auto p-5 text-slate-100">
+            <p className="mb-3 text-sm text-slate-400">La registrazione nell’elaborato è operativa. I report contabili conteggiano il documento ufficiale una sola volta, dopo l’importazione XML/CSV. Controlla le righe «Da verificare».</p>
+            <table className="w-full text-left text-sm"><thead><tr className="border-b border-slate-600"><th className="p-2">Cliente</th><th className="p-2">Numero</th><th className="p-2">Data Aruba</th><th className="p-2">Totale</th><th className="p-2">Registrata</th><th className="p-2">Stato contabile</th><th className="p-2">Allegato</th><th className="p-2">Storico</th></tr></thead>
+              <tbody>{fattureAruba.map(f => <tr key={f.id} className="border-b border-slate-700"><td className="p-2">{f.ragione_sociale}</td><td className="p-2">{f.numero_fattura}</td><td className="p-2">{f.data_fattura}</td><td className="p-2">{Number(f.importo_totale).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</td><td className="p-2">{new Date(f.registrata_at).toLocaleString('it-IT')}</td><td className={`p-2 ${f.stato_riconciliazione === 'da_verificare' ? 'text-amber-300' : ''}`}>{f.stato_riconciliazione === 'riconciliata' ? 'Riconciliata' : f.stato_riconciliazione === 'da_verificare' ? 'Da verificare: data/importo/duplicato' : 'In attesa XML/CSV'}</td><td className="p-2">{Boolean(f.allegato) && <a className="text-indigo-300 underline" href={`${import.meta.env.VITE_API_URL || ''}/api/contabilita/fatture/${f.id}/allegato`}>Scarica</a>}</td><td className="p-2">{Number(f.rettifiche) > 0 && <button className="text-indigo-300 underline" onClick={async () => { try { setStoricoFattura({ numero: f.numero_fattura, id: f.id, righe: await workflowRequest(`contabilita/fatture/${f.id}/rettifiche`) }); } catch (error) { setModalState({ isOpen: true, type: 'error', message: error.message }); } }}>Apri ({f.rettifiche})</button>}</td></tr>)}</tbody></table>
+            {!fattureAruba.length && <p className="mt-3 text-slate-400">Nessuna fattura Aruba registrata per questo mese.</p>}
+          </div>}
 
           {activeMainTab === 'extra' && (
             <DataTable 
@@ -711,6 +744,11 @@ export default function Fatture() {
             </div>
             
             <div className="flex-1 overflow-auto p-6 bg-slate-900/50">
+              {stagingData.righe.some(row => Number(row.importo_imponibile) < 0 || Number(row.importo_totale) < 0) && (
+                <div role="alert" className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-200">
+                  Attenzione: una o più fatture hanno importo negativo. Controlla i documenti: saranno comunque salvati nell’elenco fatture.
+                </div>
+              )}
               {activeStagingTab === 'caricate' && (
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -733,6 +771,10 @@ export default function Fatture() {
                           <td className="py-4 px-4">
                             {!hasClient ? (
                               <span className="inline-flex items-center px-2 py-1 bg-red-500/20 text-red-400 rounded-md text-xs font-bold border border-red-500/30">SCONOSCIUTO</span>
+                            ) : Number(row.importo_imponibile) < 0 || Number(row.importo_totale) < 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-500/20 text-amber-400 rounded-md text-xs font-bold border border-amber-500/30">
+                                <AlertTriangle className="w-3 h-3" /> IMPORTO NEGATIVO
+                              </span>
                             ) : row.squadratura ? (
                               <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-500/20 text-amber-400 rounded-md text-xs font-bold border border-amber-500/30" title="L'importo non coincide con l'elaborato">
                                 <AlertTriangle className="w-3 h-3" /> SQUADRATURA
@@ -878,7 +920,7 @@ export default function Fatture() {
                   Annulla
                 </button>
                 <button 
-                  onClick={stagingData.isXml ? handleConfirmXml : handleConfirmCsv}
+                  onClick={() => stagingData.isXml ? handleConfirmXml() : handleConfirmCsv()}
                   disabled={!stagingData.isXml && stagingData.righe.some(r => !r.cliente_id)}
                   className="px-6 py-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20 flex items-center gap-2"
                 >
@@ -889,6 +931,66 @@ export default function Fatture() {
           </div>
         </div>
       )}
+      {storicoFattura && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 p-4" role="dialog" aria-modal="true" aria-label="Storico rettifiche fattura">
+        <div className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-2xl border border-slate-600 bg-slate-800 p-6 text-slate-100">
+          <div className="flex justify-between gap-4"><h3 className="text-xl font-bold">Storico fattura {storicoFattura.numero}</h3><button onClick={() => setStoricoFattura(null)} aria-label="Chiudi storico"><X className="h-5 w-5" /></button></div>
+          <div className="mt-4 space-y-3">{storicoFattura.righe.map(r => <div key={r.id} className="rounded-xl border border-slate-600 p-4 text-sm">
+            <div className="font-semibold">Sostituita il {new Date(r.rettificataAt).toLocaleString('it-IT')} tramite {r.fonte}</div>
+            <div className="mt-2">Prima: {r.precedente.data} · {Number(r.precedente.importo).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</div>
+            <div>Dopo: {r.successivo.data} · {Number(r.successivo.importo).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</div>
+            {r.precedente.allegato && <a className="mt-2 inline-block text-indigo-300 underline" href={`${import.meta.env.VITE_API_URL || ''}/api/contabilita/fatture/${storicoFattura.id}/rettifiche/${r.id}/allegato`}>Scarica allegato precedente</a>}
+            {r.precedente.xmlContabile && <a className="ml-3 mt-2 inline-block text-indigo-300 underline" href={`${import.meta.env.VITE_API_URL || ''}/api/contabilita/fatture/${storicoFattura.id}/rettifiche/${r.id}/xml-precedente`}>Scarica XML contabile precedente</a>}
+          </div>)}</div>
+        </div>
+      </div>}
+      {conflittiImport.length > 0 && stagingData && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 p-4" role="dialog" aria-modal="true" aria-label="Fatture discordanti">
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-2xl border border-amber-500/50 bg-slate-800 p-6 text-slate-100 shadow-2xl">
+            <h3 className="text-xl font-bold">Fatture discordanti: scegli esplicitamente</h3>
+            <p className="mt-2 text-sm text-slate-300">La fattura già caricata resta invariata per impostazione predefinita. Se scegli di sostituirla, i vecchi valori e l’eventuale allegato resteranno nello storico; la scelta vale solo per la riga indicata.</p>
+            <div className="mt-4 space-y-4">{conflittiImport.map(c => <div key={c.key} className="rounded-xl border border-slate-600 p-4">
+              <div className="font-semibold">Fattura {c.numero_fattura} · cliente {c.cliente_id}</div>
+              <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                <div>Già caricata ({c.caricata.origine}): {c.caricata.data} · {Number(c.caricata.importo).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</div>
+                <div>Nel file: {c.file.data} · {Number(c.file.importo).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</div>
+              </div>
+              {c.contabile && <div className="mt-2 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                <div>Archivio contabile: imponibile {Number(c.contabile.imponibile).toFixed(2)} · IVA {Number(c.contabile.iva).toFixed(2)}</div>
+                <div>File: imponibile {Number(c.file.imponibile).toFixed(2)} · IVA {Number(c.file.iva).toFixed(2)}</div>
+              </div>}
+              <div className="mt-3 flex flex-wrap gap-4 text-sm">
+                <label className="flex items-center gap-2"><input type="radio" name={`scelta-${c.key}`} checked={risoluzioniImport[c.key] !== 'sostituisci'} onChange={() => setRisoluzioniImport(prev => ({ ...prev, [c.key]: 'mantieni' }))} /> Mantieni già caricata (non importare questa riga)</label>
+                <label className={`flex items-center gap-2 ${!c.sostituibile ? 'opacity-50' : ''}`}><input type="radio" name={`scelta-${c.key}`} disabled={!c.sostituibile} checked={risoluzioniImport[c.key] === 'sostituisci'} onChange={() => setRisoluzioniImport(prev => ({ ...prev, [c.key]: 'sostituisci' }))} /> Sostituisci con {stagingData.isXml ? 'XML' : 'CSV'}</label>
+              </div>
+              {!c.sostituibile && <p className="mt-2 text-xs text-amber-300">Sostituzione non disponibile: manca la registrazione dell’addetto oppure esistono già incassi.</p>}
+            </div>)}</div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button className="rounded-lg bg-slate-700 px-4 py-2" onClick={() => setConflittiImport([])}>Torna all’anteprima</button>
+              <button className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold" disabled={isLoading} onClick={() => stagingData.isXml ? handleConfirmXml() : handleConfirmCsv()}>Conferma scelte e importa</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <ModernModal
+        isOpen={confermaSostituzione}
+        type="warning"
+        title="Conferma sostituzione fattura"
+        content={`Stai per sostituire le fatture selezionate con i valori del ${stagingData?.isXml ? 'file XML' : 'CSV'}. I valori e gli allegati precedenti resteranno nello storico.`}
+        onClose={() => setConfermaSostituzione(false)}
+        primaryAction={{ label: 'Sostituisci e importa', onClick: () => {
+          setConfermaSostituzione(false);
+          if (stagingData?.isXml) handleConfirmXml(true);
+          else handleConfirmCsv(true);
+        } }}
+        secondaryAction={{ label: 'Annulla', onClick: () => setConfermaSostituzione(false) }}
+      />
+      <ModernModal
+        isOpen={modalState.isOpen}
+        type={modalState.type}
+        title={modalState.type === 'success' ? 'Operazione completata' : 'Attenzione'}
+        content={modalState.message}
+        onClose={() => setModalState(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

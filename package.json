@@ -1,0 +1,11 @@
+{
+  "name": "gestionale-m2i-monorepo",
+  "private": true,
+  "scripts": {
+    "build:render": "npm ci --prefix gestionale_m2i_sql && npm rebuild sqlite3 --prefix gestionale_m2i_sql && npm ci --prefix gestionale_m2i_react && npm run build --prefix gestionale_m2i_react",
+    "start": "node gestionale_m2i_sql/server.js"
+  },
+  "engines": {
+    "node": ">=22.12.0 <25"
+  }
+}

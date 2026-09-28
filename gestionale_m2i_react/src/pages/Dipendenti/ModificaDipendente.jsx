@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UserPen, Search, Loader2, CalendarDays } from 'lucide-react';
+import { UserPen, Search, Loader2 } from 'lucide-react';
 import DipendenteForm from '../../components/ui/DipendenteForm';
 import ModernModal from '../../components/ui/ModernModal';
 import ProgrammaFissoModal from '../../components/ui/ProgrammaFissoModal';
@@ -42,7 +42,7 @@ export default function ModificaDipendente() {
         if (idFromUrl) {
           handleSelectChange({ target: { value: idFromUrl } });
         }
-      } catch (error) {
+      } catch  {
         setModal({
           isOpen: true,
           type: 'error',
@@ -54,7 +54,7 @@ export default function ModificaDipendente() {
       }
     }
     loadList();
-  }, []);
+  }, [searchParams]);
 
   // 2. Carica i dati completi quando si seleziona un dipendente
   const handleSelectChange = async (e) => {
@@ -147,7 +147,7 @@ export default function ModificaDipendente() {
             await eliminaDocumentoDipendente(selectedId, nomeFile);
             const docs = await recuperaDocumentiDipendente(selectedId);
             setDocumenti(docs || []);
-          } catch (error) {
+          } catch  {
             setModal({
               isOpen: true,
               type: 'error',

@@ -2,6 +2,25 @@ const fs = require('fs');
 const xml2js = require('xml2js');
 const { knex } = require('../db');
 const { ottieniElaboratoClienti } = require('./elaborati');
+const path = require('path');
+const { sameDocument, sameOfficialInvoice } = require('../fatture_import_choice');
+
+async function verifyReplacementXml(row) {
+  const filename = String(row.filename || '');
+  if (!filename || path.basename(filename) !== filename || path.extname(filename).toLowerCase() !== '.xml') {
+    throw new Error('XML di sostituzione non valido. Ricarica il file.');
+  }
+  const root = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'uploads') : path.join(__dirname, '..', 'uploads');
+  const file = path.join(root, 'unknown', filename);
+  if (!fs.existsSync(file)) throw new Error('XML di sostituzione non disponibile. Ricarica il file.');
+  const parsed = await parseSingoloXml(file);
+  if (String(parsed.numero).trim() !== String(row.numero_fattura).trim() ||
+      !sameDocument({ data_fattura: parsed.dataFattura, importo_totale: parsed.importoTotale }, row) ||
+      Math.abs(Number(parsed.imponibile) - Number(row.importo_imponibile)) >= 0.011 ||
+      Math.abs(Number(parsed.iva) - Number(row.importo_iva)) >= 0.011) {
+    throw new Error('I dati della fattura non corrispondono al file XML originale. Ricarica il file.');
+  }
+}
 
 async function parseSingoloXml(filePath) {
   const fileContent = fs.readFileSync(filePath, 'utf8');
@@ -196,17 +215,42 @@ async function anteprimaFattureXml(req, res) {
 }
 
 async function confermaFattureXml(req, res) {
-  const { righe, aggiornamenti_clienti } = req.body;
+  const { righe, aggiornamenti_clienti, risoluzioni = {}, mese, anno } = req.body;
   if (!righe || !Array.isArray(righe)) {
     return res.status(400).json({ success: false, error: 'Dati mancanti' });
   }
 
   try {
+    const { reconcileOfficial, normalizedDate } = require('../fatture_reconciliation');
+    const { inspectChoice, requireChoices, replaceRegistration } = require('../fatture_import_choice');
+    const mantenute = [];
+    let riconciliate = 0;
+    await knex.transaction(async trx => {
+    const inspected = [];
+    const seen = new Set();
     for (const riga of righe) {
+      if (!riga.cliente_id) { inspected.push(null); continue; }
+      const key = `${riga.cliente_id}|${String(riga.numero_fattura || '').trim()}|${normalizedDate(riga.data_fattura).slice(0, 4)}`;
+      if (seen.has(key)) throw new Error(`Il file contiene due volte la fattura ${riga.numero_fattura} per lo stesso cliente.`);
+      seen.add(key);
+      inspected.push(await inspectChoice(trx, { ...riga, mese, anno }));
+    }
+    requireChoices(inspected, risoluzioni);
+    for (const item of inspected) if (item?.conflict && risoluzioni[item.conflict.key] === 'sostituisci' && !item.conflict.sostituibile) {
+      const error = new Error(`La fattura ${item.conflict.numero_fattura} non può essere sostituita: manca la registrazione dell’addetto o risultano incassi.`);
+      error.status = 409;
+      throw error;
+    }
+    for (const riga of righe) {
+      const item = inspected[righe.indexOf(riga)];
+      if (item?.conflict && risoluzioni[item.conflict.key] === 'mantieni') {
+        mantenute.push(riga.numero_fattura);
+        continue;
+      }
       if (!riga.cliente_id && riga.xmlData) {
         // Create new client
         const idStr = "CLI_" + Date.now() + Math.floor(Math.random() * 1000);
-        await knex('clienti').insert({
+        await trx('clienti').insert({
           id: idStr,
           ragione_sociale: riga.xmlData.ragioneSociale,
           partita_iva: riga.xmlData.pIva || `MISSING_${Date.now()}_${Math.floor(Math.random()*1000)}`,
@@ -234,14 +278,19 @@ async function confermaFattureXml(req, res) {
         if (riga.xmlData.pIva) updateData.partita_iva = riga.xmlData.pIva;
         if (riga.xmlData.cf) updateData.codice_fiscale = riga.xmlData.cf;
         
-        await knex('clienti').where('id', riga.cliente_id).update(updateData);
+        await trx('clienti').where('id', riga.cliente_id).update(updateData);
       }
 
       // Check if already exists
-      const ext = await knex('fatture').where({ numero_fattura: riga.numero_fattura, cliente_id: riga.cliente_id }).first();
+      if (!normalizedDate(riga.data_fattura) || !Number.isFinite(Number(riga.importo_totale))) throw new Error(`Data o totale non valido per la fattura ${riga.numero_fattura}.`);
+      if (item?.conflict) {
+        await verifyReplacementXml(riga);
+        await replaceRegistration(trx, item.registration, riga, 'XML', req.authUser?.id, item.official);
+      }
+      const ext = item?.official || null;
       if (!ext) {
         const idFattura = "FAT_" + Date.now() + Math.floor(Math.random() * 1000);
-        await knex('fatture').insert({
+        await trx('fatture').insert({
           id: idFattura,
           numero_fattura: riga.numero_fattura,
           data_fattura: riga.data_fattura,
@@ -254,13 +303,25 @@ async function confermaFattureXml(req, res) {
           allegato_fattura: riga.filename, // link to the uploaded file
           note: riga.note
         });
+        const outcome = await reconcileOfficial(trx, { id: idFattura, cliente_id: riga.cliente_id, numero_fattura: riga.numero_fattura, data_fattura: riga.data_fattura, importo_totale: riga.importo_totale });
+        if (outcome.stato === 'riconciliata') riconciliate++;
+      } else {
+        if (!sameOfficialInvoice(ext, riga)) {
+          await trx('fatture').where({ id: ext.id }).update({ data_fattura: normalizedDate(riga.data_fattura),
+            importo_imponibile: riga.importo_imponibile, importo_iva: riga.importo_iva,
+            importo_totale: riga.importo_totale, data_scadenza: riga.data_scadenza,
+            allegato_fattura: riga.filename, note: riga.note });
+        }
+        const outcome = await reconcileOfficial(trx, { ...ext, data_fattura: riga.data_fattura, importo_totale: riga.importo_totale });
+        if (outcome.stato === 'riconciliata') riconciliate++;
       }
     }
+    });
     
-    res.json({ success: true });
+    res.json({ success: true, riconciliate, mantenute });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: error.message });
+    if (error.status !== 409) console.error(error);
+    res.status(error.status || 500).json({ success: false, error: error.message, conflitti: error.conflicts });
   }
 }
 

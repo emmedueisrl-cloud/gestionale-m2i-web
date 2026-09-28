@@ -8,6 +8,7 @@ export default function ModernModal({
   title, 
   subtitle, 
   content,
+  message,
   primaryAction, // { label: string, onClick: function, variant: 'primary'|'danger' }
   secondaryAction, // { label: string, onClick: function }
   tertiaryAction, // { label: string, onClick: function }
@@ -53,9 +54,9 @@ export default function ModernModal({
             <p className="text-[15px] font-semibold text-slate-200 mb-2">{subtitle}</p>
           )}
           
-          {content && (
+          {(content ?? message) && (
             <div className="text-[13.5px] text-slate-400 mb-6 leading-relaxed">
-              {content}
+              {content ?? message}
             </div>
           )}
 

@@ -1,8 +1,9 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Menu } from 'lucide-react';
 import React, { useContext, useState } from 'react';
-import { TopbarContext } from '../context/TopbarContext';
+import { TopbarContext } from '../context/topbarContextValue';
 import Sidebar from './Sidebar';
+import SaveConfirmation from './SaveConfirmation';
 
 const AppShell = ({ area }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -10,32 +11,9 @@ const AppShell = ({ area }) => {
   const navigate = useNavigate();
   const { onBackClick } = useContext(TopbarContext);
   
-  // Mostra il titolo del modulo precedente (es. se in Nuovo Dipendente, mostra Anagrafica Dipendenti)
-  const getPageTitle = () => {
-    const p = location.pathname;
-    
-    // Sottomoduli Dipendenti
-    if (p.includes('dipendenti/nuovo') || p.includes('dipendenti/scheda') || p.includes('dipendenti/modifica') || p.includes('dipendenti/proroghe') || p.includes('dipendenti/trasformazione') || p.includes('dipendenti/cessazione') || p.includes('dipendenti/maggiorazioni') || p.includes('dipendenti/chiavi') || p.includes('dipendenti/moduli')) {
-      return 'Anagrafica Dipendenti';
-    }
-    
-    // Sottomoduli Clienti
-    if (p.includes('clienti/nuovo') || p.includes('clienti/modifica') || p.includes('clienti/scheda') || p.includes('clienti/sconti')) {
-      return 'Anagrafica Clienti';
-    }
-
-    // Pagine principali (livello 1)
-    if (p.includes('dipendenti') || p.includes('clienti') || p.includes('ore/') || p.includes('elaborati/') || p.includes('commerciale/') || p.includes('report/') || p.includes('buste-paga')) {
-      return 'Dashboard';
-    }
-
-    if (p.includes('dashboard')) return 'Dashboard';
-    if (p === '/' || p === '/admin') return 'Home';
-    return 'Dashboard';
-  };
-
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-900">
+      <SaveConfirmation />
       <Sidebar area={area} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
       
       <div className="flex-1 flex flex-col h-screen md:pl-80 transition-all duration-300 w-full">

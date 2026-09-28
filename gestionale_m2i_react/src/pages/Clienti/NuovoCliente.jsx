@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { Building2, Save, ArrowLeft, Loader2, CreditCard, FileText, Camera, X, Upload, Plus, Key } from 'lucide-react';
-import { TopbarContext } from '../../context/TopbarContext';
+import { Building2, Save, ArrowLeft, Loader2, CreditCard, FileText, Camera, X, Plus, Key } from 'lucide-react';
+import { TopbarContext } from '../../context/topbarContextValue';
 import { useNavigate } from 'react-router-dom';
-import { salvaNuovoCliente, uploadFileCliente, recuperaListaOperatoriCommerciali } from '../../api/clienti';
-import { recuperaElencoDipendenti } from '../../api/dipendenti';
+import { salvaNuovoCliente, uploadFileCliente } from '../../api/clienti';
 import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
 
@@ -13,37 +12,12 @@ export default function NuovoCliente() {
   const [modalState, setModalState] = useState({ isOpen: false, type: '', message: '' });
   const [draftModal, setDraftModal] = useState(false);
   const { setOnBackClick } = useContext(TopbarContext);
-  const [dipendenti, setDipendenti] = useState([]);
-  const [listaOperatori, setListaOperatori] = useState([]);
-  const [listaCommerciali, setListaCommerciali] = useState([]);
 
   useEffect(() => {
     setOnBackClick(() => () => setDraftModal(true));
     return () => setOnBackClick(null);
   }, [setOnBackClick]);
 
-  useEffect(() => {
-    async function loadDipendenti() {
-      try {
-        const dips = await recuperaElencoDipendenti();
-        setDipendenti(dips || []);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    async function loadListeExtra() {
-      try {
-        const liste = await recuperaListaOperatoriCommerciali();
-        setListaOperatori(liste.operatori || []);
-        setListaCommerciali(liste.commerciali || []);
-      } catch (err) {
-        console.error("Errore caricamento liste operatori/commerciali:", err);
-      }
-    }
-    loadDipendenti();
-    loadListeExtra();
-  }, []);
-  
   // Stato per le foto del servizio
   const [fotoServizio, setFotoServizio] = useState([]);
   const [previewUrls, setPreviewUrls] = useState([]);
@@ -99,23 +73,6 @@ export default function NuovoCliente() {
       setDati(prev => ({ ...prev, percentualeTassazione: '0' }));
     }
   }, [dati.tipoTassazione]);
-
-  const getPossessoriArray = () => {
-    const copie = dati.copie || 0;
-    if (!dati.inPossessoDi) return Array(copie).fill('');
-    const arr = dati.inPossessoDi.split(',').map(s => s.trim());
-    const result = [];
-    for(let i=0; i<copie; i++) {
-       result.push(arr[i] || '');
-    }
-    return result;
-  };
-
-  const updatePossessore = (index, value) => {
-    const arr = getPossessoriArray();
-    arr[index] = value;
-    setDati({ ...dati, inPossessoDi: arr.join(', ') });
-  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -182,15 +139,6 @@ export default function NuovoCliente() {
   const removePhoto = (index) => {
     setFotoServizio(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleAltroSelect = (file) => {
-    if (file) {
-      setAltroModal({ isOpen: true, pendingFile: file, tempName: '' });
-    } else {
-      setFileAltro(null);
-      setNomeFileAltro('');
-    }
   };
 
   const confirmAltroName = () => {

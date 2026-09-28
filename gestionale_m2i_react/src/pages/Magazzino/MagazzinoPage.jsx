@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Search, Trash2, Edit, Link2, ArchiveRestore } from 'lucide-react';
+import { Package, Plus, Search, Trash2, Link2, ArchiveRestore } from 'lucide-react';
 import DataTable from '../../components/ui/DataTable';
 import { getMagazzino, eliminaAttrezzatura, assegnaAttrezzatura } from '../../api/magazzino';
 import NuovaAttrezzaturaModal from './NuovaAttrezzaturaModal';
@@ -43,7 +43,7 @@ export default function MagazzinoPage() {
           try {
             await eliminaAttrezzatura(id);
             loadData();
-          } catch (err) {
+          } catch  {
             setModal({
               isOpen: true,
               type: 'error',
@@ -73,7 +73,7 @@ export default function MagazzinoPage() {
           try {
             await assegnaAttrezzatura(id, null);
             loadData();
-          } catch (err) {
+          } catch  {
             setModal({
               isOpen: true,
               type: 'error',

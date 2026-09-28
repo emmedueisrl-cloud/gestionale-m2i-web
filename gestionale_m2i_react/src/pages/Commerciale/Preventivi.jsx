@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, FileText, Search, Download, Trash2, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Plus, FileText, Search, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
+const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
 const Preventivi = () => {
   const [preventivi, setPreventivi] = useState([]);
@@ -130,7 +130,7 @@ const Preventivi = () => {
                     <td className="p-4">
                       <div className="flex gap-2 justify-end">
                         {p.allegato_preventivo && (
-                          <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${p.allegato_preventivo}`} target="_blank" rel="noreferrer" className="p-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors border border-indigo-500/20" title="Scarica PDF">
+                          <a href={`${import.meta.env.VITE_API_URL || ''}${p.allegato_preventivo}`} target="_blank" rel="noreferrer" className="p-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors border border-indigo-500/20" title="Scarica PDF">
                             <Download size={18} />
                           </a>
                         )}

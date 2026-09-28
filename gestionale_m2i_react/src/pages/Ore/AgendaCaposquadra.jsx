@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Save, Plus, Trash2, Loader2, Clock, Shield, Download, Eraser } from 'lucide-react';
+import { Calendar, Plus, Trash2, Loader2, Clock, Shield, Download, Eraser } from 'lucide-react';
 import { recuperaElencoDipendenti, impostaCaposquadra } from '../../api/dipendenti';
 import { recuperaElencoClienti } from '../../api/clienti';
 import { recuperaDatiAgenda, salvaImpegnoAgenda, eliminaImpegnoAgenda, importaProgrammaFissoAgenda, svuotaSettimanaAgenda } from '../../api/ore';
@@ -15,7 +15,6 @@ export default function AgendaCaposquadra() {
   
   const [idDipendente, setIdDipendente] = useState('');
   // Gestione data: lunedì della settimana in visualizzazione
-  const getLocalISODate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const [dataInizioSettimana, setDataInizioSettimana] = useState('');
   
   const [impegni, setImpegni] = useState([]);

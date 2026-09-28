@@ -17,7 +17,7 @@ export async function apiCall(functionName, args = []) {
       try {
         const errJson = await res.json();
         if (errJson.error) errorMsg = errJson.error;
-      } catch (e) {
+      } catch  {
         // Ignora se non è JSON
       }
       throw new Error(errorMsg);

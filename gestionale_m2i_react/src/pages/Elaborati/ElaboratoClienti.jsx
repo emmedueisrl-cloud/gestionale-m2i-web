@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Download, Loader2, Lock, Unlock, CheckCircle, Calendar, Search, Info, Printer } from 'lucide-react';
+import { Download, Loader2, Lock, Unlock, CheckCircle, Calendar, Search, Info, Printer } from 'lucide-react';
 import { ottieniElaboratoClienti, chiudiMeseClienti, sbloccaMeseClienti, recuperaNoteElaborato, salvaNoteElaborato } from '../../api/elaborati';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
 import CalendarioClienteModal from '../../components/ui/CalendarioClienteModal';
 import CellaNota from '../../components/ui/CellaNota';
+import { workflowRequest, workflowPeriod, contabilitaPeriod } from '../../api/workflowElaborati';
 
 export default function ElaboratoClienti() {
   const dataOdierna = new Date();
@@ -19,6 +20,8 @@ export default function ElaboratoClienti() {
   const [modalState, setModalState] = useState({ isOpen: false, type: '', title: '', message: '', primaryAction: null });
   const [modalCalendario, setModalCalendario] = useState({ isOpen: false, clienteId: null, nomeCliente: '' });
   const [note, setNote] = useState({}); // { [idCliente]: 'testo nota' }
+  const [workflow, setWorkflow] = useState({ elencoConfermato: false, attesi: [], bloccati: [] });
+  const [fatturato, setFatturato] = useState({});
 
   const mesi = [
     { val: 1, label: 'Gennaio' }, { val: 2, label: 'Febbraio' }, { val: 3, label: 'Marzo' },
@@ -45,6 +48,14 @@ export default function ElaboratoClienti() {
       const noteMap = {};
       (noteArr || []).forEach(n => { noteMap[n.soggetto_id] = n.testo; });
       setNote(noteMap);
+      const [state, accounting] = await Promise.all([
+        workflowRequest(`${workflowPeriod('cliente', mese, anno)}/stato`),
+        workflowRequest(contabilitaPeriod('cliente', mese, anno))
+      ]);
+      setWorkflow(state);
+      setFatturato(Object.fromEntries(accounting.map(r => [r.idCliente, r])));
+      const frozen = new Map(accounting.map(r => [r.idCliente, r]));
+      setDati(prev => prev.map(r => ({ ...r, ...(frozen.get(r.idCliente) || {}) })));
     } catch (err) {
       console.error(err);
     } finally {
@@ -58,12 +69,15 @@ export default function ElaboratoClienti() {
   }, [mese, anno]);
 
   const handleChiudiMese = async () => {
+    if (dati.length > 0 && !workflow.elencoConfermato) { window.alert('Conferma prima l’elenco completo dei clienti previsti per questo mese.'); return; }
+    const elaboratoVuoto = dati.length === 0;
     setModalState({
       isOpen: true,
       type: 'warning',
-      title: 'Conferma Chiusura Mese Clienti',
+      title: elaboratoVuoto ? 'Attenzione: elaborato clienti vuoto' : 'Conferma Chiusura Mese Clienti',
       content: (
         <div className="text-left space-y-4">
+          {elaboratoVuoto && <p className="font-bold text-amber-300">Questo elaborato non contiene alcun cliente. Confermando, il mese sarà chiuso con zero righe. Verifica che sia davvero ciò che desideri.</p>}
           <p>
             <strong>Cosa significa chiudere un mese?</strong><br/>
             Chiudendo un mese, andrai a "congelare" e storicizzare tutti i calcoli di fatturazione per il mese selezionato.
@@ -77,12 +91,12 @@ export default function ElaboratoClienti() {
         </div>
       ),
       primaryAction: {
-        label: 'Conferma Chiusura',
+        label: elaboratoVuoto ? 'Confermo: chiudi vuoto' : 'Conferma Chiusura',
         onClick: async () => {
           setModalState({ ...modalState, isOpen: false });
           setIsLoading(true);
           try {
-            await chiudiMeseClienti(mese, anno, dati);
+            await chiudiMeseClienti(mese, anno, dati, elaboratoVuoto);
             await caricaElaborato();
           } catch (err) {
             console.error(err);
@@ -90,7 +104,7 @@ export default function ElaboratoClienti() {
               isOpen: true,
               type: 'error',
               title: 'Errore',
-              content: 'Errore durante la chiusura del mese.',
+              content: err.message || 'Errore durante la chiusura del mese.',
               primaryAction: { label: 'Chiudi', onClick: () => setModalState(prev => ({ ...prev, isOpen: false })) }
             });
           } finally {
@@ -138,6 +152,21 @@ export default function ElaboratoClienti() {
         onClick: () => setModalState(prev => ({ ...prev, isOpen: false }))
       }
     });
+  };
+
+  const confirmRoster = async () => {
+    if (!dati.length || !window.confirm(`Confermi l’elenco completo di ${dati.length} clienti previsti per ${mese}/${anno}? Controlla che nessuno manchi prima di blindare le righe.`)) return;
+    try {
+      await workflowRequest(`${workflowPeriod('cliente', mese, anno)}/elenco`, { method: 'POST', body: JSON.stringify({ ids: dati.map(r => r.idCliente) }) });
+      await caricaElaborato();
+    } catch (err) { window.alert(err.message); }
+  };
+
+  const toggleLock = async row => {
+    const action = row.rigaBloccata ? 'sblocca' : 'blinda';
+    if (!window.confirm(`${row.rigaBloccata ? 'Sbloccare' : 'Blindare'} la riga di ${row.ragioneSociale} per ${mese}/${anno}? ${row.rigaBloccata ? 'La riga tornerà modificabile solo se non è stata fatturata.' : 'Importi e note diventeranno disponibili alla contabilità.'}`)) return;
+    try { await workflowRequest(`${workflowPeriod('cliente', mese, anno)}/righe/${encodeURIComponent(row.idCliente)}/${action}`, { method: 'POST', body: '{}' }); await caricaElaborato(); }
+    catch (err) { window.alert(err.message); }
   };
 
   const showInfoModal = (title, text) => {
@@ -242,13 +271,19 @@ export default function ElaboratoClienti() {
       accessor: 'importoTotale',
       render: (row) => <span className="font-bold text-slate-50">€ {parseFloat(row.importoTotale || 0).toFixed(2)}</span>
     },
+    { header: 'Realmente Fatturato', accessor: 'fatturato', sortable: false, render: row => {
+      const record = fatturato[row.idCliente];
+      return record?.fatture?.length ? <div><strong>€ {Number(record.importoRealmenteFatturato).toFixed(2)}</strong><div className="text-xs text-amber-300">({record.differenza >= 0 ? '+' : '−'}€ {Math.abs(record.differenza).toFixed(2)})</div></div> : <span className="text-slate-500">—</span>;
+    } },
     { 
       header: 'Note',
       accessor: 'note',
       sortable: false,
       render: (row) => (
         <CellaNota
-          testo={note[row.idCliente] || ''}
+          testo={note[row.idCliente] ?? row.notaMensile ?? ''}
+          notaFissa={row.notaFissa || ''}
+          readOnly={isChiuso || row.rigaBloccata}
           onSave={async (testo) => {
             try {
               await salvaNoteElaborato('cliente', row.idCliente, mese, anno, testo);
@@ -267,13 +302,17 @@ export default function ElaboratoClienti() {
         />
       )
     },
+    { header: 'Blindatura', accessor: 'rigaBloccata', sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
+      <button className={`rounded px-2 py-1 text-xs ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`} disabled={!workflow.elencoConfermato && !row.rigaBloccata} onClick={() => toggleLock(row)}>
+        {row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
+      </button> },
     {
       header: 'Azioni',
       accessor: 'azioni',
       render: (row) => (
         <div className="flex gap-2">
           <button 
-            onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/pdf/elaborato-cliente?mese=${mese}&anno=${anno}&cliente_id=${row.idCliente}`)}
+            onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/contabilita/pdf/cliente/${anno}/${mese}/${encodeURIComponent(row.idCliente)}`)}
             className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
             title="Scarica PDF Rendiconto"
           >
@@ -321,10 +360,11 @@ export default function ElaboratoClienti() {
             className="p-2 bg-slate-900/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-24"
           />
 
+          {!isChiuso && dati.length > 0 && <button onClick={confirmRoster} className="rounded-lg bg-slate-700 px-3 py-2 text-sm text-white">{workflow.elencoConfermato ? `Elenco confermato (${workflow.attesi.length}) · aggiorna` : 'Conferma elenco clienti'}</button>}
           {!isChiuso ? (
             <button 
               onClick={handleChiudiMese}
-              disabled={isLoading || dati.length === 0}
+              disabled={isLoading}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm ml-2 disabled:opacity-50"
             >
               <CheckCircle className="w-4 h-4" /> Chiudi Mese
@@ -339,7 +379,7 @@ export default function ElaboratoClienti() {
             </button>
           )}
           <button
-            onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/pdf/stampa-elaborato-clienti?mese=${mese}&anno=${anno}`, '_blank')}
+            onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/pdf/stampa-elaborato-clienti?mese=${mese}&anno=${anno}`, '_blank')}
             className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white font-medium shadow flex items-center gap-2 transition-colors"
             title="Stampa l'intero elaborato in PDF"
           >

@@ -27,7 +27,7 @@ const ReportIA = () => {
   const caricaImpostazioni = async () => {
     try {
       const sett = await getAiSettings();
-      setApiKey(sett.apiKey || '');
+      setApiKey('');
       if (!sett.hasKey) setIsSettingsOpen(true);
     } catch (e) {
       console.error(e);
@@ -38,8 +38,9 @@ const ReportIA = () => {
     setIsSavingKey(true);
     try {
       await saveAiSettings(apiKey);
+      setApiKey('');
       setIsSettingsOpen(false);
-    } catch (e) {
+    } catch  {
       setAlertModal({
         isOpen: true,
         type: 'error',
@@ -259,7 +260,7 @@ const ReportIA = () => {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="AIzaSy..."
+                placeholder="Inserisci una nuova chiave API"
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
               />
             </div>

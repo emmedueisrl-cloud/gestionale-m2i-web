@@ -9,23 +9,16 @@ export default function CalendarioClienteModal({ isOpen, onClose, clienteId, nom
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (isOpen && clienteId) {
-      loadData();
-    }
-  }, [isOpen, clienteId, mese, anno]);
-
-  async function loadData() {
+    if (!isOpen || !clienteId) return;
+    let active = true;
     setIsLoading(true);
     setError('');
-    try {
-      const data = await calendarioClienteOre(mese, anno, clienteId);
-      setGiorni(data);
-    } catch (err) {
-      setError(err.message || 'Errore durante il caricamento del calendario');
-    } finally {
-      setIsLoading(false);
-    }
-  }
+    calendarioClienteOre(mese, anno, clienteId)
+      .then(data => { if (active) setGiorni(data); })
+      .catch(err => { if (active) setError(err.message || 'Errore durante il caricamento del calendario'); })
+      .finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, [isOpen, clienteId, mese, anno]);
 
   const numGiorniMese = new Date(anno, mese, 0).getDate();
   const giorniDelMese = Array.from({ length: numGiorniMese }, (_, i) => i + 1);

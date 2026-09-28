@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const { knex } = require('../db');
+const { executeReadOnlyAiQuery, AI_TABLES } = require('../ai_query');
 
 async function getApiKey() {
   const row = await knex('configurazioni').where('chiave', 'gemini_api_key').first();
@@ -9,7 +10,7 @@ async function getApiKey() {
 const aiController = {
   async getSettings() {
     const key = await getApiKey();
-    return { hasKey: !!key, apiKey: key || '' };
+    return { hasKey: !!key };
   },
 
   async saveSettings(dati) {
@@ -24,7 +25,7 @@ const aiController = {
   },
 
   async getDatabaseSchema() {
-    const tables = ['dipendenti', 'clienti', 'registro_ore', 'fatture', 'agenda_caposquadra', 'programma_fisso'];
+    const tables = AI_TABLES;
     let schemaStr = '';
     for (const table of tables) {
       try {
@@ -38,6 +39,9 @@ const aiController = {
 
   async askChat(dati) {
     const { prompt, history = [] } = dati;
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 2000 || !Array.isArray(history)) {
+      throw new Error('Domanda AI non valida.');
+    }
     const apiKey = await getApiKey();
     if (!apiKey) throw new Error('API_KEY_MISSING');
 
@@ -62,9 +66,9 @@ const aiController = {
       '2. "query": La query SQLite per i dati.\n' +
       'IMPORTANTE: rispondi solo con JSON valido, senza markdown.';
 
-    const mappedHistory = history.map(h => ({
+    const mappedHistory = history.slice(-10).map(h => ({
       role: h.role === 'ai' ? 'assistant' : 'user',
-      content: h.content || ''
+      content: String(h.content || '').slice(0, 2000)
     }));
 
     const completion = await openai.chat.completions.create({
@@ -88,13 +92,12 @@ const aiController = {
     let isQueryError = false;
 
     if (responseData.query) {
-      console.log('AI Query:', responseData.query);
-      if (!responseData.query.trim().toUpperCase().startsWith('SELECT')) {
+      if (typeof responseData.query !== 'string' || !/^\s*SELECT\b/i.test(responseData.query)) {
         responseData.message = 'Per ragioni di sicurezza, posso eseguire solo query di ricerca (SELECT).';
         responseData.query = null;
       } else {
         try {
-          data = await knex.raw(responseData.query);
+          data = await executeReadOnlyAiQuery(responseData.query, knex);
           
           // Verifica se il risultato è vuoto o contiene solo somme nulle
           let isEmpty = false;
@@ -109,7 +112,7 @@ const aiController = {
             responseData.message = "Non ho trovato nessun dato corrispondente a questo nome (o nessuna registrazione per questo periodo). Puoi specificare meglio di chi si tratta o controllare il nome?";
           }
         } catch (dbError) {
-          console.error('AI SQL Error:', dbError);
+          console.error('AI SQL Error:', dbError.message);
           isQueryError = true;
           responseData.message = 'Ho provato a estrarre i dati ma ce stato un errore tecnico nella query. Potresti riformulare la domanda?';
         }

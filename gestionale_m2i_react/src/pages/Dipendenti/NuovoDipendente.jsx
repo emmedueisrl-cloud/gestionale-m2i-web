@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserPlus, Building, HardHat, ArrowLeft, CalendarDays, FileText } from 'lucide-react';
+import { UserPlus, Building, HardHat, ArrowLeft, CalendarDays } from 'lucide-react';
 import DipendenteForm from '../../components/ui/DipendenteForm';
 import ModernModal from '../../components/ui/ModernModal';
 import ProgrammaFissoModal from '../../components/ui/ProgrammaFissoModal';
@@ -170,6 +170,8 @@ export default function NuovoDipendente() {
           <DipendenteForm 
             ref={formRef}
             mode="inserimento" 
+            initialDivisione={tipo}
+            onDivisioneChange={setTipo}
             onSubmit={handleSubmit} 
             onCancel={handleCancel} 
             onOpenProgrammaFisso={() => setModal({ 

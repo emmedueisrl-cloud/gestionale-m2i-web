@@ -4,6 +4,7 @@ const { simpleParser } = require('mailparser');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const { resolvePayrollAttachment } = require('../payroll_attachment');
 
 const uploadsDir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads');
 
@@ -161,9 +162,8 @@ exports.syncEmails = async (req, res) => {
     }
     const config = JSON.parse(configRow.valore);
     
-    if (!offset || parseInt(offset) === 0) {
-      await knex('emails').where('id', 'like', 'EM_IMAP_%').whereNull('allegati').del();
-    }
+    // La sincronizzazione aggiunge messaggi; non deve cancellare l'archivio
+    // locale (né stato letto, preferiti o cartelle), anche se IMAP fallisce.
 
     const addedCount = await syncImapEmails(config, parseInt(limit) || 50, parseInt(offset) || 0);
     res.json({ success: true, addedCount });
@@ -322,11 +322,11 @@ exports.sendBustaPagaEmail = async (req, res) => {
 
     for (const busta of buste) {
       try {
-        const filePath = path.join(__dirname, '..', busta.allegato_busta_paga);
-        if (!fs.existsSync(filePath)) {
-          risultati.push({ id: busta.id, dipendente: busta.dipendente, success: false, error: 'File PDF non trovato sul server.' });
-          continue;
-        }
+        const storedBusta = await knex('buste_paga').where({ id: busta.id }).first();
+        if (!storedBusta) throw new Error('Busta paga non trovata');
+        const filePath = resolvePayrollAttachment(
+          process.env.DATA_DIR || path.join(__dirname, '..'), storedBusta.allegato_busta_paga
+        );
 
         await transporter.sendMail({
           from: `"${nomeMittente}" <${config.user}>`,

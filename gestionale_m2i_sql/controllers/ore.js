@@ -1,5 +1,17 @@
 const { knex, getVal } = require('../db');
 
+function durataDiurna(oraInizio, oraFine) {
+  const valida = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (typeof oraInizio !== 'string' || typeof oraFine !== 'string' || !valida.test(oraInizio) || !valida.test(oraFine)) {
+    throw new Error('Orario non valido: usa il formato HH:MM tra 00:00 e 23:59.');
+  }
+  const minuti = ora => Number(ora.slice(0, 2)) * 60 + Number(ora.slice(3));
+  const durata = minuti(oraFine) - minuti(oraInizio);
+  if (durata <= 0) throw new Error('L’ora di fine deve essere successiva all’inizio nello stesso giorno.');
+  if (durata > 12 * 60) throw new Error('Non sono consentite più di 12 ore nello stesso giorno.');
+  return durata / 60;
+}
+
 module.exports = {
   async recuperaOreMensili(idDipendente, mese, anno) {
     const rows = await knex('registro_ore as r')
@@ -52,53 +64,76 @@ module.exports = {
 
   async salvaPresenzeMensili(dati) {
     const idDipendente = getVal(dati, "idDipendente");
-    const mese = parseInt(getVal(dati, "mese"), 10);
-    const anno = parseInt(getVal(dati, "anno"), 10);
-    const righe = getVal(dati, "righe") || [];
+    const mese = Number(getVal(dati, "mese"));
+    const anno = Number(getVal(dati, "anno"));
+    const righe = getVal(dati, "righe");
     const metodoInserimento = getVal(dati, "metodoInserimento") || 'Calendarizzata';
-    
-    await knex('registro_ore')
-      .where({ dipendente_id: idDipendente, mese, anno })
-      .del();
-
-    const dipInfo = await knex('dipendenti').select('paga_oraria_reale').where('id', idDipendente).first();
-    const pagaOraria = dipInfo ? dipInfo.paga_oraria_reale : 0;
-
+    if (!Number.isInteger(mese) || mese < 1 || mese > 12 || !Number.isInteger(anno) || anno < 2000 || !Array.isArray(righe)) {
+      throw new Error('Dati del registro ore non validi');
+    }
+    const giorniNelMese = new Date(anno, mese, 0).getDate();
+    const totaliGiornalieri = Array(31).fill(0);
     for (const r of righe) {
-      const dbRow = {
-        mese,
-        anno,
-        dipendente_id: idDipendente,
-        cliente_id: r.idCliente || null,
-        causale_assenza: r.causale || null,
-        note: r.note || "",
-        metodo_inserimento: metodoInserimento,
-        ore_totali: 0,
-        costo_totale: 0
-      };
-      
-      let oreTot = 0;
+      if (!r || typeof r !== 'object') throw new Error('Riga ore non valida');
       if (metodoInserimento === 'Mensile Totale') {
-        oreTot = parseFloat(r.ore_totali) || 0;
+        const ore = Number(r.ore_totali || 0);
+        if (!Number.isFinite(ore) || ore < 0 || ore > giorniNelMese * 12) throw new Error('Ore mensili non valide');
       } else {
-        for (let i = 1; i <= 31; i++) {
-          const oreGiorno = parseFloat(r.giorni[i - 1]) || 0;
-          dbRow[`giorno_${i}`] = oreGiorno;
-          oreTot += oreGiorno;
+        if (!Array.isArray(r.giorni)) throw new Error('Giorni del registro ore non validi');
+        for (let i = 0; i < 31; i++) {
+          const ore = Number(r.giorni[i] || 0);
+          if (!Number.isFinite(ore) || ore < 0 || (i >= giorniNelMese && ore !== 0)) throw new Error(`Ore non valide al giorno ${i + 1}`);
+          totaliGiornalieri[i] += ore;
+          if (totaliGiornalieri[i] > 12) throw new Error(`Il giorno ${i + 1} supera il limite di 12 ore complessive`);
         }
       }
-      
-      dbRow.ore_totali = oreTot;
-      dbRow.costo_totale = oreTot * pagaOraria;
-
-      await knex('registro_ore').insert(dbRow);
     }
-    await knex('log_attivita').insert({
-      categoria: "Ore Mensili", icona: "⏰", colore: "#3b82f6",
-      descrizione: `Salvate ore mensili (${metodoInserimento}) di ${mese}/${anno} per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
-    });
 
-    return true;
+    return knex.transaction(async trx => {
+      const dipInfo = await trx('dipendenti').select('paga_oraria_reale').where('id', idDipendente).first();
+      if (!dipInfo) throw new Error('Dipendente non trovato');
+      const pagaOraria = Number(dipInfo.paga_oraria_reale) || 0;
+
+      await trx('registro_ore')
+        .where({ dipendente_id: idDipendente, mese, anno })
+        .del();
+
+      for (const r of righe) {
+        const dbRow = {
+          mese,
+          anno,
+          dipendente_id: idDipendente,
+          cliente_id: r.idCliente || null,
+          causale_assenza: r.causale || null,
+          note: r.note || "",
+          metodo_inserimento: metodoInserimento,
+          ore_totali: 0,
+          costo_totale: 0
+        };
+
+        let oreTot = 0;
+        if (metodoInserimento === 'Mensile Totale') {
+          oreTot = parseFloat(r.ore_totali) || 0;
+        } else {
+          for (let i = 1; i <= 31; i++) {
+            const oreGiorno = parseFloat(r.giorni[i - 1]) || 0;
+            dbRow[`giorno_${i}`] = oreGiorno;
+            oreTot += oreGiorno;
+          }
+        }
+
+        dbRow.ore_totali = oreTot;
+        dbRow.costo_totale = oreTot * pagaOraria;
+
+        await trx('registro_ore').insert(dbRow);
+      }
+      await trx('log_attivita').insert({
+        categoria: "Ore Mensili", icona: "⏰", colore: "#3b82f6",
+        descrizione: `Salvate ore mensili (${metodoInserimento}) di ${mese}/${anno} per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
+      });
+
+      return true;
+    });
   },
 
   async precompilaDaProgrammaFisso(idDipendente, mese, anno) {
@@ -125,13 +160,7 @@ module.exports = {
         };
       }
 
-      const iniParts = (p.ora_inizio || "00:00").split(':');
-      const finParts = (p.ora_fine || "00:00").split(':');
-      const hIni = Number(iniParts[0]) || 0;
-      const mIni = Number(iniParts[1]) || 0;
-      const hFin = Number(finParts[0]) || 0;
-      const mFin = Number(finParts[1]) || 0;
-      const ore = (hFin + mFin/60) - (hIni + mIni/60);
+      const ore = durataDiurna(p.ora_inizio, p.ora_fine);
 
       for (let g = 1; g <= numGiorniMese; g++) {
         const d = new Date(anno, mese - 1, g);
@@ -167,9 +196,11 @@ module.exports = {
 
   async salvaProgrammaFisso(dati) {
     const idDipendente = getVal(dati, "idDipendente");
-    const impegni = getVal(dati, "impegni") || [];
-    
-    await knex('programma_fisso').where('dipendente_id', idDipendente).del();
+    const impegni = getVal(dati, "impegni");
+    if (!idDipendente || !Array.isArray(impegni) || impegni.some(imp => !imp || typeof imp !== 'object' || Array.isArray(imp))) {
+      throw new Error('Dati del programma fisso non validi');
+    }
+    impegni.forEach(imp => durataDiurna(imp.oraInizio, imp.oraFine));
     
     const rowsToInsert = impegni.map(imp => ({
       dipendente_id: idDipendente,
@@ -181,14 +212,19 @@ module.exports = {
       note: imp.note
     }));
     
-    if (rowsToInsert.length > 0) {
-      await knex('programma_fisso').insert(rowsToInsert);
-    }
-    await knex('log_attivita').insert({
-      categoria: "Ore Mensili", icona: "⚙️", colore: "#f59e0b",
-      descrizione: `Aggiornato programma fisso settimanale per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
+    return knex.transaction(async trx => {
+      const employee = await trx('dipendenti').select('id').where('id', idDipendente).first();
+      if (!employee) throw new Error('Dipendente non trovato');
+      await trx('programma_fisso').where('dipendente_id', idDipendente).del();
+      if (rowsToInsert.length > 0) {
+        await trx('programma_fisso').insert(rowsToInsert);
+      }
+      await trx('log_attivita').insert({
+        categoria: "Ore Mensili", icona: "⚙️", colore: "#f59e0b",
+        descrizione: `Aggiornato programma fisso settimanale per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
+      });
+      return true;
     });
-    return true;
   },
 
   async recuperaDatiAgenda(idDipendente, dataLunedi) {
@@ -222,6 +258,8 @@ module.exports = {
   },
 
   async salvaImpegnoAgenda(imp) {
+    if (!imp || typeof imp !== 'object') throw new Error('Impegno agenda non valido');
+    durataDiurna(imp.oraInizio, imp.oraFine);
     await knex('agenda_caposquadra').insert({
       dipendente_id: imp.idDipendente,
       data: imp.data,
@@ -308,7 +346,17 @@ module.exports = {
     }
 
     if (rowsToInsert.length > 0) {
-      await knex('agenda_caposquadra').insert(rowsToInsert);
+      await knex.transaction(async trx => {
+        for (const row of rowsToInsert) {
+          durataDiurna(row.ora_inizio, row.ora_fine);
+          const esistente = await trx('agenda_caposquadra').where({
+            dipendente_id: row.dipendente_id, data: row.data,
+            ora_inizio: row.ora_inizio, ora_fine: row.ora_fine,
+            cliente_id: row.cliente_id
+          }).first();
+          if (!esistente) await trx('agenda_caposquadra').insert(row);
+        }
+      });
     }
     
     return true;

@@ -1,3 +1,5 @@
+const { ownerFolder } = require('../upload_paths');
+const { deleteAttachment } = require('../attachment_delete');
 const { knex, generaIDIncrementale, getVal } = require('../db');
 const fs = require('fs');
 const path = require('path');
@@ -81,7 +83,7 @@ module.exports = {
   async recuperaDocumentiCliente(id) {
     const fs = require('fs');
     const path = require('path');
-    const safeId = path.basename(String(id));
+    const safeId = ownerFolder(id);
     const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
     if (!fs.existsSync(dir)) return [];
     
@@ -119,23 +121,12 @@ module.exports = {
   },
 
   async eliminaDocumentoCliente(id, nomeFile) {
-    const fs = require('fs');
-    const path = require('path');
-    const safeId = path.basename(String(id));
-    const safeNomeFile = path.basename(String(nomeFile));
-    const filePath = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId, safeNomeFile);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      await knex('log_attivita').insert({
-        categoria: "Documenti", icona: "🗑️", colore: "#ef4444",
-        descrizione: `Eliminato documento <b>${nomeFile}</b> (Cliente ${id})`, eseguito_da: "LocalServer"
-      });
-      return true;
-    }
-    return false;
+    return deleteAttachment(knex, process.env.DATA_DIR || path.join(__dirname, '..'), 'clienti', id, nomeFile);
   },
 
   async eliminaCliente(id) {
+    const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', ownerFolder(id));
+    const hasAttachments = fs.existsSync(dir) && fs.readdirSync(dir).length > 0;
     // 1. Controlla dipendenze
     const dipendenzeFatture = await knex('fatture').where('cliente_id', id).count('* as cnt').first();
     const dipendenzeProgFisso = await knex('programma_fisso').where('cliente_id', id).count('* as cnt').first();
@@ -150,7 +141,7 @@ module.exports = {
       (dipendenzeMesiClienti && dipendenzeMesiClienti.cnt > 0) ||
       (dipendenzeMesiProvv && dipendenzeMesiProvv.cnt > 0);
 
-    if (hasDipendenze) {
+    if (hasDipendenze || hasAttachments) {
       // Soft delete
       await knex('clienti').where('id', id).update({ cestinato: 1 });
       await knex('log_attivita').insert({
@@ -159,19 +150,13 @@ module.exports = {
       });
       return { cestinato: true };
     } else {
-      // Hard delete
-      // Prima elimino anche file caricati se ci sono
-      const fs = require('fs');
-      const path = require('path');
-      const safeId = path.basename(String(id));
-      const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
-      if (fs.existsSync(dir)) {
-        fs.rmSync(dir, { recursive: true, force: true });
-      }
-      await knex('clienti').where('id', id).del();
-      await knex('log_attivita').insert({
+      // Nessuna cancellazione di cartelle: i clienti con allegati vanno nel cestino.
+      await knex.transaction(async trx => {
+      await trx('clienti').where('id', id).del();
+      await trx('log_attivita').insert({
         categoria: "Clienti", icona: "☠️", colore: "#dc2626",
         descrizione: `Eliminazione definitiva cliente (Hard Delete): <b>${id}</b>`, eseguito_da: "LocalServer"
+      });
       });
       return { cestinato: false };
     }

@@ -7,7 +7,8 @@ const ImpostazioniLayout = () => {
   const navItems = [
     { path: '/admin/impostazioni/email', label: '✉️ Impostazioni Mail' },
     { path: '/admin/impostazioni/log', label: '🕒 Log Sistema' },
-    { path: '/admin/impostazioni/backup', label: '💾 Backup Dati' }
+    { path: '/admin/impostazioni/backup', label: '💾 Backup Dati' },
+    { path: '/admin/impostazioni/utenti', label: '👤 Account Utenti' }
   ];
 
   return (

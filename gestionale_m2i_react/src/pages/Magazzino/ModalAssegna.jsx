@@ -32,7 +32,7 @@ export default function ModalAssegna({ attrezzatura, onClose, onSuccess }) {
     try {
       await assegnaAttrezzatura(attrezzatura.id, selectedCliente);
       onSuccess();
-    } catch (err) {
+    } catch  {
       setError('Errore durante l\'assegnazione');
       setIsSubmitting(false);
     }

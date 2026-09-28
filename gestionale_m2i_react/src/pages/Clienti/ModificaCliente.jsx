@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Upload, X, Save, ArrowLeft, Loader2, Camera, FileSignature, CheckCircle2, User, Building2, MapPin, Mail, Landmark, Search, FileText, CreditCard, Download, Trash2, Plus, Key } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Save, ArrowLeft, Loader2, Camera, Building2, FileText, CreditCard, Download, Trash2, Plus } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import { recuperaDatiCompletiCliente, salvaModificheCliente, uploadFileCliente, recuperaDocumentiCliente, eliminaDocumentoCliente, recuperaListaOperatoriCommerciali } from '../../api/clienti';
+import { recuperaDatiCompletiCliente, salvaModificheCliente, uploadFileCliente, recuperaDocumentiCliente, eliminaDocumentoCliente } from '../../api/clienti';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
@@ -16,8 +16,6 @@ function ModificaCliente() {
   const [isSaving, setIsSaving] = useState(false);
   const [modalState, setModalState] = useState({ isOpen: false, type: '', message: '' });
   const [dipendenti, setDipendenti] = useState([]);
-  const [listaOperatori, setListaOperatori] = useState([]);
-  const [listaCommerciali, setListaCommerciali] = useState([]);
 
   useEffect(() => {
     async function loadDipendenti() {
@@ -28,17 +26,7 @@ function ModificaCliente() {
         console.error(err);
       }
     }
-    async function loadListeExtra() {
-      try {
-        const liste = await recuperaListaOperatoriCommerciali();
-        setListaOperatori(liste.operatori || []);
-        setListaCommerciali(liste.commerciali || []);
-      } catch (err) {
-        console.error("Errore caricamento liste operatori/commerciali:", err);
-      }
-    }
     loadDipendenti();
-    loadListeExtra();
   }, []);
   // Stato foto
   const [fotoEsistenti, setFotoEsistenti] = useState([]);
@@ -131,7 +119,7 @@ function ModificaCliente() {
             try {
               parsedSedi = JSON.parse(datiCliente.sede_operativa);
               if (!Array.isArray(parsedSedi)) parsedSedi = [datiCliente.sede_operativa];
-            } catch(e) {
+            } catch {
               parsedSedi = [datiCliente.sede_operativa];
             }
           }
@@ -313,7 +301,7 @@ function ModificaCliente() {
             await eliminaDocumentoCliente(dati.id, nomeFile);
             const docs = await recuperaDocumentiCliente(dati.id);
             setDocumentiEsistenti(docs || []);
-          } catch (err) {
+          } catch  {
             setModalState({
               isOpen: true,
               type: 'error',
@@ -754,7 +742,7 @@ function ModificaCliente() {
                   {documentiEsistenti.map((doc, index) => (
                     <div key={index} className="flex relative items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-700 hover:border-indigo-500 hover:bg-slate-800 transition-all group">
                       <a 
-                        href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${doc.path}`} 
+                        href={`${import.meta.env.VITE_API_URL || ''}${doc.path}`}
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 w-full"
@@ -822,7 +810,7 @@ function ModificaCliente() {
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mt-4">
                   {fotoEsistenti.map((url, index) => (
                     <div key={`exist-${index}`} className="relative group rounded-lg overflow-hidden border border-slate-700 aspect-square bg-slate-800">
-                      <img src={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${url.replace(/^\/?/, '')}`} alt={`Foto Esistente ${index}`} className="w-full h-full object-cover" />
+                      <img src={`${import.meta.env.VITE_API_URL || ''}/${url.replace(/^\/?/, '')}`} alt={`Foto Esistente ${index}`} className="w-full h-full object-cover" />
                       <button 
                         onClick={() => removeFotoEsistente(index)}
                         className="absolute top-2 right-2 bg-red-500/80 hover:bg-red-600 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"

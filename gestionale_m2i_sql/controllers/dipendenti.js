@@ -1,3 +1,5 @@
+const { ownerFolder } = require('../upload_paths');
+const { deleteAttachment } = require('../attachment_delete');
 const fs = require('fs');
 const path = require('path');
 const { knex, generaIDIncrementale, getVal } = require('../db');
@@ -27,7 +29,7 @@ module.exports = {
 
   async elencoTuttiIDipendenti() {
     const list = await knex('dipendenti')
-      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email', 'mansione', 'scadenza')
+      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email', 'mansione', 'scadenza', 'link_cv', 'link_documenti', 'allegato_documenti')
       .where('cestinato', 0);
       
     return list.map(d => ({
@@ -40,6 +42,8 @@ module.exports = {
       mansione: d.mansione,
       stato: d.stato,
       email: d.email,
+      link_cv: d.link_cv,
+      link_documenti: d.link_documenti || d.allegato_documenti,
       scadenza: d.scadenza
     }));
   },
@@ -68,7 +72,7 @@ module.exports = {
   },
 
   async recuperaDocumentiDipendente(id) {
-    const safeId = path.basename(String(id));
+    const safeId = ownerFolder(id);
     const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId);
     if (!fs.existsSync(dir)) return [];
     
@@ -88,19 +92,7 @@ module.exports = {
   },
 
   async eliminaDocumentoDipendente(id, nomeFile) {
-    if (!nomeFile || nomeFile.includes('..') || nomeFile.includes('/')) {
-      throw new Error('Nome file non valido');
-    }
-    const safeId = path.basename(String(id));
-    const filePath = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', safeId, nomeFile);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    await knex('log_attivita').insert({
-      categoria: "Documenti", icona: "🗑️", colore: "#ef4444",
-      descrizione: `Eliminato documento <b>${nomeFile}</b> (Dipendente ${id})`, eseguito_da: "LocalServer"
-    });
-    return true;
+    return deleteAttachment(knex, process.env.DATA_DIR || path.join(__dirname, '..'), 'dipendenti', id, nomeFile);
   },
 
   async salvaDipendente(dati) {

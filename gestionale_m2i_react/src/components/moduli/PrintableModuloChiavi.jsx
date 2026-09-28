@@ -1,7 +1,9 @@
 import React from 'react';
+import { companyStampUrl } from '../../utils/companyStampUrl';
 
 export default function PrintableModuloChiavi({ formData, dipendenteData, aziendaData, indirizzoStampa, cittaStampa }) {
   if (!formData || !dipendenteData) return null;
+  const timbroUrl = companyStampUrl(aziendaData?.timbro_path);
 
   const formattaData = (dataStr) => {
     if (!dataStr) return '_____ / _____ / __________';
@@ -114,7 +116,7 @@ export default function PrintableModuloChiavi({ formData, dipendenteData, aziend
         <div className="text-center w-1/3 relative">
           <p className="mb-2 font-bold">Per {aziendaData?.ragione_sociale || 'M2I S.R.L.'}</p>
           <div className="h-24 flex items-center justify-center">
-            <img src="/timbro.png" alt="Timbro Aziendale" className="max-h-24 max-w-full mix-blend-multiply opacity-90" />
+            {timbroUrl && <img src={timbroUrl} alt="Timbro Aziendale" className="max-h-24 max-w-full mix-blend-multiply opacity-90" />}
           </div>
           <p className="text-sm border-t border-black pt-1">(Nome e Cognome)</p>
           <p className="mt-8 border-t border-black pt-2">Firma</p>

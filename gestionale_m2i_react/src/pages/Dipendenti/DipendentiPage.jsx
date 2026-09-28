@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Users, Loader2, Plus, Eye, Edit, Hourglass, Infinity, UserMinus, FileSignature, CalendarDays } from 'lucide-react';
+import { FileText, Users, Loader2, Plus, Eye, Edit, Hourglass, Infinity as InfinityIcon, UserMinus, FileSignature, CalendarDays } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
@@ -14,7 +14,6 @@ export default function DipendentiPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [viewCestino, setViewCestino] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
-  const [actionDipendente, setActionDipendente] = useState(null);
   const [programmaFissoModalState, setProgrammaFissoModalState] = useState({ isOpen: false, idDipendente: null });
   const [bustePagaModalState, setBustePagaModalState] = useState({ isOpen: false, dipendenteId: null, dipendenteNome: '' });
   const [sortBy, setSortBy] = useState('nome'); // 'nome' o 'tipoContratto'
@@ -110,7 +109,6 @@ export default function DipendentiPage() {
           label: 'Chiudi',
           onClick: () => {
             setModal({ isOpen: false });
-            setActionDipendente(null);
             triggerRefresh();
           }
         }
@@ -214,7 +212,6 @@ export default function DipendentiPage() {
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActionDipendente(row);
                       setModal({
                         isOpen: true,
                         type: 'warning',
@@ -229,7 +226,6 @@ export default function DipendentiPage() {
                           label: 'Annulla',
                           onClick: () => {
                             setModal({ isOpen: false });
-                            setActionDipendente(null);
                           }
                         }
                       });
@@ -248,7 +244,7 @@ export default function DipendentiPage() {
                     className="flex items-center gap-1.5 px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 hover:text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all shadow-sm"
                     title="Passaggio a Indeterminato"
                   >
-                    <Infinity className="w-3.5 h-3.5" />
+                    <InfinityIcon className="w-3.5 h-3.5" />
                     <span className="text-xs font-medium">Indeterminato</span>
                   </button>
 

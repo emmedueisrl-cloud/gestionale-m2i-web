@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, Download, Loader2, Lock, Unlock, CheckCircle, Info, Printer } from 'lucide-react';
+import { Download, Loader2, Lock, Unlock, CheckCircle, Info, Printer } from 'lucide-react';
 import { ottieniElaboratoMensile, chiudiMeseDipendenti, sbloccaMeseDipendenti, recuperaNoteElaborato, salvaNoteElaborato } from '../../api/elaborati';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
 import CellaNota from '../../components/ui/CellaNota';
+import { workflowRequest, workflowPeriod, contabilitaPeriod } from '../../api/workflowElaborati';
 
 export default function ElaboratoDipendenti() {
   const dataOdierna = new Date();
@@ -17,6 +18,8 @@ export default function ElaboratoDipendenti() {
   
   const [modalState, setModalState] = useState({ isOpen: false, type: '', title: '', message: '', primaryAction: null });
   const [note, setNote] = useState({});
+  const [workflow, setWorkflow] = useState({ elencoConfermato: false, attesi: [], bloccati: [] });
+  const [pagamenti, setPagamenti] = useState({});
 
   const mesi = [
     { val: 1, label: 'Gennaio' }, { val: 2, label: 'Febbraio' }, { val: 3, label: 'Marzo' },
@@ -44,6 +47,14 @@ export default function ElaboratoDipendenti() {
       const noteMap = {};
       (noteArr || []).forEach(n => { noteMap[n.soggetto_id] = n.testo; });
       setNote(noteMap);
+      const [state, accounting] = await Promise.all([
+        workflowRequest(`${workflowPeriod('dipendente', mese, anno)}/stato`),
+        workflowRequest(contabilitaPeriod('dipendente', mese, anno))
+      ]);
+      setWorkflow(state);
+      setPagamenti(Object.fromEntries(accounting.map(r => [r.idDipendente, r.pagamento])));
+      const frozen = new Map(accounting.map(r => [r.idDipendente, r]));
+      setDati(prev => prev.map(r => ({ ...r, ...(frozen.get(r.idDipendente) || {}) })));
     } catch (err) {
       console.error(err);
     } finally {
@@ -57,12 +68,15 @@ export default function ElaboratoDipendenti() {
   }, [mese, anno]);
 
   const handleChiudiMese = async () => {
+    if (dati.length > 0 && !workflow.elencoConfermato) { window.alert('Conferma prima l’elenco completo dei dipendenti previsti per questo mese.'); return; }
+    const elaboratoVuoto = dati.length === 0;
     setModalState({
       isOpen: true,
       type: 'warning',
-      title: 'Conferma Chiusura Mese',
+      title: elaboratoVuoto ? 'Attenzione: elaborato vuoto' : 'Conferma Chiusura Mese',
       content: (
         <div className="text-left space-y-4">
+          {elaboratoVuoto && <p className="font-bold text-amber-300">Questo elaborato non contiene alcun dipendente. Confermando, il mese sarà chiuso con zero righe. Verifica che sia davvero ciò che desideri.</p>}
           <p>
             <strong>Cosa significa chiudere un mese?</strong><br/>
             Chiudendo un mese, andrai a "congelare" e storicizzare tutti i calcoli di stipendio per il mese selezionato.
@@ -76,12 +90,12 @@ export default function ElaboratoDipendenti() {
         </div>
       ),
       primaryAction: {
-        label: 'Conferma Chiusura',
+        label: elaboratoVuoto ? 'Confermo: chiudi vuoto' : 'Conferma Chiusura',
         onClick: async () => {
           setModalState({ ...modalState, isOpen: false });
           setIsLoading(true);
           try {
-            await chiudiMeseDipendenti(mese, anno, dati);
+            await chiudiMeseDipendenti(mese, anno, dati, elaboratoVuoto);
             await caricaElaborato();
           } catch (err) {
             console.error(err);
@@ -137,6 +151,19 @@ export default function ElaboratoDipendenti() {
         onClick: () => setModalState(prev => ({ ...prev, isOpen: false }))
       }
     });
+  };
+
+  const confirmRoster = async () => {
+    if (!dati.length || !window.confirm(`Confermi l’elenco completo di ${dati.length} dipendenti previsti per ${mese}/${anno}? Controlla che nessuno manchi prima di blindare le righe.`)) return;
+    try { await workflowRequest(`${workflowPeriod('dipendente', mese, anno)}/elenco`, { method: 'POST', body: JSON.stringify({ ids: dati.map(r => r.idDipendente) }) }); await caricaElaborato(); }
+    catch (err) { window.alert(err.message); }
+  };
+
+  const toggleLock = async row => {
+    const action = row.rigaBloccata ? 'sblocca' : 'blinda';
+    if (!window.confirm(`${row.rigaBloccata ? 'Sbloccare' : 'Blindare'} la riga di ${row.cognomeNome} per ${mese}/${anno}? ${row.rigaBloccata ? 'La riga tornerà modificabile solo se non è stata pagata.' : 'Importi e note diventeranno disponibili alla contabilità.'}`)) return;
+    try { await workflowRequest(`${workflowPeriod('dipendente', mese, anno)}/righe/${encodeURIComponent(row.idDipendente)}/${action}`, { method: 'POST', body: '{}' }); await caricaElaborato(); }
+    catch (err) { window.alert(err.message); }
   };
 
   const showInfoModal = (title, text) => {
@@ -231,13 +258,18 @@ export default function ElaboratoDipendenti() {
       accessor: 'stipendioNetto',
       render: (row) => <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded">€ {parseFloat(row.stipendioNetto || 0).toFixed(2)}</span>
     },
+    { header: 'Pagamento', accessor: 'pagamento', sortable: false, render: row => pagamenti[row.idDipendente]
+      ? <span className="text-emerald-300">Pagato · {new Date(pagamenti[row.idDipendente].pagatoAt).toLocaleString('it-IT')}</span>
+      : <span className="text-slate-500">Da pagare</span> },
     { 
       header: 'Note',
       accessor: 'note',
       sortable: false,
       render: (row) => (
         <CellaNota
-          testo={note[row.idDipendente] || ''}
+          testo={note[row.idDipendente] ?? row.notaMensile ?? ''}
+          notaFissa={row.notaFissa || ''}
+          readOnly={isChiuso || row.rigaBloccata}
           onSave={async (testo) => {
             try {
               await salvaNoteElaborato('dipendente', row.idDipendente, mese, anno, testo);
@@ -256,12 +288,16 @@ export default function ElaboratoDipendenti() {
         />
       )
     },
+    { header: 'Blindatura', accessor: 'rigaBloccata', sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idDipendente) ? <span className="text-emerald-300">Mese storico</span> :
+      <button className={`rounded px-2 py-1 text-xs ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`} disabled={!workflow.elencoConfermato && !row.rigaBloccata} onClick={() => toggleLock(row)}>
+        {row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
+      </button> },
     {
       header: 'Azioni',
       accessor: 'azioni',
       render: (row) => (
         <button 
-          onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/pdf/elaborato-dipendente?mese=${mese}&anno=${anno}&dipendente_id=${row.idDipendente}`)}
+          onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/contabilita/pdf/dipendente/${anno}/${mese}/${encodeURIComponent(row.idDipendente)}`)}
           className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
           title="Scarica Busta Paga (Prospetto)"
         >
@@ -301,10 +337,11 @@ export default function ElaboratoDipendenti() {
             className="p-2 bg-slate-900/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-24"
           />
 
+          {!isChiuso && dati.length > 0 && <button onClick={confirmRoster} className="rounded-lg bg-slate-700 px-3 py-2 text-sm text-white">{workflow.elencoConfermato ? `Elenco confermato (${workflow.attesi.length}) · aggiorna` : 'Conferma elenco dipendenti'}</button>}
           {!isChiuso ? (
             <button 
               onClick={handleChiudiMese}
-              disabled={isLoading || dati.length === 0}
+              disabled={isLoading}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm ml-2 disabled:opacity-50"
             >
               <CheckCircle className="w-4 h-4" /> Chiudi Mese
@@ -319,7 +356,7 @@ export default function ElaboratoDipendenti() {
             </button>
           )}
           <button
-            onClick={() => window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/pdf/stampa-elaborato-dipendenti?mese=${mese}&anno=${anno}`, '_blank')}
+            onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/pdf/stampa-elaborato-dipendenti?mese=${mese}&anno=${anno}`, '_blank')}
             className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white font-medium shadow flex items-center gap-2 transition-colors"
             title="Stampa l'intero elaborato in PDF"
           >

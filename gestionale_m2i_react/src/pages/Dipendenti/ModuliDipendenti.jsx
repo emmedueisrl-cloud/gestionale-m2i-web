@@ -15,7 +15,6 @@ export default function ModuliDipendenti() {
   const dipendenteId = searchParams.get('id');
 
   const [dipendenteData, setDipendenteData] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   
   // State per gestire i moduli compilabili
   const [isChiaviFormOpen, setIsChiaviFormOpen] = useState(false);
@@ -47,10 +46,14 @@ export default function ModuliDipendenti() {
   ];
 
   useEffect(() => {
+    let active = true;
     loadModuli();
     if (dipendenteId) {
-      loadDipendente();
+      recuperaDatiCompletiDipendente(dipendenteId)
+        .then(data => { if (active) setDipendenteData(data); })
+        .catch(err => console.error(err));
     }
+    return () => { active = false; };
   }, [dipendenteId]);
 
   const loadModuli = async () => {
@@ -70,7 +73,7 @@ export default function ModuliDipendenti() {
       setIsUploading(true);
       await uploadModuloStandard(file, file.name);
       await loadModuli();
-    } catch (err) {
+    } catch  {
       setAlertModal({
         isOpen: true,
         type: 'error',
@@ -89,7 +92,7 @@ export default function ModuliDipendenti() {
       try {
         await eliminaModuloStandard(id);
         await loadModuli();
-      } catch (err) {
+      } catch  {
         setAlertModal({
           isOpen: true,
           type: 'error',
@@ -98,18 +101,6 @@ export default function ModuliDipendenti() {
           primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
         });
       }
-    }
-  };
-
-  const loadDipendente = async () => {
-    setIsLoading(true);
-    try {
-      const data = await recuperaDatiCompletiDipendente(dipendenteId);
-      setDipendenteData(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -271,7 +262,7 @@ export default function ModuliDipendenti() {
                     </div>
                     <div className="flex gap-2">
                       <button 
-                        onClick={() => window.open((import.meta.env.VITE_API_URL || 'http://localhost:3000')  + modulo.url, '_blank')}
+                        onClick={() => window.open((import.meta.env.VITE_API_URL || '')  + modulo.url, '_blank')}
                         className="p-1.5 text-slate-400 hover:text-indigo-400 bg-slate-900 rounded-lg opacity-0 group-hover:opacity-100 transition-all border border-slate-700 hover:border-indigo-500/30 shadow-sm"
                         title="Scarica/Visualizza"
                       >

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, FileText, Download, RefreshCw, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { attachmentUrl } from '../../utils/attachmentUrl';
+import { FileText, Download, RefreshCw, Trash2 } from 'lucide-react';
 import ModernModal from './ModernModal';
 
 export default function BustePagaDipendenteModal({ isOpen, onClose, dipendenteId, dipendenteNome }) {
@@ -10,16 +11,10 @@ export default function BustePagaDipendenteModal({ isOpen, onClose, dipendenteId
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
 
 
-  useEffect(() => {
-    if (isOpen && dipendenteId) {
-      caricaBuste();
-    }
-  }, [isOpen, dipendenteId]);
-
-  const caricaBuste = async () => {
+  const caricaBuste = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/buste-paga/dipendente/${dipendenteId}`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/buste-paga/dipendente/${dipendenteId}`);
       const data = await res.json();
       if (data.success) {
         setBuste(data.buste);
@@ -28,13 +23,19 @@ export default function BustePagaDipendenteModal({ isOpen, onClose, dipendenteId
       console.error(err);
     }
     setIsLoading(false);
-  };
+  }, [dipendenteId]);
+
+  useEffect(() => {
+    if (isOpen && dipendenteId) {
+      caricaBuste();
+    }
+  }, [isOpen, dipendenteId, caricaBuste]);
 
   const eliminaBusta = async (id) => {
     if (!window.confirm('Sei sicuro di voler eliminare questa busta paga? Il file verrà rimosso definitivamente.')) return;
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/buste-paga/${id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/buste-paga/${id}`, {
         method: 'DELETE'
       });
       const data = await res.json();
@@ -147,7 +148,7 @@ export default function BustePagaDipendenteModal({ isOpen, onClose, dipendenteId
                       <div className="flex items-center justify-center gap-2">
                         {b.allegato_busta_paga ? (
                           <a 
-                            href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${b.allegato_busta_paga}`} 
+                            href={attachmentUrl(b.allegato_busta_paga)}
                             target="_blank" 
                             rel="noreferrer"
                             className="inline-flex p-2 bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/40 rounded-lg transition-colors"
