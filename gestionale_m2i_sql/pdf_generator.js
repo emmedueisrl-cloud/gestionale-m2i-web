@@ -293,7 +293,7 @@ function buildStampaElaboratoClientiPDF(datiCompleti, mese, anno) {
 
     const noteText = [];
     if (row.notaFissa) noteText.push({ text: '[FISSE] ' + row.notaFissa, fontSize: 9, color: '#475569', margin: [0, 0, 0, 2] });
-    if (row.notaMensile) noteText.push({ text: row.notaMensile, fontSize: 9, color: '#334155' });
+    if (row.notaMensile) noteText.push({ text: '[MESE] ' + row.notaMensile, fontSize: 9, color: '#334155' });
 
     tableBody.push([
       { text: row.ragioneSociale, style: 'testo' },
@@ -336,16 +336,32 @@ function buildStampaElaboratoClientiPDF(datiCompleti, mese, anno) {
 
 // 7. Generatore Stampa Massiva Elaborato Dipendenti
 function buildStampaElaboratoDipendentiPDF(datiCompleti, mese, anno) {
+  const colonne = ['*', 47, 55, 76, 70, 45, 45, 92, 80];
+  const titoloColonna = text => ({ text, style: 'tabellaHeader', alignment: 'left' });
+  const layoutValori = {
+    hLineWidth: () => 0, vLineWidth: () => 0,
+    paddingLeft: () => 6, paddingRight: () => 6,
+    paddingTop: () => 6, paddingBottom: () => 6
+  };
   const tableBody = [
     [
-      { text: 'Dipendente', style: 'tabellaHeader' },
-      { text: 'Ore Lav.', style: 'tabellaHeader' },
-      { text: 'Paga Lav.', style: 'tabellaHeader' },
-      { text: 'Paga F.P.M.', style: 'tabellaHeader' },
-      { text: 'Magg.', style: 'tabellaHeader' },
-      { text: 'Detr.', style: 'tabellaHeader' },
-      { text: 'Netto Spettante', style: 'tabellaHeader' },
-      { text: 'Note', style: 'tabellaHeader' }
+      {
+        table: {
+          widths: colonne,
+          body: [[
+            titoloColonna('Dipendente'),
+            titoloColonna('Ore Lav.'),
+            titoloColonna('Paga Lav.'),
+            titoloColonna('Paga\u00A0F.P.M.'),
+            titoloColonna('Spec. F.P.M.'),
+            titoloColonna('Magg.'),
+            titoloColonna('Detr.'),
+            titoloColonna('Spec. M/D'),
+            titoloColonna('Netto Spettante')
+          ]]
+        },
+        layout: layoutValori
+      }
     ]
   ];
 
@@ -354,49 +370,70 @@ function buildStampaElaboratoDipendentiPDF(datiCompleti, mese, anno) {
   datiCompleti.forEach(row => {
     totaleNetto += parseFloat(row.stipendioNetto || 0);
 
-    const maggText = [];
-    maggText.push({ text: '€\u00A0' + parseFloat(row.maggiorazioni || 0).toFixed(2), alignment: 'right', style: 'testo' });
-    if (row.noteMaggiorazioni) {
-      maggText.push({ text: '\n' + row.noteMaggiorazioni, fontSize: 8, italics: true, color: '#64748b', alignment: 'right' });
-    }
-
-    const detrText = [];
-    detrText.push({ text: '€\u00A0' + parseFloat(row.detrazioni || 0).toFixed(2), alignment: 'right', style: 'testo' });
-    if (row.noteDetrazioni) {
-      detrText.push({ text: '\n' + row.noteDetrazioni, fontSize: 8, italics: true, color: '#64748b', alignment: 'right' });
-    }
+    const specMD = [];
+    if (row.noteMaggiorazioni?.trim()) specMD.push({ text: '[M] ' + row.noteMaggiorazioni.trim(), fontSize: 8, color: '#475569', margin: [0, 0, 0, 2] });
+    if (row.noteDetrazioni?.trim()) specMD.push({ text: '[D] ' + row.noteDetrazioni.trim(), fontSize: 8, color: '#475569', margin: [0, 0, 0, 2] });
 
     const noteText = [];
     if (row.notaFissa) noteText.push({ text: '[FISSE] ' + row.notaFissa, fontSize: 9, color: '#475569', margin: [0, 0, 0, 2] });
-    if (row.notaMensile) noteText.push({ text: row.notaMensile, fontSize: 9, color: '#334155' });
+    if (row.notaMensile) noteText.push({ text: '[MESE] ' + row.notaMensile, fontSize: 9, color: '#334155' });
     if (row.noteGenerali && typeof row.noteGenerali === 'string') {
         const noteGenStr = row.noteGenerali.trim();
         if (noteGenStr && noteGenStr !== row.notaMensile) noteText.push({ text: '[VECCHIE] ' + noteGenStr, fontSize: 9, color: '#334155' });
     }
 
-    tableBody.push([
-      [
-        { text: row.cognomeNome, style: 'testo' },
-        { text: 'IBAN: ' + (row.iban || 'N/D'), fontSize: 8, color: '#64748b', margin: [0, 2, 0, 0] }
-      ],
-      { text: parseFloat(row.oreLavorate || 0).toFixed(1) + '\u00A0h', style: 'testo', alignment: 'right' },
-      { text: '€\u00A0' + parseFloat(row.pagaLavorato || 0).toFixed(2), style: 'testo', alignment: 'right' },
-      (() => {
-        const fpmLines = [{ text: '€\u00A0' + parseFloat(row.pagaFPM || 0).toFixed(2), alignment: 'right', style: 'testo' }];
-        if (row.dettaglioFPM && typeof row.dettaglioFPM === 'object') {
-          Object.entries(row.dettaglioFPM)
-            .filter(([causale]) => !causale.toLowerCase().includes('extra'))
-            .forEach(([causale, ore]) => {
-              fpmLines.push({ text: causale + ': ' + parseFloat(ore).toFixed(1) + ' h', fontSize: 8, italics: true, color: '#64748b', alignment: 'right' });
-            });
-        }
-        return fpmLines;
-      })(),
-      maggText,
-      detrText,
-      { text: '€\u00A0' + parseFloat(row.stipendioNetto || 0).toFixed(2), style: 'testo', alignment: 'right', bold: true, fontSize: 11 },
-      noteText.length > 0 ? noteText : { text: '' }
-    ]);
+    const dettaglio = row.dettaglioFPM && typeof row.dettaglioFPM === 'object' ? row.dettaglioFPM : {};
+    const righeFPM = Object.entries(dettaglio)
+      .filter(([causale, ore]) => !causale.toLowerCase().includes('extra') && Number(ore) > 0)
+      .map(([causale, ore]) => ({ text: `${causale}: ${Number(ore).toFixed(1)} h`, fontSize: 8, color: '#475569', margin: [0, 0, 0, 2] }));
+    tableBody.push([{
+      stack: [
+          {
+            table: {
+              widths: colonne,
+              heights: 24,
+              body: [[
+                { text: row.cognomeNome, style: 'testo', bold: true },
+                { text: parseFloat(row.oreLavorate || 0).toFixed(1) + '\u00A0h', style: 'testo', alignment: 'left' },
+                { text: '€\u00A0' + parseFloat(row.pagaLavorato || 0).toFixed(2), style: 'testo', alignment: 'left' },
+                { text: '€\u00A0' + parseFloat(row.pagaFPM || 0).toFixed(2), style: 'testo', alignment: 'left' },
+                righeFPM.length ? righeFPM : { text: '' },
+                { text: '€\u00A0' + parseFloat(row.maggiorazioni || 0).toFixed(2), style: 'testo', alignment: 'left' },
+                { text: '€\u00A0' + parseFloat(row.detrazioni || 0).toFixed(2), style: 'testo', alignment: 'left' },
+                specMD.length ? specMD : { text: '' },
+                { text: '€\u00A0' + parseFloat(row.stipendioNetto || 0).toFixed(2), style: 'testo', alignment: 'left', bold: true, fontSize: 11 }
+              ]]
+            },
+            layout: { ...layoutValori, fillColor: () => '#f9fbfe' }
+          },
+          {
+            table: {
+              widths: [220, '*'],
+              body: [[
+                {
+                  stack: [
+                    { text: 'IBAN', fontSize: 8, bold: true, color: '#436282', margin: [0, 0, 0, 2] },
+                    { text: row.iban || 'N/D', fontSize: 9, color: '#334155' }
+                  ]
+                },
+                {
+                  stack: [
+                    { text: 'NOTE', fontSize: 8, bold: true, color: '#436282', margin: [0, 0, 0, 2] },
+                    ...(noteText.length ? noteText : [{ text: '-', fontSize: 9, color: '#94a3b8' }])
+                  ]
+                }
+              ]]
+            },
+            layout: {
+              hLineWidth: i => i === 0 ? 0.5 : 0,
+              hLineColor: () => '#dbe5f1', vLineWidth: () => 0,
+              fillColor: () => '#edf4fb',
+              paddingLeft: () => 8, paddingRight: () => 8,
+              paddingTop: () => 6, paddingBottom: () => 7
+            }
+          }
+        ]
+    }]);
   });
 
   const mesiNomi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
@@ -411,17 +448,14 @@ function buildStampaElaboratoDipendentiPDF(datiCompleti, mese, anno) {
         table: {
           headerRows: 1,
           dontBreakRows: true,
-          widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto', '*'],
+          widths: ['*'],
           body: tableBody
         },
         layout: {
-          fillColor: function (rowIndex, node, columnIndex) {
-            if (rowIndex === 0) return null; // Header background is handled by style
-            return (rowIndex % 2 === 0) ? '#f8fafc' : '#ffffff';
-          },
-          hLineWidth: function (i, node) { return 1; },
-          vLineWidth: function (i, node) { return 0; },
-          hLineColor: function (i, node) { return '#e2e8f0'; }
+          hLineWidth: i => i > 1 && i < tableBody.length ? 1.5 : 0,
+          hLineColor: () => '#8fa9c4', vLineWidth: () => 0,
+          paddingLeft: () => 0, paddingRight: () => 0,
+          paddingTop: () => 0, paddingBottom: i => i === 0 ? 0 : 6
         }
       },
       { text: 'Totale Netto Erogato: €\u00A0' + totaleNetto.toFixed(2), style: 'totale', margin: [0, 20, 0, 0] }

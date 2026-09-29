@@ -601,13 +601,39 @@ app.get('/api/pdf/stampa-elaborato-clienti', async (req, res) => {
 
 app.get('/api/pdf/stampa-elaborato-dipendenti', async (req, res) => {
   try {
-    const { mese, anno } = req.query;
+    const { mese, anno, dipendente_id } = req.query;
     const elaborato = await api.ottieniElaboratoMensile(mese, anno);
-    const dati = elaborato.chiuso ? await workflowElaborati.lockedRows('dipendente', mese, anno) : elaborato.dati;
-    
-    const doc = pdfGenerator.buildStampaElaboratoDipendentiPDF(dati, mese, anno);
+    const dati = dipendente_id
+      ? elaborato.dati
+      : elaborato.chiuso ? await workflowElaborati.lockedRows('dipendente', mese, anno) : elaborato.dati;
+    const righeDaStampare = dipendente_id
+      ? dati.filter(row => String(row.idDipendente) === String(dipendente_id))
+      : dati;
+    if (dipendente_id && !righeDaStampare.length) return res.status(404).send('Dipendente non trovato nell’elaborato.');
+
+    // Nei mesi chiusi il dettaglio F.P.M. non è nello storico dell'elaborato:
+    // recupera le causali dal registro ore anche per la stampa retrospettiva.
+    const senzaDettaglio = righeDaStampare.filter(row => !row.dettaglioFPM).map(row => row.idDipendente);
+    const oreFPM = senzaDettaglio.length ? await knex('registro_ore')
+      .select('dipendente_id', 'causale_assenza')
+      .sum('ore_totali as ore')
+      .where({ mese, anno })
+      .whereIn('dipendente_id', senzaDettaglio)
+      .groupBy('dipendente_id', 'causale_assenza') : [];
+    const dettagliPerDipendente = new Map();
+    for (const record of oreFPM) {
+      const causale = (record.causale_assenza || 'Ordinario').trim();
+      if (['ordinario', 'straordinario', 'extra'].includes(causale.toLowerCase())) continue;
+      if (!dettagliPerDipendente.has(record.dipendente_id)) dettagliPerDipendente.set(record.dipendente_id, {});
+      dettagliPerDipendente.get(record.dipendente_id)[causale] = Number(record.ore) || 0;
+    }
+    const righePDF = righeDaStampare.map(row => ({
+      ...row,
+      dettaglioFPM: row.dettaglioFPM || dettagliPerDipendente.get(row.idDipendente) || {}
+    }));
+    const doc = pdfGenerator.buildStampaElaboratoDipendentiPDF(righePDF, mese, anno);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Stampa_Elaborato_Dipendenti_${mese}_${anno}.pdf"`);
+    res.setHeader('Content-Disposition', `${dipendente_id ? 'inline' : 'attachment'}; filename="Stampa_Elaborato_Dipendenti_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
   } catch (e) {
     res.status(500).send(e.message);

@@ -72,11 +72,12 @@ export default function ModernModal({
             <button
               type="button"
               onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
               className={`w-full max-w-[260px] py-2.5 px-4 rounded-lg font-semibold text-sm transition-all duration-200 ${
                 primaryAction.variant === 'danger' 
                   ? 'bg-red-500/100 hover:bg-red-600 text-white shadow-md shadow-red-500/20'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20'
-              }`}
+              } disabled:cursor-wait disabled:opacity-50`}
             >
               {primaryAction.label}
             </button>
@@ -86,7 +87,8 @@ export default function ModernModal({
             <button
               type="button"
               onClick={secondaryAction.onClick}
-              className="w-full max-w-[260px] py-2.5 px-4 rounded-lg font-semibold text-sm bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-900/50 transition-colors"
+              disabled={secondaryAction.disabled}
+              className="w-full max-w-[260px] py-2.5 px-4 rounded-lg font-semibold text-sm bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-900/50 transition-colors disabled:cursor-wait disabled:opacity-50"
             >
               {secondaryAction.label}
             </button>

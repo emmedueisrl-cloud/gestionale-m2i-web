@@ -6,6 +6,7 @@ import ModernModal from '../../components/ui/ModernModal';
 import CalendarioClienteModal from '../../components/ui/CalendarioClienteModal';
 import CellaNota from '../../components/ui/CellaNota';
 import { workflowRequest, workflowPeriod, contabilitaPeriod } from '../../api/workflowElaborati';
+import useElementHeight from '../../hooks/useElementHeight';
 
 export default function ElaboratoClienti() {
   const dataOdierna = new Date();
@@ -22,6 +23,7 @@ export default function ElaboratoClienti() {
   const [note, setNote] = useState({}); // { [idCliente]: 'testo nota' }
   const [workflow, setWorkflow] = useState({ elencoConfermato: false, attesi: [], bloccati: [] });
   const [fatturato, setFatturato] = useState({});
+  const [stickyTopRef, stickyTopHeight] = useElementHeight();
 
   const mesi = [
     { val: 1, label: 'Gennaio' }, { val: 2, label: 'Febbraio' }, { val: 3, label: 'Marzo' },
@@ -187,8 +189,11 @@ export default function ElaboratoClienti() {
     { 
       header: 'Cliente', 
       accessor: 'ragioneSociale',
+      cardLabel: 'Cliente',
+      cardFullWidth: true,
+      width: 190,
       render: (row) => (
-        <div className="flex items-center gap-2 group max-w-[200px]">
+        <div className="flex min-w-0 items-center gap-1 group">
           <span className="truncate text-xs">{row.ragioneSociale}</span>
           <div 
             title="Clicca per leggere il nome completo" 
@@ -201,29 +206,37 @@ export default function ElaboratoClienti() {
       )
     },
     { 
-      header: 'Ore Erogate', 
+      header: <>Ore<br />Erogate</>,
       accessor: 'oreLavorate',
+      cardLabel: 'Ore erogate',
+      width: 72,
       render: (row) => <span className="font-bold">{parseFloat(row.oreLavorate || 0).toFixed(2)}</span>
     },
     { 
-      header: 'Tariffa Oraria', 
+      header: <>Tariffa<br />Oraria</>,
       accessor: 'tariffaOraria',
+      cardLabel: 'Tariffa oraria',
+      width: 88,
       render: (row) => `€ ${parseFloat(row.tariffaOraria || 0).toFixed(2)}`
     },
     { 
-      header: 'Base Imponibile', 
+      header: <>Base<br />Imponibile</>,
       accessor: 'baseImponibile',
+      cardLabel: 'Base imponibile',
+      width: 89,
       render: (row) => `€ ${parseFloat(row.baseImponibile || 0).toFixed(2)}`
     },
     { 
-      header: 'Sconti/Magg.', 
+      header: <>Sconti/<br />Magg.</>,
       accessor: 'sconti', 
+      cardLabel: 'Sconti/Magg.',
+      width: 90,
       render: (row) => {
         const diff = parseFloat(row.maggiorazioni || 0) - parseFloat(row.sconti || 0);
         const notes = [row.noteMaggiorazioni, row.noteSconti].filter(Boolean).join(" | ");
         if (diff === 0 && !notes) return '€ 0.00';
         return (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1">
             <span className={diff > 0 ? 'text-emerald-400 font-medium' : (diff < 0 ? 'text-red-400 font-medium' : 'text-slate-400')}>
               {diff > 0 ? '+' : ''}€ {diff.toFixed(2)}
             </span>
@@ -239,13 +252,17 @@ export default function ElaboratoClienti() {
       }
     },
     { 
-      header: 'Totale Imponibile', 
+      header: <>Totale<br />Imponibile</>,
       accessor: 'imponibile',
+      cardLabel: 'Totale imponibile',
+      width: 96,
       render: (row) => <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded">€ {parseFloat(row.imponibile || 0).toFixed(2)}</span>
     },
     {
-      header: 'Regime Fiscale',
+      header: <>Regime<br />Fiscale</>,
       accessor: 'tipoTassazione',
+      cardLabel: 'Regime fiscale',
+      width: 71,
       render: (row) => {
         const tipo = (row.tipoTassazione || 'IVA').toUpperCase();
         const colorClass = tipo === 'REVERSE CHARGE' 
@@ -253,36 +270,33 @@ export default function ElaboratoClienti() {
           : tipo.includes('TRAT') 
             ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
             : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-        const label = tipo === 'REVERSE CHARGE' ? 'REVERSE' : tipo.includes('TRAT') ? 'TRAT. ACC.' : 'IVA';
+        const label = tipo === 'REVERSE CHARGE' ? 'REV' : tipo.includes('TRAT') ? 'TRAT' : 'IVA';
         return <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${colorClass}`}>{label}</span>;
       }
     },
-    {
-      header: '% Tassa',
-      accessor: 'percentualeTassazione',
-      render: (row) => {
-        const tipo = (row.tipoTassazione || 'IVA').toUpperCase();
-        if (tipo === 'REVERSE CHARGE') return <span className="text-amber-400 font-bold">0%</span>;
-        return `${parseFloat(row.percentualeTassazione || 0).toFixed(0)}%`;
-      }
-    },
     { 
-      header: 'Totale Tassato', 
+      header: <>Totale<br />Tassato</>,
       accessor: 'importoTotale',
+      cardLabel: 'Totale tassato',
+      width: 90,
       render: (row) => <span className="font-bold text-slate-50">€ {parseFloat(row.importoTotale || 0).toFixed(2)}</span>
     },
-    { header: 'Realmente Fatturato', accessor: 'fatturato', sortable: false, render: row => {
+    { header: <>Realmente<br />Fatturato</>, cardLabel: 'Realmente fatturato', accessor: 'fatturato', width: 110, sortable: false, render: row => {
       const record = fatturato[row.idCliente];
       return record?.fatture?.length ? <div><strong>€ {Number(record.importoRealmenteFatturato).toFixed(2)}</strong><div className="text-xs text-amber-300">({record.differenza >= 0 ? '+' : '−'}€ {Math.abs(record.differenza).toFixed(2)})</div></div> : <span className="text-slate-500">—</span>;
     } },
     { 
       header: 'Note',
       accessor: 'note',
+      cardLabel: 'Note',
+      cardFullWidth: true,
+      width: 135,
       sortable: false,
       render: (row) => (
         <CellaNota
           testo={note[row.idCliente] ?? row.notaMensile ?? ''}
           notaFissa={row.notaFissa || ''}
+          onShowFixedNote={() => showInfoModal(`Note fisse · ${row.ragioneSociale}`, <span className="block whitespace-pre-wrap break-words text-left">{row.notaFissa}</span>)}
           readOnly={isChiuso || row.rigaBloccata}
           onSave={async (testo) => {
             try {
@@ -302,25 +316,27 @@ export default function ElaboratoClienti() {
         />
       )
     },
-    { header: 'Blindatura', accessor: 'rigaBloccata', sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
+    { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
       <button className={`rounded px-2 py-1 text-xs ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`} disabled={!workflow.elencoConfermato && !row.rigaBloccata} onClick={() => toggleLock(row)}>
         {row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
       </button> },
     {
       header: 'Azioni',
       accessor: 'azioni',
+      cardLabel: 'Azioni',
+      width: 72,
       render: (row) => (
-        <div className="flex gap-2">
+        <div className="flex gap-1">
           <button 
             onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/contabilita/pdf/cliente/${anno}/${mese}/${encodeURIComponent(row.idCliente)}`)}
-            className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
+            className="p-1 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
             title="Scarica PDF Rendiconto"
           >
             <Download className="w-4 h-4" />
           </button>
           <button 
             onClick={() => setModalCalendario({ isOpen: true, clienteId: row.idCliente, nomeCliente: row.ragioneSociale })}
-            className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
+            className="p-1 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
             title="Vedi Calendario Ore"
           >
             <Calendar className="w-4 h-4" />
@@ -331,8 +347,9 @@ export default function ElaboratoClienti() {
   ];
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+    <div className="elaborato-page min-w-0 flex flex-col">
+      <div ref={stickyTopRef} className="elaborato-sticky-header sticky z-40 bg-slate-900 pb-6">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-50 flex items-center gap-3">
             Elaborato Mensile Clienti
@@ -345,7 +362,7 @@ export default function ElaboratoClienti() {
           <p className="text-slate-400 mt-1">Anteprima fatturazione clienti basata su ore lavorate e scadenze fisse</p>
         </div>
 
-        <div className="flex items-center gap-3 bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-700">
+        <div className="flex max-w-full flex-wrap items-center gap-3 bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-700">
           <select 
             value={mese} 
             onChange={(e) => setMese(Number(e.target.value))}
@@ -390,7 +407,7 @@ export default function ElaboratoClienti() {
 
       {/* Riepilogo Mensile */}
       {dati.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
             <p className="text-xs text-slate-400 uppercase font-semibold tracking-wider mb-1">Clienti</p>
             <p className="text-2xl font-bold text-slate-50">{dati.length}</p>
@@ -415,8 +432,9 @@ export default function ElaboratoClienti() {
           </div>
         </div>
       )}
+      </div>
 
-      <div className="flex-1 bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden relative">
+      <div className="min-w-0 bg-slate-800 rounded-xl shadow-sm border border-slate-700 relative">
         {isLoading && (
           <div className="absolute inset-0 bg-slate-800/70 z-10 flex flex-col items-center justify-center text-amber-400">
             <Loader2 className="w-8 h-8 animate-spin mb-4" />
@@ -429,6 +447,11 @@ export default function ElaboratoClienti() {
           pagination={false}
           nowrap={false}
           tableClassName="text-xs"
+          compact
+          stickyHeader
+          responsiveCards
+          continuous
+          stickyTopOffset={`calc(${stickyTopHeight}px - var(--elaborato-sticky-inset))`}
         />
       </div>
 

@@ -5,6 +5,7 @@ import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
 import CellaNota from '../../components/ui/CellaNota';
 import { workflowRequest, workflowPeriod, contabilitaPeriod } from '../../api/workflowElaborati';
+import useElementHeight from '../../hooks/useElementHeight';
 
 export default function ElaboratoDipendenti() {
   const dataOdierna = new Date();
@@ -19,7 +20,8 @@ export default function ElaboratoDipendenti() {
   const [modalState, setModalState] = useState({ isOpen: false, type: '', title: '', message: '', primaryAction: null });
   const [note, setNote] = useState({});
   const [workflow, setWorkflow] = useState({ elencoConfermato: false, attesi: [], bloccati: [] });
-  const [pagamenti, setPagamenti] = useState({});
+  const [nettiBusta, setNettiBusta] = useState({});
+  const [stickyTopRef, stickyTopHeight] = useElementHeight();
 
   const mesi = [
     { val: 1, label: 'Gennaio' }, { val: 2, label: 'Febbraio' }, { val: 3, label: 'Marzo' },
@@ -30,6 +32,7 @@ export default function ElaboratoDipendenti() {
 
   const caricaElaborato = async () => {
     setIsLoading(true);
+    setNettiBusta({});
     try {
       const resp = await ottieniElaboratoMensile(mese, anno);
       if (resp && typeof resp === 'object' && !Array.isArray(resp)) {
@@ -47,12 +50,13 @@ export default function ElaboratoDipendenti() {
       const noteMap = {};
       (noteArr || []).forEach(n => { noteMap[n.soggetto_id] = n.testo; });
       setNote(noteMap);
-      const [state, accounting] = await Promise.all([
+      const [state, accounting, payroll] = await Promise.all([
         workflowRequest(`${workflowPeriod('dipendente', mese, anno)}/stato`),
-        workflowRequest(contabilitaPeriod('dipendente', mese, anno))
+        workflowRequest(contabilitaPeriod('dipendente', mese, anno)),
+        workflowRequest(`buste-paga/mese?mese=${mese}&anno=${anno}`)
       ]);
       setWorkflow(state);
-      setPagamenti(Object.fromEntries(accounting.map(r => [r.idDipendente, r.pagamento])));
+      setNettiBusta(Object.fromEntries((payroll.buste || []).map(busta => [busta.dipendente_id, Number(busta.importo_netto)])));
       const frozen = new Map(accounting.map(r => [r.idDipendente, r]));
       setDati(prev => prev.map(r => ({ ...r, ...(frozen.get(r.idDipendente) || {}) })));
     } catch (err) {
@@ -181,16 +185,24 @@ export default function ElaboratoDipendenti() {
   };
 
   const columns = [
-    { header: 'ID', accessor: 'idDipendente' },
-    { header: 'Dipendente', accessor: 'cognomeNome' },
+    { header: 'ID', cardLabel: 'ID', accessor: 'idDipendente', width: 76,
+      render: row => <span className="block truncate" title={row.idDipendente}>{row.idDipendente}</span>,
+      cardRender: row => <span className="break-all">{row.idDipendente}</span> },
+    { header: 'Dipendente', cardLabel: 'Dipendente', accessor: 'cognomeNome', width: 170,
+      render: row => <span className="block truncate" title={row.cognomeNome}>{row.cognomeNome}</span>,
+      cardRender: row => row.cognomeNome },
     { 
-      header: 'Ore Totali', 
+      header: <>Ore<br />Totali</>,
       accessor: 'oreLavorate',
+      cardLabel: 'Ore totali',
+      width: 70,
       render: (row) => <span className="font-bold">{parseFloat(row.oreLavorate || 0).toFixed(2)}</span>
     },
     { 
-      header: 'Paga Oraria', 
+      header: <>Paga<br />Oraria</>,
       accessor: 'pagaOraria',
+      cardLabel: 'Paga oraria',
+      width: 130,
       render: (row) => (
         <div>
           <span>{row.tipoPaga === 'Mensile' ? '📅 Mensile' : '⏱ Oraria'}: </span>
@@ -199,31 +211,40 @@ export default function ElaboratoDipendenti() {
       )
     },
     { 
-      header: 'Netto per Lavorato', 
+      header: <>Netto per<br />Lavorato</>,
       accessor: 'pagaLavorato',
+      cardLabel: 'Netto per lavorato',
+      width: 110,
       render: (row) => `€ ${parseFloat(row.pagaLavorato || 0).toFixed(2)}`
     },
     { 
-      header: 'Paga F.P.M.', 
+      header: <>Paga<br />F.P.M.</>,
       accessor: 'pagaFPM',
+      cardLabel: 'Paga F.P.M.',
+      width: 100,
       render: (row) => (
-        <div>
+        <div className="flex flex-wrap items-center gap-1">
           <span className="font-medium">€ {parseFloat(row.pagaFPM || 0).toFixed(2)}</span>
           {row.dettaglioFPM && Object.keys(row.dettaglioFPM).length > 0 && (
-            <div className="text-xs text-slate-400 mt-0.5 space-y-0.5">
-              {Object.entries(row.dettaglioFPM)
+            <button
+              type="button"
+              title="Leggi il dettaglio di ferie, permessi e malattia"
+              onClick={() => showInfoModal('Dettaglio F.P.M.', <span className="whitespace-pre-wrap">{Object.entries(row.dettaglioFPM)
                 .filter(([causale]) => !causale.toLowerCase().includes('extra'))
-                .map(([causale, ore]) => (
-                  <div key={causale}>{causale}: {parseFloat(ore).toFixed(1)}h</div>
-                ))}
-            </div>
+                .map(([causale, ore]) => `${causale}: ${parseFloat(ore).toFixed(1)} h`).join('\n')}</span>)}
+              className="text-slate-400 hover:text-indigo-300"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </button>
           )}
         </div>
       )
     },
     { 
-      header: 'Magg./Rimb.', 
+      header: <>Magg./<br />Rimb.</>,
       accessor: 'maggiorazioni',
+      cardLabel: 'Maggiorazioni/Rimborsi',
+      width: 105,
       render: (row) => (
         <div className="flex items-center gap-1.5">
           <span className="text-emerald-400 font-medium">+ €{parseFloat(row.maggiorazioni || 0).toFixed(2)}</span>
@@ -240,6 +261,8 @@ export default function ElaboratoDipendenti() {
     { 
       header: 'Trattenute', 
       accessor: 'detrazioni',
+      cardLabel: 'Trattenute',
+      width: 95,
       render: (row) => (
         <div className="flex items-center gap-1.5">
           <span className="text-red-400 font-medium">- €{parseFloat(row.detrazioni || 0).toFixed(2)}</span>
@@ -254,22 +277,29 @@ export default function ElaboratoDipendenti() {
       )
     },
     { 
-      header: 'Netto Spettante', 
+      header: <>Netto<br />Spettante</>,
       accessor: 'stipendioNetto',
+      cardLabel: 'Netto spettante',
+      width: 105,
       render: (row) => <span className="font-bold text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded">€ {parseFloat(row.stipendioNetto || 0).toFixed(2)}</span>
     },
-    { header: 'Pagamento', accessor: 'pagamento', sortable: false, render: row => pagamenti[row.idDipendente]
-      ? <span className="text-emerald-300">Pagato · {new Date(pagamenti[row.idDipendente].pagatoAt).toLocaleString('it-IT')}</span>
-      : <span className="text-slate-500">Da pagare</span> },
+    { header: 'Netto busta', cardLabel: 'Netto busta', accessor: 'nettoBusta', width: 135, sortable: false, render: row => Object.hasOwn(nettiBusta, row.idDipendente)
+      ? <span className="font-semibold text-emerald-300">€ {nettiBusta[row.idDipendente].toFixed(2)}</span>
+      : <span className="text-slate-500">Busta non caricata</span> },
     { 
       header: 'Note',
       accessor: 'note',
+      cardLabel: 'Note',
+      cardFullWidth: true,
+      width: 130,
       sortable: false,
       render: (row) => (
         <CellaNota
           testo={note[row.idDipendente] ?? row.notaMensile ?? ''}
           notaFissa={row.notaFissa || ''}
+          onShowFixedNote={() => showInfoModal(`Note fisse · ${row.cognomeNome}`, <span className="block whitespace-pre-wrap break-words text-left">{row.notaFissa}</span>)}
           readOnly={isChiuso || row.rigaBloccata}
+          uniformHeight
           onSave={async (testo) => {
             try {
               await salvaNoteElaborato('dipendente', row.idDipendente, mese, anno, testo);
@@ -288,30 +318,47 @@ export default function ElaboratoDipendenti() {
         />
       )
     },
-    { header: 'Blindatura', accessor: 'rigaBloccata', sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idDipendente) ? <span className="text-emerald-300">Mese storico</span> :
+    { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 95, sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idDipendente) ? <span className="text-emerald-300">Mese storico</span> :
       <button className={`rounded px-2 py-1 text-xs ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`} disabled={!workflow.elencoConfermato && !row.rigaBloccata} onClick={() => toggleLock(row)}>
         {row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
       </button> },
     {
       header: 'Azioni',
       accessor: 'azioni',
+      cardLabel: 'Azioni',
+      width: 72,
+      sortable: false,
       render: (row) => (
-        <button 
-          onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/contabilita/pdf/dipendente/${anno}/${mese}/${encodeURIComponent(row.idDipendente)}`)}
-          className="p-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
-          title="Scarica Busta Paga (Prospetto)"
-        >
-          <Download className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/pdf/stampa-elaborato-dipendenti?mese=${mese}&anno=${anno}&dipendente_id=${encodeURIComponent(row.idDipendente)}`, '_blank', 'noopener,noreferrer')}
+            className="p-1 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
+            title="Stampa questa riga (apre il PDF)"
+            aria-label={`Stampa la riga di ${row.cognomeNome}`}
+          >
+            <Printer className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/contabilita/pdf/dipendente/${anno}/${mese}/${encodeURIComponent(row.idDipendente)}`)}
+            className="p-1 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 hover:text-indigo-400 hover:border-indigo-500/50 hover:bg-indigo-500/10 transition-all shadow-sm"
+            title="Scarica Busta Paga (Prospetto)"
+            aria-label={`Scarica il prospetto di ${row.cognomeNome}`}
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
       )
     }
   ];
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+    <div className="elaborato-page min-w-0 flex flex-col">
+      <div ref={stickyTopRef} className="elaborato-sticky-header sticky z-40 bg-slate-900 pb-6">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-50 flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-slate-50 flex flex-wrap items-center gap-3">
             Elaborato Mensile Dipendenti
             {isChiuso && (
               <span className="flex items-center gap-1.5 text-xs font-semibold bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/30">
@@ -322,7 +369,7 @@ export default function ElaboratoDipendenti() {
           <p className="text-slate-400 mt-1">Calcolo stipendi in base alle presenze</p>
         </div>
 
-        <div className="flex items-center gap-3 bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-700">
+        <div className="flex max-w-full flex-wrap items-center gap-3 bg-slate-800 p-2 rounded-xl shadow-sm border border-slate-700">
           <select 
             value={mese} 
             onChange={(e) => setMese(Number(e.target.value))}
@@ -364,8 +411,9 @@ export default function ElaboratoDipendenti() {
           </button>
         </div>
       </div>
+      </div>
 
-      <div className="flex-1 bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden relative">
+      <div className="min-w-0 bg-slate-800 rounded-xl shadow-sm border border-slate-700 relative">
         {isLoading && (
           <div className="absolute inset-0 bg-slate-800/70 z-10 flex flex-col items-center justify-center text-emerald-400">
             <Loader2 className="w-8 h-8 animate-spin mb-4" />
@@ -375,7 +423,15 @@ export default function ElaboratoDipendenti() {
           columns={columns} 
           data={dati} 
           searchPlaceholder="Cerca dipendente..."
-          itemsPerPage={15}
+          pagination={false}
+          nowrap={false}
+          tableClassName="text-xs"
+          compact
+          stickyHeader
+          responsiveCards
+          uniformRows
+          continuous
+          stickyTopOffset={`calc(${stickyTopHeight}px - var(--elaborato-sticky-inset))`}
         />
       </div>
 

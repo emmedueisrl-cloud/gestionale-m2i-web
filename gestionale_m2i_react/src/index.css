@@ -69,6 +69,20 @@ input, textarea {
 }
 
 /* Stili per la Stampa dei Moduli */
+.elaborato-page {
+  --elaborato-sticky-inset: 1rem;
+}
+
+.elaborato-sticky-header {
+  top: calc(-1 * var(--elaborato-sticky-inset));
+}
+
+@media (min-width: 768px) {
+  .elaborato-page {
+    --elaborato-sticky-inset: 2rem;
+  }
+}
+
 @media print {
   /* Nascondi tutto il layout di base (sidebar, header, ecc.) */
   body * {
