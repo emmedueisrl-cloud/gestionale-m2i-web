@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const Sidebar = ({ area, isOpen, setIsOpen }) => {
+  const isAccounting = area === 'contabilita';
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -56,9 +57,9 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
 
       {/* Sidebar vera e propria */}
       <div 
-        className={`fixed inset-y-0 left-0 z-50 w-80 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-50 w-80 border-r flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 ${isAccounting ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'} ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <div className="flex items-center justify-center h-16 border-b border-slate-800 bg-slate-900 shrink-0">
+        <div className={`flex items-center justify-center h-16 border-b shrink-0 ${isAccounting ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
           <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-500 to-indigo-400 bg-clip-text text-transparent tracking-tighter">
             M2I srl
           </h1>
@@ -68,7 +69,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
             {menu.map((m, idx) => {
               if (m.type === 'header') {
                 return (
-                  <li key={idx} className="mt-8 mb-3 px-3 text-sm font-black text-indigo-300/80 uppercase tracking-widest">
+                  <li key={idx} className={`mt-8 mb-3 px-3 text-sm font-black uppercase tracking-widest ${isAccounting ? 'text-indigo-700' : 'text-indigo-300/80'}`}>
                     {m.label}
                   </li>
                 );
@@ -82,7 +83,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
                     navigate(m.path);
                     setIsOpen(false);
                   }}
-                  className={`pl-7 pr-3 py-2 rounded-lg cursor-pointer transition-colors text-sm font-medium ${isActive ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`}
+                  className={`pl-7 pr-3 py-2 rounded-lg cursor-pointer transition-colors text-sm font-medium ${isAccounting ? (isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100') : (isActive ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white')}`}
                 >
                   {m.label}
                 </li>
@@ -91,9 +92,9 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
           </ul>
         </div>
         
-        <div className="p-4 border-t border-slate-800">
+        <div className={`p-4 border-t ${isAccounting ? 'border-slate-200' : 'border-slate-800'}`}>
           <button 
-            className="w-full px-4 py-2 bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors text-sm font-medium flex items-center justify-center gap-2"
+            className={`w-full px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center justify-center gap-2 ${isAccounting ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'}`}
             onClick={async () => {
               try {
                 const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/logout`, {

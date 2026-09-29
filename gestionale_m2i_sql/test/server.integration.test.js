@@ -167,6 +167,21 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
       db.exec(sql, error => db.close(() => error ? reject(error) : resolve()));
     });
     await mutateFixture("INSERT INTO clienti(id,ragione_sociale,partita_iva) VALUES ('C_TEST','Cliente collaudo','TEST-PIVA');");
+    await mutateFixture("INSERT INTO righe_bloccate_elaborati(tipo,mese,anno,soggetto_id,snapshot,bloccata_at) VALUES ('cliente',9,2026,'C_TEST','{\"idCliente\":\"C_TEST\",\"ragioneSociale\":\"Cliente collaudo\",\"importoTotale\":100}','2026-09-29T00:00:00.000Z');");
+    const sent = await fetch(`${base}/api/contabilita/fatture/inviata`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ clienteId: 'C_TEST', mese: 9, anno: 2026 })
+    });
+    assert.equal(sent.status, 200);
+    const accounting = await fetch(`${base}/api/contabilita/cliente/2026/9`, { headers: { Cookie: cookie } });
+    assert.equal(accounting.status, 200);
+    const sentRow = (await accounting.json()).find(row => row.idCliente === 'C_TEST');
+    assert.ok(sentRow?.fatturaInviataAt);
+    assert.deepEqual(sentRow.fatture, []);
+    const report = await fetch(`${base}/api/contabilita/pdf/report-clienti/2026/9`, { headers: { Cookie: cookie } });
+    assert.equal(report.status, 200);
+    assert.match(report.headers.get('content-type'), /application\/pdf/);
+    assert.equal(Buffer.from(await report.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
     const invoice = { idCliente: 'C_TEST', numeroFattura: 'TEST-1', dataFattura: '2026-09-28', importoImponibile: 100, aliquotaIva: 0 };
     assert.equal((await runFunction('salvaFattura', invoice)).success, true);
     assert.deepEqual(await queryFixture("SELECT aliquota_iva, importo_iva, importo_totale FROM fatture WHERE numero_fattura='TEST-1'"),

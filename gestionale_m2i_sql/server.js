@@ -138,6 +138,8 @@ app.get('/api/contabilita/fatture/:id/allegato', async (req, res) => {
 });
 app.get(`/api/contabilita/${tipo}/${anno}/${mese}`, handleWorkflow(req =>
   workflowElaborati.accountingRows(req.params.tipo, req.params.mese, req.params.anno)));
+app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
+  workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWorkflow(req =>
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));
@@ -484,6 +486,19 @@ app.post('/api/run', async (req, res) => {
 // ENDPOINT GENERAZIONE PDF (Fase 6)
 // ==========================================
 const pdfGenerator = require('./pdf_generator');
+const { buildReportContabilitaClientiPDF } = require('./report_contabilita_clienti_pdf');
+
+app.get('/api/contabilita/pdf/report-clienti/:anno/:mese', async (req, res) => {
+  try {
+    const { anno, mese } = req.params;
+    workflowElaborati.period('cliente', mese, anno);
+    const rows = await workflowElaborati.accountingRows('cliente', mese, anno);
+    const doc = buildReportContabilitaClientiPDF(rows, mese, anno);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Report_Fatture_Clienti_${mese}_${anno}.pdf"`);
+    res.send(await doc.getBuffer());
+  } catch (error) { res.status(400).send(error.message); }
+});
 
 app.get(['/api/contabilita/pdf/:tipo/:anno/:mese', '/api/contabilita/pdf/:tipo/:anno/:mese/:id'], async (req, res) => {
   try {

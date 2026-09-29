@@ -3,6 +3,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { knex } = require('./db');
 const elaborati = require('./controllers/elaborati');
+const { calcolaCostoPersonalePerCliente } = require('./costo_personale_clienti');
+const { calcolaValoriContabilitaCliente } = require('./valori_contabilita_clienti');
 const { reconcileRegistration, registrationStatuses } = require('./fatture_reconciliation');
 
 const kinds = {
@@ -46,6 +48,14 @@ async function initialize() {
       t.text('allegato_path'); t.text('registrata_at').notNullable(); t.integer('registrata_da');
       t.string('fattura_id').unique().references('id').inTable('fatture').onDelete('SET NULL');
       t.unique(['cliente_id', 'numero_fattura', 'data_fattura']);
+    });
+  }
+  if (!await knex.schema.hasTable('fatture_inviate_elaborati')) {
+    await knex.schema.createTable('fatture_inviate_elaborati', t => {
+      t.string('cliente_id').notNullable().references('id').inTable('clienti').onDelete('RESTRICT');
+      t.integer('mese').notNullable(); t.integer('anno').notNullable();
+      t.text('inviata_at').notNullable(); t.integer('inviata_da');
+      t.primary(['cliente_id', 'mese', 'anno']);
     });
   }
   if (!await knex.schema.hasColumn('fatture_aruba_elaborati', 'fattura_id')) {
@@ -220,10 +230,16 @@ async function accountingRows(tipo, mese, anno) {
   const frozenIds = new Set((await knex('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id')).map(r => r.soggetto_id));
   if (tipo === 'cliente') {
     const invoices = await registrationStatuses(knex, await knex('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
+    const sent = await knex('fatture_inviate_elaborati').where({ mese: p.mese, anno: p.anno });
+    const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
+    const dipendenti = (await elaborati.ottieniElaboratoMensile(p.mese, p.anno)).dati;
+    const oreRegistrate = await knex('registro_ore').select('dipendente_id', 'cliente_id', 'ore_totali', 'causale_assenza').where({ mese: p.mese, anno: p.anno });
+    const costiPersonale = calcolaCostoPersonalePerCliente(dipendenti, oreRegistrate);
     return rows.map(row => {
       const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), statoRiconciliazione: f.stato_riconciliazione }));
       const actual = linked.reduce((sum, f) => sum + f.importo, 0);
-      return { ...row, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
+      const importi = calcolaValoriContabilitaCliente(row, costiPersonale.get(String(row.idCliente)) || 0);
+      return { ...row, ...importi, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
     });
   }
   const payments = await knex('pagamenti_elaborati_dipendenti').where({ mese: p.mese, anno: p.anno });
@@ -231,6 +247,17 @@ async function accountingRows(tipo, mese, anno) {
     const payment = payments.find(x => x.dipendente_id === row.idDipendente);
     return { ...row, storicoPreesistente: Boolean(header && !frozenIds.has(row.idDipendente)), pagamento: payment ? { pagatoAt: payment.pagato_at, importo: Number(payment.importo_netto) } : null };
   });
+}
+
+async function markInvoiceSent({ mese, anno, clienteId, userId }) {
+  const p = period('cliente', mese, anno);
+  if (typeof clienteId !== 'string' || !clienteId) throw new Error('Cliente non valido.');
+  const row = (await lockedRows('cliente', p.mese, p.anno)).find(item => item.idCliente === clienteId);
+  if (!row) throw new Error('Riga cliente non blindata.');
+  const sentAt = new Date().toISOString();
+  await knex('fatture_inviate_elaborati').insert({ cliente_id: clienteId, mese: p.mese, anno: p.anno, inviata_at: sentAt, inviata_da: userId })
+    .onConflict(['cliente_id', 'mese', 'anno']).ignore();
+  return { fatturaInviataAt: sentAt };
 }
 
 async function registerInvoice({ mese, anno, clienteId, numero, dataFattura, importo, userId, file, confermaStorico }) {
@@ -290,4 +317,4 @@ async function registerPayment({ mese, anno, dipendenteId, userId, confermaStori
   return { id };
 }
 
-module.exports = { initialize, confirmRoster, lockRow, unlockRow, lockedRows, status, accountingRows, registerInvoice, registerPayment, period };
+module.exports = { initialize, confirmRoster, lockRow, unlockRow, lockedRows, status, accountingRows, markInvoiceSent, registerInvoice, registerPayment, period };

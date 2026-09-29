@@ -443,6 +443,13 @@ CREATE TABLE fatture_aruba_elaborati (
   UNIQUE (cliente_id, numero_fattura, data_fattura)
 );
 
+CREATE TABLE fatture_inviate_elaborati (
+  cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT,
+  mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  inviata_at TEXT NOT NULL, inviata_da INTEGER,
+  PRIMARY KEY (cliente_id, mese, anno)
+);
+
 CREATE TABLE rettifiche_fatture_aruba (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   registrazione_id INTEGER NOT NULL REFERENCES fatture_aruba_elaborati(id) ON DELETE RESTRICT,

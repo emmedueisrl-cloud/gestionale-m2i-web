@@ -45,9 +45,11 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/db.js
 !/gestionale_m2i_sql/excel_generator.js
 !/gestionale_m2i_sql/pdf_generator.js
+!/gestionale_m2i_sql/report_contabilita_clienti_pdf.js
 !/gestionale_m2i_sql/auth.js
 !/gestionale_m2i_sql/ai_query.js
 !/gestionale_m2i_sql/attachment_delete.js
+!/gestionale_m2i_sql/costo_personale_clienti.js
 !/gestionale_m2i_sql/db_indexes.js
 !/gestionale_m2i_sql/elaborati_note_storiche.js
 !/gestionale_m2i_sql/email_attachment_link.js
@@ -57,4 +59,5 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/payroll_extraction.js
 !/gestionale_m2i_sql/payroll_store.js
 !/gestionale_m2i_sql/upload_paths.js
+!/gestionale_m2i_sql/valori_contabilita_clienti.js
 !/gestionale_m2i_sql/workflow_elaborati.js
