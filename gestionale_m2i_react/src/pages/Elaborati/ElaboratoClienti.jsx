@@ -396,7 +396,7 @@ export default function ElaboratoClienti() {
             </button>
           )}
           <button
-            onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/pdf/stampa-elaborato-clienti?mese=${mese}&anno=${anno}`, '_blank')}
+            onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/pdf/stampa-elaborato-clienti?mese=${mese}&anno=${anno}&grafico=1`, '_blank')}
             className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white font-medium shadow flex items-center gap-2 transition-colors"
             title="Stampa l'intero elaborato in PDF"
           >

@@ -467,6 +467,406 @@ function buildStampaElaboratoDipendentiPDF(datiCompleti, mese, anno) {
   return pdfmake.createPdf(docDefinition);
 }
 
+// Variante grafica dell'elaborato: la stampa tabellare precedente resta invariata.
+function buildReportGraficoDipendentiPDF(datiCompleti, mese, anno) {
+  const mesiNomi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+  const periodo = `${mesiNomi[Number(mese) - 1] || mese} ${anno}`;
+  const euro = valore => {
+    const [intero, decimali] = Number(valore || 0).toFixed(2).split('.');
+    return `€ ${intero.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${decimali}`;
+  };
+  const ore = valore => `${Number(valore || 0).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} h`;
+  const totale = campo => datiCompleti.reduce((somma, row) => somma + (Number(row[campo]) || 0), 0);
+  const conBusta = datiCompleti.filter(row => row.nettoBusta !== null && row.nettoBusta !== undefined && Number.isFinite(Number(row.nettoBusta)));
+  const totaleBuste = conBusta.reduce((somma, row) => somma + Number(row.nettoBusta), 0);
+  const blu = '#124f91';
+  const bluScuro = '#0b285d';
+  const azzurro = '#e8f4ff';
+  const colWidths = ['*', 65, 80, 80, 100, 65, 65, 100, 105, 105];
+
+  const icon = (tipo, inverse = false) => {
+    const base = '<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">';
+    const end = '</svg>';
+    const icons = {
+      people: '<circle cx="19" cy="11" r="6" fill="white"/><path d="M7 32v-4a12 12 0 0 1 24 0v4z" fill="white"/>',
+      group: '<circle cx="19" cy="9" r="6" fill="white"/><circle cx="7" cy="15" r="4" fill="white"/><circle cx="31" cy="15" r="4" fill="white"/><path d="M10 33v-6a9 9 0 0 1 18 0v6zM1 33v-8a6 6 0 0 1 8-5v13zM29 20a6 6 0 0 1 8 5v8h-8z" fill="white"/>',
+      calendar: '<rect x="5" y="8" width="28" height="26" rx="3" fill="none" stroke="white" stroke-width="3"/><path d="M5 16h28M12 4v8M26 4v8" fill="none" stroke="white" stroke-width="3"/><rect x="11" y="21" width="5" height="5" fill="white"/><rect x="22" y="21" width="5" height="5" fill="white"/>',
+      clock: '<circle cx="19" cy="19" r="14" fill="none" stroke="white" stroke-width="3"/><path d="M19 10v10l7 4" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/>',
+      coins: '<ellipse cx="15" cy="14" rx="9" ry="4" fill="white"/><path d="M6 14v10c0 5 18 5 18 0V14M6 19c0 5 18 5 18 0" fill="none" stroke="white" stroke-width="2"/><ellipse cx="27" cy="10" rx="7" ry="3" fill="white"/>',
+      hand: '<path d="M7 22h10l5-7a4 4 0 0 1 7 4l-6 10H7z" fill="white"/><path d="M8 11h22v3H8z" fill="white"/>',
+      chart: '<rect x="6" y="22" width="5" height="10" rx="1" fill="white"/><rect x="16" y="15" width="5" height="17" rx="1" fill="white"/><rect x="26" y="7" width="5" height="25" rx="1" fill="white"/>',
+      note: '<rect x="7" y="5" width="24" height="28" rx="3" fill="white"/><path d="M12 14h14M12 20h14M12 26h10" fill="none" stroke="#1b5c9d" stroke-width="2"/>'
+    };
+    const badgeColor = inverse === 'avatar' ? '#d9edff' : inverse ? '#ffffff' : '#1b5c9d';
+    const badge = ['note', 'group', 'calendar'].includes(tipo) ? '' : `<circle cx="19" cy="19" r="18" fill="${badgeColor}"/>`;
+    const glyph = inverse ? (icons[tipo] || icons.people).replaceAll('white', '#1b5c9d') : (icons[tipo] || icons.people);
+    return base + badge + glyph + end;
+  };
+
+  const metric = (tipo, etichetta, valore, dettaglio = '', dark = false) => ({
+    table: {
+      widths: [49, '*'],
+      body: [[
+        { svg: icon(tipo, dark), width: 45, height: 45, margin: [0, 4, 0, 0] },
+        { stack: [
+          { text: etichetta.toUpperCase(), fontSize: 10, bold: true, color: dark ? '#d7ebff' : blu, margin: [0, 0, 0, 6] },
+          { text: valore, fontSize: 23, bold: true, color: dark ? '#ffffff' : bluScuro },
+          ...(dettaglio ? [{ text: dettaglio, fontSize: 8, color: dark ? '#d7ebff' : '#527195', margin: [0, 4, 0, 0] }] : [])
+        ] }
+      ]]
+    },
+    layout: {
+      fillColor: () => dark ? '#15538f' : azzurro,
+      hLineWidth: () => 0, vLineWidth: () => 0,
+      paddingLeft: () => 9, paddingRight: () => 4,
+      paddingTop: () => 14, paddingBottom: () => 14
+    }
+  });
+
+  const headerCell = text => ({ text, bold: true, color: '#ffffff', fontSize: 14, margin: [0, 9, 0, 9] });
+  const valueCell = (text, bold = false) => ({ text, fontSize: bold ? 18 : 16, bold, color: bluScuro, fillColor: bold ? '#e2f1ff' : undefined, margin: [0, 10, 0, 0], noWrap: true });
+  const tableLayout = {
+    hLineWidth: () => 0, vLineWidth: () => 0,
+    paddingLeft: () => 5, paddingRight: () => 5,
+    paddingTop: () => 3, paddingBottom: () => 3
+  };
+  const tableBody = [[{
+    table: { widths: colWidths, body: [[
+      headerCell('Dipendente'), headerCell('Ore Lav.'), headerCell('Paga Lav.'),
+      headerCell('Paga F.P.M.'), headerCell('Spec. F.P.M.'), headerCell('Magg.'),
+      headerCell('Detr.'), headerCell('Spec. M/D'), headerCell('Netto spettante'),
+      headerCell('Netto busta')
+    ]] },
+    layout: { ...tableLayout, fillColor: () => '#1969b8' }
+  }]];
+
+  datiCompleti.forEach(row => {
+    const dettaglio = row.dettaglioFPM && typeof row.dettaglioFPM === 'object' ? row.dettaglioFPM : {};
+    const specFPM = Object.entries(dettaglio)
+      .filter(([causale, quantita]) => !causale.toLowerCase().includes('extra') && Number(quantita) > 0)
+      .map(([causale, quantita]) => `${causale}: ${ore(quantita)}`).join('\n') || '-';
+    const specMD = [
+      row.noteMaggiorazioni?.trim() ? `[M] ${row.noteMaggiorazioni.trim()}` : '',
+      row.noteDetrazioni?.trim() ? `[D] ${row.noteDetrazioni.trim()}` : ''
+    ].filter(Boolean).join('\n') || '-';
+    const note = [
+      row.notaFissa?.trim() ? `[FISSE] ${row.notaFissa.trim()}` : '',
+      row.notaMensile?.trim() ? `[MESE] ${row.notaMensile.trim()}` : '',
+      row.noteGenerali?.trim() && row.noteGenerali.trim() !== row.notaMensile?.trim() ? `[VECCHIE] ${row.noteGenerali.trim()}` : ''
+    ].filter(Boolean).join('\n') || '-';
+    const nettoBusta = row.nettoBusta !== null && row.nettoBusta !== undefined && Number.isFinite(Number(row.nettoBusta));
+    const employee = {
+      rowSpan: 2,
+      columns: [
+        { svg: icon('people', 'avatar'), width: 45, height: 45, margin: [0, 4, 0, 0] },
+        { width: '*', stack: [
+          { text: row.cognomeNome || 'Dipendente', bold: true, fontSize: 17, color: bluScuro, margin: [0, 0, 0, 4] },
+          { text: 'IBAN', fontSize: 13, color: '#416c9f' },
+          { text: row.iban || 'Non disponibile', fontSize: 13, color: '#244b80' }
+        ] }
+      ]
+    };
+    const noteCell = {
+      colSpan: 9,
+      columns: [
+        { svg: icon('note'), width: 23, height: 23 },
+        { text: 'NOTE', width: 48, fontSize: 14, bold: true, color: blu },
+        { text: note, width: '*', fontSize: 14, color: '#244b80' }
+      ],
+      fillColor: '#e9f3fc'
+    };
+    tableBody.push([{
+      table: {
+        widths: colWidths,
+        heights: rowIndex => rowIndex === 0 ? 51 : 29,
+        body: [
+          [
+            employee,
+            valueCell(ore(row.oreLavorate)), valueCell(euro(row.pagaLavorato)),
+            valueCell(euro(row.pagaFPM)), { text: specFPM, fontSize: 13, color: '#244b80', margin: [0, 8, 0, 0] },
+            valueCell(euro(row.maggiorazioni)), valueCell(euro(row.detrazioni)),
+            { text: specMD, fontSize: 13, color: '#244b80', margin: [0, 8, 0, 0] },
+            valueCell(euro(row.stipendioNetto), true),
+            { text: nettoBusta ? euro(row.nettoBusta) : 'Non disponibile', fontSize: nettoBusta ? 18 : 12, bold: nettoBusta, color: nettoBusta ? bluScuro : '#6b829c', fillColor: nettoBusta ? '#e2f1ff' : undefined, margin: [0, 9, 0, 0] }
+          ],
+          ['', noteCell, '', '', '', '', '', '', '', '']
+        ]
+      },
+      layout: {
+        ...tableLayout,
+        vLineWidth: i => i === 0 || i === 10 ? 0 : 0.35,
+        vLineColor: () => '#d4e5f4',
+        paddingTop: rowIndex => rowIndex === 1 ? 6 : 4,
+        paddingBottom: rowIndex => rowIndex === 1 ? 6 : 4
+      }
+    }]);
+  });
+
+  const docDefinition = {
+    pageSize: 'A3', pageOrientation: 'landscape',
+    pageMargins: [24, 223, 24, 33],
+    header: () => ({
+      stack: [
+        {
+        table: { widths: ['*', 225, 145], body: [[
+          { columns: [
+            { svg: icon('group'), width: 63, height: 63, margin: [0, 3, 0, 0] },
+            { width: '*', stack: [
+              { text: 'ELABORATO DIPENDENTI', fontSize: 33, bold: true, color: '#ffffff' },
+              { text: periodo.toUpperCase(), fontSize: 21, color: '#e1efff' }
+            ] }
+          ] },
+          { fillColor: '#13518f', columns: [
+            { svg: icon('calendar'), width: 36, height: 36, margin: [0, 10, 0, 0] },
+            { width: '*', stack: [
+              { text: 'Periodo di riferimento', fontSize: 11, color: '#e1efff' },
+              { text: periodo, fontSize: 16, bold: true, color: '#ffffff', margin: [0, 8, 0, 0] }
+            ] }
+          ] },
+          { fillColor: '#2468a7', columns: [
+            { width: '*', stack: [
+              { text: 'Totale dipendenti', fontSize: 11, color: '#e1efff' },
+              { text: String(datiCompleti.length), fontSize: 27, bold: true, color: '#ffffff' }
+            ] },
+            { svg: icon('group'), width: 40, height: 40, margin: [0, 8, 0, 0] }
+          ] }
+        ]] },
+        layout: {
+          fillColor: () => '#104780',
+          hLineWidth: () => 0, vLineWidth: () => 0,
+          paddingLeft: () => 17, paddingRight: () => 12,
+          paddingTop: () => 17, paddingBottom: () => 17
+        },
+        margin: [0, 0, 0, 9]
+      },
+      {
+        columns: [
+          metric('clock', 'Totale ore lavorate', ore(totale('oreLavorate'))),
+          metric('coins', 'Totale paga lavoro', euro(totale('pagaLavorato'))),
+          metric('hand', 'Totale paga F.P.M.', euro(totale('pagaFPM'))),
+          metric('chart', 'Totale netto spettante', euro(totale('stipendioNetto')), '', true),
+          metric('coins', 'Totale netto busta', conBusta.length ? euro(totaleBuste) : 'Non disponibile', `${conBusta.length}/${datiCompleti.length} buste caricate`, true)
+        ],
+        columnGap: 6
+      }
+      ],
+      margin: [24, 16, 24, 0]
+    }),
+    content: [
+      {
+        table: { headerRows: 1, dontBreakRows: true, widths: ['*'], body: tableBody },
+        layout: {
+          hLineWidth: i => i > 1 && i < tableBody.length ? 2 : 0,
+          hLineColor: () => '#6e9fcf',
+          vLineWidth: () => 0,
+          paddingLeft: () => 0, paddingRight: () => 0,
+          paddingTop: () => 0, paddingBottom: () => 3
+        }
+      }
+    ],
+    footer: (pagina, pagine) => ({
+      columns: [
+        { text: `Elaborato generato il ${new Date().toLocaleDateString('it-IT')}`, alignment: 'left' },
+        { text: `Documento riservato - Uso interno  ·  ${pagina}/${pagine}`, alignment: 'right' }
+      ],
+      fontSize: 10, color: '#426a9a', margin: [24, 0, 24, 0]
+    }),
+    defaultStyle: { font: 'Roboto' }
+  };
+  pdfmake.setFonts(fonts);
+  return pdfmake.createPdf(docDefinition);
+}
+
+// Variante grafica clienti: il tracciato tabellare precedente resta disponibile.
+function buildReportGraficoClientiPDF(datiCompleti, mese, anno) {
+  const mesi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+  const periodo = `${mesi[Number(mese) - 1] || mese} ${anno}`;
+  const numero = valore => Number(valore) || 0;
+  const euro = valore => {
+    const [intero, decimali] = numero(valore).toFixed(2).split('.');
+    return `€ ${intero.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${decimali}`;
+  };
+  const ore = valore => `${numero(valore).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} h`;
+  const totale = campo => datiCompleti.reduce((somma, row) => somma + numero(row[campo]), 0);
+  const verde = '#087a59';
+  const verdeScuro = '#064a39';
+  const verdeChiaro = '#e8f7f0';
+  const widths = ['*', 62, 70, 90, 100, 120, 105, 100, 110];
+
+  const icon = (tipo, scuro = false) => {
+    const glyphs = {
+      group: '<circle cx="11" cy="11" r="5"/><circle cx="27" cy="11" r="5"/><path d="M2 33v-8a9 9 0 0 1 18 0v8zM18 33v-8a9 9 0 0 1 18 0v8z"/>',
+      building: '<path d="M6 34V8h21v26M27 16h6v18M11 14h4m5 0h3m-12 7h4m5 0h3m-12 7h4m5 0h3" fill="none" stroke="white" stroke-width="3"/><path d="M15 34v-6h5v6"/>',
+      calendar: '<rect x="5" y="8" width="28" height="26" rx="3" fill="none" stroke="white" stroke-width="3"/><path d="M5 16h28M12 4v8M26 4v8" fill="none" stroke="white" stroke-width="3"/><rect x="11" y="21" width="5" height="5"/><rect x="22" y="21" width="5" height="5"/>',
+      clock: '<circle cx="19" cy="19" r="14" fill="none" stroke="white" stroke-width="3"/><path d="M19 10v10l7 4" fill="none" stroke="white" stroke-width="3"/>',
+      coins: '<ellipse cx="15" cy="14" rx="9" ry="4"/><path d="M6 14v10c0 5 18 5 18 0V14M6 19c0 5 18 5 18 0" fill="none" stroke="white" stroke-width="2"/><ellipse cx="27" cy="10" rx="7" ry="3"/>',
+      chart: '<rect x="6" y="22" width="5" height="10" rx="1"/><rect x="16" y="15" width="5" height="17" rx="1"/><rect x="26" y="7" width="5" height="25" rx="1"/>',
+      note: '<rect x="7" y="5" width="24" height="28" rx="3"/><path d="M12 14h14M12 20h14M12 26h10" fill="none" stroke="#087a59" stroke-width="2"/>'
+    };
+    const badge = ['group', 'calendar'].includes(tipo) ? '' : `<circle cx="19" cy="19" r="18" fill="${scuro ? '#ffffff' : '#118967'}"/>`;
+    const glyph = scuro ? glyphs[tipo].replaceAll('white', '#087a59') : glyphs[tipo];
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38" fill="white">${badge}${glyph}</svg>`;
+  };
+
+  const metric = (tipo, label, value, dark = false) => ({
+    table: { widths: [49, '*'], body: [[
+      { svg: icon(tipo, dark), width: 45, height: 45, margin: [0, 4, 0, 0] },
+      { stack: [
+        { text: label.toUpperCase(), fontSize: 10, bold: true, color: dark ? '#d7fff0' : verde, margin: [0, 0, 0, 6] },
+        { text: value, fontSize: 23, bold: true, color: dark ? '#ffffff' : verdeScuro }
+      ] }
+    ]] },
+    layout: {
+      fillColor: () => dark ? '#087a59' : verdeChiaro,
+      hLineWidth: () => 0, vLineWidth: () => 0,
+      paddingLeft: () => 9, paddingRight: () => 4,
+      paddingTop: () => 14, paddingBottom: () => 14
+    }
+  });
+
+  const headerCell = text => ({ text, bold: true, color: '#ffffff', fontSize: 14, margin: [0, 9, 0, 9] });
+  const valueCell = (text, bold = false) => ({ text, fontSize: bold ? 18 : 16, bold, color: verdeScuro, fillColor: bold ? '#def4e9' : undefined, margin: [0, 10, 0, 0], noWrap: true });
+  const cellLayout = {
+    hLineWidth: () => 0, vLineWidth: () => 0,
+    paddingLeft: () => 5, paddingRight: () => 5,
+    paddingTop: () => 3, paddingBottom: () => 3
+  };
+  const tableBody = [[{
+    table: { widths, body: [[
+      headerCell('Cliente'), headerCell('Ore'), headerCell('Tariffa'), headerCell('Base imp.'),
+      headerCell('Sconti / Magg.'), headerCell('Spec. S/M'), headerCell('Totale imp.'),
+      headerCell('Regime fiscale'), headerCell('Tassato')
+    ]] },
+    layout: { ...cellLayout, fillColor: () => verde }
+  }]];
+
+  datiCompleti.forEach(row => {
+    const differenza = numero(row.maggiorazioni) - numero(row.sconti);
+    const specSM = [
+      row.noteMaggiorazioni?.trim() ? `[M] ${row.noteMaggiorazioni.trim()}` : '',
+      row.noteSconti?.trim() ? `[S] ${row.noteSconti.trim()}` : ''
+    ].filter(Boolean).join('\n') || '-';
+    const note = [
+      row.notaFissa?.trim() ? `[FISSE] ${row.notaFissa.trim()}` : '',
+      row.notaMensile?.trim() ? `[MESE] ${row.notaMensile.trim()}` : ''
+    ].filter(Boolean).join('\n') || '-';
+    const client = {
+      rowSpan: 2,
+      columnGap: 12,
+      columns: [
+        { svg: icon('building'), width: 43, height: 43, margin: [0, 2, 0, 0], color: verde },
+        { width: '*', text: row.ragioneSociale || 'Cliente', bold: true, fontSize: 17, color: verdeScuro, margin: [0, 9, 0, 0] }
+      ]
+    };
+    const noteCell = {
+      colSpan: 8,
+      columnGap: 8,
+      columns: [
+        { svg: icon('note'), width: 23, height: 23 },
+        { text: 'NOTE', width: 48, fontSize: 14, bold: true, color: verde },
+        { text: note, width: '*', fontSize: 14, color: '#215e4c' }
+      ],
+      fillColor: '#e9f7f0'
+    };
+    tableBody.push([{
+      table: {
+        widths,
+        heights: rowIndex => rowIndex === 0 ? 51 : 29,
+        body: [
+          [
+            client,
+            valueCell(ore(row.oreLavorate)), valueCell(euro(row.tariffaOraria)),
+            valueCell(euro(row.baseImponibile)), valueCell(euro(differenza)),
+            { text: specSM, fontSize: 13, color: '#215e4c', margin: [0, 8, 0, 0] },
+            valueCell(euro(row.imponibile)),
+            { text: row.tipoTassazione || '-', fontSize: 14, color: verdeScuro, margin: [0, 10, 0, 0] },
+            valueCell(euro(row.importoTotale), true)
+          ],
+          ['', noteCell, '', '', '', '', '', '', '']
+        ]
+      },
+      layout: {
+        ...cellLayout,
+        vLineWidth: i => i === 0 || i === 9 ? 0 : 0.35,
+        vLineColor: () => '#cde9dc',
+        paddingTop: rowIndex => rowIndex === 1 ? 6 : 4,
+        paddingBottom: rowIndex => rowIndex === 1 ? 6 : 4
+      }
+    }]);
+  });
+
+  const docDefinition = {
+    pageSize: 'A3', pageOrientation: 'landscape',
+    pageMargins: [24, 223, 24, 33],
+    header: () => ({
+      stack: [
+        {
+          table: { widths: ['*', 225, 145], body: [[
+            { columns: [
+              { svg: icon('group'), width: 63, height: 63, margin: [0, 3, 0, 0] },
+              { width: '*', stack: [
+                { text: 'ELABORATO CLIENTI', fontSize: 33, bold: true, color: '#ffffff' },
+                { text: periodo.toUpperCase(), fontSize: 21, color: '#ddffed' }
+              ] }
+            ] },
+            { fillColor: '#096a50', columns: [
+              { svg: icon('calendar'), width: 36, height: 36, margin: [0, 10, 0, 0] },
+              { width: '*', stack: [
+                { text: 'Periodo di riferimento', fontSize: 11, color: '#ddffed' },
+                { text: periodo, fontSize: 16, bold: true, color: '#ffffff', margin: [0, 8, 0, 0] }
+              ] }
+            ] },
+            { fillColor: '#168a66', columns: [
+              { width: '*', stack: [
+                { text: 'Totale clienti', fontSize: 11, color: '#ddffed' },
+                { text: String(datiCompleti.length), fontSize: 27, bold: true, color: '#ffffff' }
+              ] },
+              { svg: icon('group'), width: 40, height: 40, margin: [0, 8, 0, 0] }
+            ] }
+          ]] },
+          layout: {
+            fillColor: () => '#075c45',
+            hLineWidth: () => 0, vLineWidth: () => 0,
+            paddingLeft: () => 17, paddingRight: () => 12,
+            paddingTop: () => 17, paddingBottom: () => 17
+          },
+          margin: [0, 0, 0, 9]
+        },
+        {
+          columns: [
+            metric('clock', 'Totale ore erogate', ore(totale('oreLavorate'))),
+            metric('chart', 'Totale imponibile', euro(totale('imponibile'))),
+            metric('coins', 'Totale tassato', euro(totale('importoTotale'))),
+            metric('coins', 'Totale realmente fatturato', euro(totale('importoRealmenteFatturato')), true)
+          ],
+          columnGap: 6
+        }
+      ],
+      margin: [24, 16, 24, 0]
+    }),
+    content: [{
+      table: { headerRows: 1, dontBreakRows: true, widths: ['*'], body: tableBody },
+      layout: {
+        hLineWidth: i => i > 1 && i < tableBody.length ? 2 : 0,
+        hLineColor: () => '#6cb398',
+        vLineWidth: () => 0,
+        paddingLeft: () => 0, paddingRight: () => 0,
+        paddingTop: () => 0, paddingBottom: () => 3
+      }
+    }],
+    footer: (pagina, pagine) => ({
+      columns: [
+        { text: `Elaborato generato il ${new Date().toLocaleDateString('it-IT')}`, alignment: 'left' },
+        { text: `Documento riservato - Uso interno  ·  ${pagina}/${pagine}`, alignment: 'right' }
+      ],
+      fontSize: 10, color: '#367c62', margin: [24, 0, 24, 0]
+    }),
+    defaultStyle: { font: 'Roboto' }
+  };
+  pdfmake.setFonts(fonts);
+  return pdfmake.createPdf(docDefinition);
+}
+
 module.exports = {
   buildFatturaPDF,
   buildElaboratoDipendentePDF,
@@ -474,5 +874,7 @@ module.exports = {
   buildProvvigioniPDF,
   buildStampaElaboratoClientiPDF,
   buildStampaElaboratoDipendentiPDF,
+  buildReportGraficoDipendentiPDF,
+  buildReportGraficoClientiPDF,
   buildFoglioPresenzePDF
 };

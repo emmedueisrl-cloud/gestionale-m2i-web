@@ -589,10 +589,17 @@ app.get('/api/pdf/stampa-elaborato-clienti', async (req, res) => {
     const { mese, anno } = req.query;
     const elaborato = await api.ottieniElaboratoClienti(mese, anno);
     const dati = elaborato.chiuso ? await workflowElaborati.lockedRows('cliente', mese, anno) : elaborato.dati;
-    
-    const doc = pdfGenerator.buildStampaElaboratoClientiPDF(dati, mese, anno);
+    const reportGrafico = req.query.grafico === '1';
+    const contabilita = reportGrafico ? await workflowElaborati.accountingRows('cliente', mese, anno) : [];
+    const fatturatoPerCliente = new Map(contabilita.map(row => [String(row.idCliente), row.importoRealmenteFatturato]));
+    const righePDF = reportGrafico
+      ? dati.map(row => ({ ...row, importoRealmenteFatturato: fatturatoPerCliente.get(String(row.idCliente)) || 0 }))
+      : dati;
+    const doc = reportGrafico
+      ? pdfGenerator.buildReportGraficoClientiPDF(righePDF, mese, anno)
+      : pdfGenerator.buildStampaElaboratoClientiPDF(dati, mese, anno);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Stampa_Elaborato_Clienti_${mese}_${anno}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${reportGrafico ? 'Report_Grafico_Clienti' : 'Stampa_Elaborato_Clienti'}_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
   } catch (e) {
     res.status(500).send(e.message);
@@ -602,6 +609,7 @@ app.get('/api/pdf/stampa-elaborato-clienti', async (req, res) => {
 app.get('/api/pdf/stampa-elaborato-dipendenti', async (req, res) => {
   try {
     const { mese, anno, dipendente_id } = req.query;
+    const reportGrafico = req.query.grafico === '1';
     const elaborato = await api.ottieniElaboratoMensile(mese, anno);
     const dati = dipendente_id
       ? elaborato.dati
@@ -631,9 +639,19 @@ app.get('/api/pdf/stampa-elaborato-dipendenti', async (req, res) => {
       ...row,
       dettaglioFPM: row.dettaglioFPM || dettagliPerDipendente.get(row.idDipendente) || {}
     }));
-    const doc = pdfGenerator.buildStampaElaboratoDipendentiPDF(righePDF, mese, anno);
+    if (reportGrafico) {
+      const buste = await knex('buste_paga')
+        .select('dipendente_id', 'importo_netto')
+        .where({ mese: String(mese), anno: String(anno) });
+      const nettiBusta = new Map(buste.map(busta => [String(busta.dipendente_id), busta.importo_netto]));
+      righePDF.forEach(row => { row.nettoBusta = nettiBusta.has(String(row.idDipendente)) ? nettiBusta.get(String(row.idDipendente)) : null; });
+    }
+    const doc = reportGrafico
+      ? pdfGenerator.buildReportGraficoDipendentiPDF(righePDF, mese, anno)
+      : pdfGenerator.buildStampaElaboratoDipendentiPDF(righePDF, mese, anno);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `${dipendente_id ? 'inline' : 'attachment'}; filename="Stampa_Elaborato_Dipendenti_${mese}_${anno}.pdf"`);
+    const filename = reportGrafico ? `Report_Grafico_Dipendenti_${mese}_${anno}.pdf` : `Stampa_Elaborato_Dipendenti_${mese}_${anno}.pdf`;
+    res.setHeader('Content-Disposition', `${dipendente_id ? 'inline' : 'attachment'}; filename="${filename}"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
   } catch (e) {
     res.status(500).send(e.message);
