@@ -9,8 +9,8 @@ import useElementHeight from '../../hooks/useElementHeight';
 
 export default function ElaboratoDipendenti() {
   const dataOdierna = new Date();
-  const [mese, setMese] = useState(dataOdierna.getMonth() === 0 ? 12 : dataOdierna.getMonth());
-  const [anno, setAnno] = useState(dataOdierna.getMonth() === 0 ? dataOdierna.getFullYear() - 1 : dataOdierna.getFullYear());
+  const [mese, setMese] = useState(dataOdierna.getMonth() + 1);
+  const [anno, setAnno] = useState(dataOdierna.getFullYear());
   
   const [dati, setDati] = useState([]);
   const [isChiuso, setIsChiuso] = useState(false);

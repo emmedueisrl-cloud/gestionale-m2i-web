@@ -199,12 +199,17 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
       db.exec(sql, error => db.close(() => error ? reject(error) : resolve()));
     });
     await mutateFixture("INSERT INTO clienti(id,ragione_sociale,partita_iva) VALUES ('C_TEST','Cliente collaudo','TEST-PIVA');");
-    await mutateFixture("INSERT INTO righe_bloccate_elaborati(tipo,mese,anno,soggetto_id,snapshot,bloccata_at) VALUES ('cliente',9,2026,'C_TEST','{\"idCliente\":\"C_TEST\",\"ragioneSociale\":\"Cliente collaudo\",\"importoTotale\":100}','2026-09-29T00:00:00.000Z');");
+    await mutateFixture(`INSERT INTO righe_bloccate_elaborati(tipo,mese,anno,soggetto_id,snapshot,bloccata_at) VALUES ('cliente',9,2026,'C_TEST','{"idCliente":"C_TEST","ragioneSociale":"Cliente collaudo","importoTotale":100}','${new Date().toISOString()}');`);
     const sent = await fetch(`${base}/api/contabilita/fatture/inviata`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
       body: JSON.stringify({ clienteId: 'C_TEST', mese: 9, anno: 2026 })
     });
     assert.equal(sent.status, 200);
+    const sentUnlock = await fetch(`${base}/api/elaborati-workflow/cliente/2026/9/righe/C_TEST/sblocca`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: '{}'
+    });
+    assert.equal(sentUnlock.status, 400);
+    assert.match((await sentUnlock.json()).error, /Fattura inviata/);
     const accounting = await fetch(`${base}/api/contabilita/cliente/2026/9`, { headers: { Cookie: cookie } });
     assert.equal(accounting.status, 200);
     const sentRow = (await accounting.json()).find(row => row.idCliente === 'C_TEST');

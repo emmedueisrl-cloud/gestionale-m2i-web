@@ -10,8 +10,8 @@ import useElementHeight from '../../hooks/useElementHeight';
 
 export default function ElaboratoClienti() {
   const dataOdierna = new Date();
-  const [mese, setMese] = useState(dataOdierna.getMonth() === 0 ? 12 : dataOdierna.getMonth());
-  const [anno, setAnno] = useState(dataOdierna.getMonth() === 0 ? dataOdierna.getFullYear() - 1 : dataOdierna.getFullYear());
+  const [mese, setMese] = useState(dataOdierna.getMonth() + 1);
+  const [anno, setAnno] = useState(dataOdierna.getFullYear());
   
   const [dati, setDati] = useState([]);
   const [isChiuso, setIsChiuso] = useState(false);
@@ -88,7 +88,7 @@ export default function ElaboratoClienti() {
             Da questo momento in poi, <strong>gli importi calcolati in questo mese rimarranno intatti</strong>, anche se in futuro modificherai la tariffa oraria di un cliente. Questo è essenziale per mantenere uno storico coerente con le fatture già emesse.
           </p>
           <p className="text-indigo-400">
-            Avrai comunque 30 giorni di tempo per "Sbloccare" il mese in caso di errore.
+            Potrai sbloccare il mese entro 30 giorni, finché nessuna fattura del periodo sarà stata inviata o registrata.
           </p>
         </div>
       ),
@@ -166,7 +166,7 @@ export default function ElaboratoClienti() {
 
   const toggleLock = async row => {
     const action = row.rigaBloccata ? 'sblocca' : 'blinda';
-    if (!window.confirm(`${row.rigaBloccata ? 'Sbloccare' : 'Blindare'} la riga di ${row.ragioneSociale} per ${mese}/${anno}? ${row.rigaBloccata ? 'La riga tornerà modificabile solo se non è stata fatturata.' : 'Importi e note diventeranno disponibili alla contabilità.'}`)) return;
+    if (!window.confirm(`${row.rigaBloccata ? 'Sbloccare' : 'Blindare'} la riga di ${row.ragioneSociale} per ${mese}/${anno}? ${row.rigaBloccata ? 'La riga tornerà modificabile solo se la fattura non è stata inviata né registrata.' : 'Importi e note diventeranno disponibili alla contabilità.'}`)) return;
     try { await workflowRequest(`${workflowPeriod('cliente', mese, anno)}/righe/${encodeURIComponent(row.idCliente)}/${action}`, { method: 'POST', body: '{}' }); await caricaElaborato(); }
     catch (err) { window.alert(err.message); }
   };
@@ -317,8 +317,11 @@ export default function ElaboratoClienti() {
       )
     },
     { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
-      <button className={`rounded px-2 py-1 text-xs ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`} disabled={!workflow.elencoConfermato && !row.rigaBloccata} onClick={() => toggleLock(row)}>
-        {row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
+      <button className={`rounded px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`}
+        disabled={(!workflow.elencoConfermato && !row.rigaBloccata) || (row.rigaBloccata && Boolean(row.fatturaInviataAt || row.fatture?.length))}
+        title={row.rigaBloccata && (row.fatturaInviataAt || row.fatture?.length) ? 'Fattura inviata o registrata: sblindatura non consentita' : undefined}
+        onClick={() => toggleLock(row)}>
+        {row.rigaBloccata && (row.fatturaInviataAt || row.fatture?.length) ? 'Fattura elaborata' : row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
       </button> },
     {
       header: 'Azioni',
@@ -389,8 +392,9 @@ export default function ElaboratoClienti() {
           ) : (
             <button 
               onClick={handleSbloccaMese}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors shadow-sm ml-2 border border-slate-600"
+              disabled={isLoading || Object.values(fatturato).some(row => row.fatturaInviataAt || row.fatture?.length)}
+              title={Object.values(fatturato).some(row => row.fatturaInviataAt || row.fatture?.length) ? 'Una o più fatture sono state inviate o registrate' : undefined}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-600 transition-colors shadow-sm ml-2 border border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Unlock className="w-4 h-4" /> Sblocca Mese
             </button>

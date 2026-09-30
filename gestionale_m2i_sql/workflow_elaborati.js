@@ -187,7 +187,10 @@ async function unlockRow(tipo, mese, anno, subjectId) {
     if (!row) throw new Error('Riga non blindata con il nuovo flusso: per i mesi storici usa lo sblocco del mese.');
     if (Date.now() - Date.parse(row.bloccata_at) > 30 * 86400000) throw new Error('Sono trascorsi più di 30 giorni dalla blindatura.');
     if (tipo === 'cliente' && await trx('fatture_aruba_elaborati').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).first()) {
-      throw new Error('Riga già fatturata: prima occorre una procedura di rettifica.');
+      throw new Error('Fattura registrata: questo cliente non può più essere sblindato.');
+    }
+    if (tipo === 'cliente' && await trx('fatture_inviate_elaborati').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).first()) {
+      throw new Error('Fattura inviata: questo cliente non può più essere sblindato.');
     }
     if (tipo === 'dipendente' && await trx('pagamenti_elaborati_dipendenti').where({ dipendente_id: subjectId, mese: p.mese, anno: p.anno }).first()) {
       throw new Error('Riga già pagata: prima occorre una procedura di rettifica.');
@@ -255,12 +258,15 @@ async function accountingRows(tipo, mese, anno) {
 async function markInvoiceSent({ mese, anno, clienteId, userId }) {
   const p = period('cliente', mese, anno);
   if (typeof clienteId !== 'string' || !clienteId) throw new Error('Cliente non valido.');
-  const row = (await lockedRows('cliente', p.mese, p.anno)).find(item => item.idCliente === clienteId);
-  if (!row) throw new Error('Riga cliente non blindata.');
-  const sentAt = new Date().toISOString();
-  await knex('fatture_inviate_elaborati').insert({ cliente_id: clienteId, mese: p.mese, anno: p.anno, inviata_at: sentAt, inviata_da: userId })
-    .onConflict(['cliente_id', 'mese', 'anno']).ignore();
-  return { fatturaInviataAt: sentAt };
+  return knex.transaction(async trx => {
+    const row = (await lockedRows('cliente', p.mese, p.anno, trx)).find(item => item.idCliente === clienteId);
+    if (!row) throw new Error('Riga cliente non blindata.');
+    const sentAt = new Date().toISOString();
+    await trx('fatture_inviate_elaborati').insert({ cliente_id: clienteId, mese: p.mese, anno: p.anno, inviata_at: sentAt, inviata_da: userId })
+      .onConflict(['cliente_id', 'mese', 'anno']).ignore();
+    const saved = await trx('fatture_inviate_elaborati').where({ cliente_id: clienteId, mese: p.mese, anno: p.anno }).first();
+    return { fatturaInviataAt: saved.inviata_at };
+  });
 }
 
 async function registerInvoice({ mese, anno, clienteId, numero, dataFattura, importo, userId, file, confermaStorico }) {
@@ -296,6 +302,10 @@ async function registerInvoice({ mese, anno, clienteId, numero, dataFattura, imp
   }
   try {
     const result = await knex.transaction(async trx => {
+      const stillLocked = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', mese: p.mese, anno: p.anno, soggetto_id: clienteId }).first();
+      const historical = !stillLocked && await trx(p.cfg.header).where({ mese: p.mese, anno: p.anno }).first() &&
+        await trx(p.cfg.detail).where({ mese: p.mese, anno: p.anno, cliente_id: clienteId }).first();
+      if (!stillLocked && !historical) throw new Error('Riga cliente sblindata: aggiorna l’elaborato prima di registrare la fattura.');
       const record = { cliente_id: clienteId, mese: p.mese, anno: p.anno, numero_fattura: numero.trim(), data_fattura: dataFattura, importo_totale: Math.round(amount * 100) / 100, allegato_path: relative, registrata_at: new Date().toISOString(), registrata_da: userId };
       const [id] = await trx('fatture_aruba_elaborati').insert(record);
       return { id, ...await reconcileRegistration(trx, { ...record, id }) };

@@ -431,6 +431,8 @@ module.exports = {
     await knex.transaction(async trx => {
       const invoices = await trx('fatture_aruba_elaborati').where({ mese, anno }).first();
       if (invoices) throw new Error('Mese con fatture registrate: non può essere sbloccato senza rettifica.');
+      const sent = await trx('fatture_inviate_elaborati').where({ mese, anno }).first();
+      if (sent) throw new Error('Mese con fatture inviate: non può essere sbloccato.');
       await trx('mesi_chiusi_clienti').where({ mese, anno }).del();
       await trx('dettaglio_mesi_chiusi_clienti').where({ mese, anno }).del();
       await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno }).del();
