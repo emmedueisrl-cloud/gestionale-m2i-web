@@ -3,7 +3,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { knex } = require('./db');
 const elaborati = require('./controllers/elaborati');
-const { calcolaCostoPersonalePerCliente } = require('./costo_personale_clienti');
+const { calcolaCostoPersonalePerCliente, statoCostoPersonalePerCliente } = require('./costo_personale_clienti');
 const { calcolaValoriContabilitaCliente } = require('./valori_contabilita_clienti');
 const { reconcileRegistration, registrationStatuses } = require('./fatture_reconciliation');
 
@@ -151,12 +151,12 @@ function detailSnapshot(tipo, mese, anno, row, timestamp) {
 async function lockRow(tipo, mese, anno, subjectId) {
   const p = period(tipo, mese, anno);
   if (typeof subjectId !== 'string' || !subjectId) throw new Error('Riga non valida.');
-  const current = await elaborati[p.cfg.read](p.mese, p.anno);
-  if (current.chiuso) throw new Error('Il mese è già chiuso.');
-  const row = current.dati.find(r => r[p.cfg.id] === subjectId);
-  if (!row) throw new Error('Riga non presente nell’elaborato.');
-  const now = new Date().toISOString();
   return knex.transaction(async trx => {
+    const current = await elaborati[p.cfg.read](p.mese, p.anno, trx);
+    if (current.chiuso) throw new Error('Il mese è già chiuso.');
+    const row = current.dati.find(r => r[p.cfg.id] === subjectId);
+    if (!row) throw new Error('Riga non presente nell’elaborato.');
+    const now = new Date().toISOString();
     const roster = await expected(tipo, p.mese, p.anno, trx);
     if (!roster.confirmed || !roster.ids.includes(subjectId)) throw new Error('Conferma prima l’elenco completo delle righe previste.');
     if (await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno, soggetto_id: subjectId }).first()) {
@@ -204,12 +204,12 @@ async function unlockRow(tipo, mese, anno, subjectId) {
   });
 }
 
-async function lockedRows(tipo, mese, anno) {
+async function lockedRows(tipo, mese, anno, connection = knex) {
   const p = period(tipo, mese, anno);
-  const header = await knex(p.cfg.header).where({ mese: p.mese, anno: p.anno }).first();
-  const rows = await knex('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno });
+  const header = await connection(p.cfg.header).where({ mese: p.mese, anno: p.anno }).first();
+  const rows = await connection('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno });
   if (header) {
-    const history = (await elaborati[p.cfg.read](p.mese, p.anno)).dati;
+    const history = (await elaborati[p.cfg.read](p.mese, p.anno, connection)).dati;
     const snapshots = new Map(rows.map(r => [r.soggetto_id, JSON.parse(r.snapshot)]));
     return history.map(r => ({ ...r, ...(snapshots.get(r[p.cfg.id]) || {}) }));
   }
@@ -225,27 +225,30 @@ async function status(tipo, mese, anno) {
 
 async function accountingRows(tipo, mese, anno) {
   const p = period(tipo, mese, anno);
-  const rows = await lockedRows(tipo, p.mese, p.anno);
-  const header = await knex(p.cfg.header).where({ mese: p.mese, anno: p.anno }).first();
-  const frozenIds = new Set((await knex('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id')).map(r => r.soggetto_id));
-  if (tipo === 'cliente') {
-    const invoices = await registrationStatuses(knex, await knex('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
-    const sent = await knex('fatture_inviate_elaborati').where({ mese: p.mese, anno: p.anno });
-    const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
-    const dipendenti = (await elaborati.ottieniElaboratoMensile(p.mese, p.anno)).dati;
-    const oreRegistrate = await knex('registro_ore').select('dipendente_id', 'cliente_id', 'ore_totali', 'causale_assenza').where({ mese: p.mese, anno: p.anno });
-    const costiPersonale = calcolaCostoPersonalePerCliente(dipendenti, oreRegistrate);
+  return knex.transaction(async trx => {
+    const rows = await lockedRows(tipo, p.mese, p.anno, trx);
+    const header = await trx(p.cfg.header).where({ mese: p.mese, anno: p.anno }).first();
+    const frozenIds = new Set((await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id')).map(r => r.soggetto_id));
+    if (tipo === 'cliente') {
+      const invoices = await registrationStatuses(trx, await trx('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
+      const sent = await trx('fatture_inviate_elaborati').where({ mese: p.mese, anno: p.anno });
+      const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
+      const dipendenti = (await elaborati.ottieniElaboratoMensile(p.mese, p.anno, trx)).dati;
+      const oreRegistrate = await trx('registro_ore').select('dipendente_id', 'cliente_id', 'ore_totali', 'causale_assenza').where({ mese: p.mese, anno: p.anno });
+      const costiPersonale = calcolaCostoPersonalePerCliente(dipendenti, oreRegistrate);
+      const statoCosti = statoCostoPersonalePerCliente(dipendenti, oreRegistrate);
+      return rows.map(row => {
+        const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), statoRiconciliazione: f.stato_riconciliazione }));
+        const actual = linked.reduce((sum, f) => sum + f.importo, 0);
+        const importi = calcolaValoriContabilitaCliente(row, costiPersonale.get(String(row.idCliente)) || 0);
+        return { ...row, ...importi, costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
+      });
+    }
+    const payments = await trx('pagamenti_elaborati_dipendenti').where({ mese: p.mese, anno: p.anno });
     return rows.map(row => {
-      const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), statoRiconciliazione: f.stato_riconciliazione }));
-      const actual = linked.reduce((sum, f) => sum + f.importo, 0);
-      const importi = calcolaValoriContabilitaCliente(row, costiPersonale.get(String(row.idCliente)) || 0);
-      return { ...row, ...importi, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
+      const payment = payments.find(x => x.dipendente_id === row.idDipendente);
+      return { ...row, storicoPreesistente: Boolean(header && !frozenIds.has(row.idDipendente)), pagamento: payment ? { pagatoAt: payment.pagato_at, importo: Number(payment.importo_netto) } : null };
     });
-  }
-  const payments = await knex('pagamenti_elaborati_dipendenti').where({ mese: p.mese, anno: p.anno });
-  return rows.map(row => {
-    const payment = payments.find(x => x.dipendente_id === row.idDipendente);
-    return { ...row, storicoPreesistente: Boolean(header && !frozenIds.has(row.idDipendente)), pagamento: payment ? { pagatoAt: payment.pagato_at, importo: Number(payment.importo_netto) } : null };
   });
 }
 

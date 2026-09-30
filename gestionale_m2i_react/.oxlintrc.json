@@ -1,6 +1,11 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "oxc"],
+  "overrides": [{
+    "files": ["src/pages/Ore/RegistroOre.jsx"],
+    "env": { "browser": true },
+    "rules": { "no-undef": "error" }
+  }],
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]

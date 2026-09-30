@@ -13,8 +13,8 @@ export async function recuperaOreMensili(idDipendente, mese, anno) {
   return await apiCall('recuperaOreMensili', [idDipendente, mese, anno]);
 }
 
-export async function svuotaRegistroOreMensili(idDipendente, mese, anno) {
-  return await apiCall('svuotaRegistroOreMensili', [idDipendente, mese, anno]);
+export async function svuotaRegistroOreMensili(idDipendente, mese, anno, revisione) {
+  return await apiCall('svuotaRegistroOreMensili', [idDipendente, mese, anno, revisione]);
 }
 
 /**

@@ -32,4 +32,15 @@ function calcolaCostoPersonalePerCliente(dipendenti, registrazioniOre) {
   return new Map([...costi].map(([idCliente, costo]) => [idCliente, Math.round((costo + Number.EPSILON) * 100) / 100]));
 }
 
-module.exports = { calcolaCostoPersonalePerCliente };
+function statoCostoPersonalePerCliente(dipendenti, registrazioniOre) {
+  const definitivi = new Set(dipendenti.filter(r => r.rigaBloccata === true).map(r => String(r.idDipendente)));
+  const stati = new Map();
+  for (const r of registrazioniOre) {
+    if (!r.cliente_id || Number(r.ore_totali) <= 0 || !CAUSALI_LAVORO.has(String(r.causale_assenza || 'Ordinario').trim().toLowerCase())) continue;
+    const id = String(r.cliente_id);
+    stati.set(id, stati.get(id) !== false && definitivi.has(String(r.dipendente_id)));
+  }
+  return stati;
+}
+
+module.exports = { calcolaCostoPersonalePerCliente, statoCostoPersonalePerCliente };

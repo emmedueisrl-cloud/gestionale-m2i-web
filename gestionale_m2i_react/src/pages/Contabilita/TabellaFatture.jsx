@@ -86,8 +86,8 @@ export default function TabellaFatture({ titolo, righe, vuoto, base, onRegistra,
               <td className={numberCell}>{aliquota.toLocaleString('it-IT', { maximumFractionDigits: 2 })}%</td>
               <td className={numberCell}>{euro(tassa)}</td>
               <td className={`${numberCell} font-semibold`}>{euro(totale)}</td>
-              <td className={numberCell}>{euro(costo)}</td>
-              <td className={`${numberCell} font-semibold ${residuo < 0 ? 'text-red-700' : 'text-emerald-800'}`}>{euro(residuo)}</td>
+              <td className={numberCell}>{euro(costo)}<span className="block text-xs font-semibold" title="Definitivo solo quando tutti i dipendenti coinvolti sono blindati">{row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}</span></td>
+              <td className={`${numberCell} font-semibold ${residuo < 0 ? 'text-red-700' : 'text-emerald-800'}`}>{euro(residuo)}<span className="block text-xs">{row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}</span></td>
               <td className={numberCell}>{euro(row.tariffaOraria)}</td>
             </tr>;
           })}

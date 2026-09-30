@@ -4,13 +4,13 @@ module.exports = {
   // ==========================================
   // DIPENDENTI
   // ==========================================
-  async ottieniElaboratoMensile(mese, anno) {
+  async ottieniElaboratoMensile(mese, anno, connection = knex) {
     // Controllo se il mese è chiuso
-    const chiuso = await knex('mesi_chiusi_dipendenti').where({ mese, anno }).first();
+    const chiuso = await connection('mesi_chiusi_dipendenti').where({ mese, anno }).first();
     
     if (chiuso) {
       // Carica dallo storico
-      const rows = await knex('dettaglio_mesi_chiusi_dipendenti as d')
+      const rows = await connection('dettaglio_mesi_chiusi_dipendenti as d')
         .leftJoin('dipendenti as dip', 'd.dipendente_id', 'dip.id')
         .select('d.*', 'dip.iban')
         .where({ 'd.mese': mese, 'd.anno': anno });
@@ -37,17 +37,17 @@ module.exports = {
     }
 
     // Calcolo al volo
-    const dip = await knex('dipendenti')
+    const dip = await connection('dipendenti')
       .select('id', 'cognome', 'nome', 'paga_oraria_reale', 'tipo_paga', 'iban', 'note_fisse_elaborato')
       .whereNot('stato', 'Cessato')
       .andWhere('cestinato', 0)
       .andWhere('divisione', 'Esterno');
       
-    const noteMensili = await knex('note_elaborati').where({ tipo: 'dipendente', mese, anno });
+    const noteMensili = await connection('note_elaborati').where({ tipo: 'dipendente', mese, anno });
     const notePerDipendente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));
     const rows = [];
     for (const d of dip) {
-      const oreRecords = await knex('registro_ore')
+      const oreRecords = await connection('registro_ore')
         .select('causale_assenza')
         .sum('ore_totali as s')
         .where({ dipendente_id: d.id, mese, anno })
@@ -70,7 +70,7 @@ module.exports = {
       
       const oreTotali = oreLavorateOrd + oreFPM;
       
-      const reg = await knex('regolazioni_stipendi')
+      const reg = await connection('regolazioni_stipendi')
         .select('tipo', 'importo', 'motivazione')
         .where({ dipendente_id: d.id, mese, anno });
         
@@ -123,7 +123,7 @@ module.exports = {
         notaMensile: notePerDipendente.get(d.id) || ""
       });
     }
-    const bloccate = await knex('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno });
+    const bloccate = await connection('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno });
     const lockedIds = new Set(bloccate.map(r => r.soggetto_id));
     const visible = rows.filter(r => !lockedIds.has(r.idDipendente));
     visible.push(...bloccate.map(r => ({ ...JSON.parse(r.snapshot), rigaBloccata: true })));
@@ -219,11 +219,11 @@ module.exports = {
   // ==========================================
   // CLIENTI
   // ==========================================
-  async ottieniElaboratoClienti(mese, anno) {
-    const chiuso = await knex('mesi_chiusi_clienti').where({ mese, anno }).first();
+  async ottieniElaboratoClienti(mese, anno, connection = knex) {
+    const chiuso = await connection('mesi_chiusi_clienti').where({ mese, anno }).first();
     
     if (chiuso) {
-      const rows = await knex('dettaglio_mesi_chiusi_clienti as d')
+      const rows = await connection('dettaglio_mesi_chiusi_clienti as d')
         .leftJoin('clienti as c', 'd.cliente_id', 'c.id')
         .select('d.*', 'c.tipo_tassazione', 'c.percentuale_tassazione')
         .where({ 'd.mese': mese, 'd.anno': anno });
@@ -252,21 +252,21 @@ module.exports = {
       };
     }
 
-    const cli = await knex('clienti')
+    const cli = await connection('clienti')
       .select('id', 'ragione_sociale', 'tariffa_oraria_operatore', 'quotazione_tipo', 'quotazione_importo', 'tipo_tassazione', 'percentuale_tassazione', 'note_fisse_elaborato')
       .where('attivo', 'SI');
       
-    const noteMensili = await knex('note_elaborati').where({ tipo: 'cliente', mese, anno });
+    const noteMensili = await connection('note_elaborati').where({ tipo: 'cliente', mese, anno });
     const notePerCliente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));
     const rows = [];
     for (const c of cli) {
-      const o = await knex('registro_ore')
+      const o = await connection('registro_ore')
         .sum('ore_totali as s')
         .where({ cliente_id: c.id, mese, anno })
         .first();
       const ore = o ? o.s || 0 : 0;
       
-      const reg = await knex('regolazioni_clienti')
+      const reg = await connection('regolazioni_clienti')
         .select('tipo', 'importo', 'motivazione')
         .where({ cliente_id: c.id, mese, anno });
         
@@ -349,7 +349,7 @@ module.exports = {
         notaMensile: notePerCliente.get(c.id) || ""
       });
     }
-    const bloccate = await knex('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno });
+    const bloccate = await connection('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno });
     const lockedIds = new Set(bloccate.map(r => r.soggetto_id));
     const visible = rows.filter(r => !lockedIds.has(r.idCliente));
     visible.push(...bloccate.map(r => ({ ...JSON.parse(r.snapshot), rigaBloccata: true })));

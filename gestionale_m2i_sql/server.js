@@ -877,7 +877,11 @@ app.post('/api/excel/carica-presenze', uploadMem.single('file'), async (req, res
       mese: meseNum,
       anno: annoNum,
       metodoInserimento: 'Calendarizzata',
-      righe: righeDaSalvare
+      revisione: req.body.revisione,
+      importazioneExcel: true,
+      // Keep zero-filled columns until the lock comparison: zeroing a protected
+      // client's column is an attempted edit, not an omitted client.
+      righe: Object.values(righeMap)
     });
 
     res.json({ success: true, message: 'Dati caricati con successo' });

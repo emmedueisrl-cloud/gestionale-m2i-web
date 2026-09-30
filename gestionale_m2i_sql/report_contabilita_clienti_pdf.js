@@ -67,8 +67,8 @@ function buildReportContabilitaClientiPDF(rows, mese, anno) {
         ? `+ ${euro(row.maggiorazioni)}\n- ${euro(row.sconti)}` : '-'),
       value(euro(row.imponibile)), value(row.tipoTassazione || 'IVA'),
       value(`${hours(row.percentualeTassaEffettiva)}%`), value(euro(row.importoTassa)),
-      value(euro(row.importoTotale), true), value(euro(row.costoPersonale)),
-      value(euro(row.residuoSenzaStipendi), true), value(euro(row.tariffaOraria))
+      value(euro(row.importoTotale), true), value(`${euro(row.costoPersonale)}\n${row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}`),
+      value(`${euro(row.residuoSenzaStipendi)}\n${row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}`, true), value(euro(row.tariffaOraria))
     ];
     values[0].alignment = 'left';
     return [{

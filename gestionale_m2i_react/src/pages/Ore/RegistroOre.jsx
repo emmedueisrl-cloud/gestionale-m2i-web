@@ -10,8 +10,10 @@ export default function RegistroOre() {
   const [dipendenti, setDipendenti] = useState([]);
   const [clienti, setClienti] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  // Ref per sapere se il mount iniziale è già stato gestito da inizializza()
-  const isInitialMount = useRef(true);
+  const loadRequestRef = useRef(0);
+  const revisionRef = useRef(null);
+  const savingRef = useRef(false);
+  const [accesso, setAccesso] = useState({ solaLettura: true, clientiBloccati: [], meseClientiChiuso: false, haOreBlindate: false });
   
   // Filtri (con persistenza sessione)
   const [mese, setMese] = useState(() => {
@@ -36,7 +38,7 @@ export default function RegistroOre() {
   const [metodoInserimento, setMetodoInserimento] = useState(null);
   
   // Sola lettura (disabilitata per l'autosave)
-  const [isReadOnly, setIsReadOnly] = useState(true);
+  const [lettura, setIsReadOnly] = useState(true);
 
   // Dati griglia a calendario (Array di array. Indice = giorno del mese - 1)
   const [giorniData, setGiorniData] = useState([]);
@@ -47,8 +49,6 @@ export default function RegistroOre() {
   const [selectedDayIndex, setSelectedDayIndex] = useState(null);
 
   const [isSaving, setIsSaving] = useState(false);
-  const saveQueueRef = useRef(Promise.resolve());
-  const pendingSavesRef = useRef(0);
   const editVersionRef = useRef(0);
   const autosaveTimerRef = useRef(null);
   const [modalState, setModalState] = useState({ isOpen: false, type: '', message: '' });
@@ -66,11 +66,12 @@ export default function RegistroOre() {
     }
   }, [idDipendente, mese, anno]);
 
+  const isReadOnly = lettura || accesso.solaLettura || isLoading || isUploading;
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saving', 'saved', 'error'
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || isDirty || savingRef.current || accesso.solaLettura || isLoading) return;
     
     setIsUploading(true);
     const formData = new FormData();
@@ -78,6 +79,7 @@ export default function RegistroOre() {
     formData.append('dipendente_id', idDipendente);
     formData.append('mese', mese);
     formData.append('anno', anno);
+    formData.append('revisione', revisionRef.current || '');
     
     try {
       const res = await fetch(`${(import.meta.env.VITE_API_URL || '').replace(/\/$/, '')}/api/excel/carica-presenze`, {
@@ -88,8 +90,8 @@ export default function RegistroOre() {
         const errText = await res.text();
         throw new Error(errText);
       }
-      setModalState({ isOpen: true, type: 'success', message: 'Dati importati con successo! Ricaricamento in corso...' });
-      setTimeout(() => window.location.reload(), 1500);
+      await caricaGriglia(idDipendente, mese, anno);
+      setModalState({ isOpen: true, type: 'success', message: 'Ore modificabili importate. Le ore blindate sono rimaste invariate.' });
     } catch (err) {
       console.error(err);
       setModalState({ isOpen: true, type: 'error', message: err.message || 'Errore durante il caricamento' });
@@ -114,86 +116,26 @@ export default function RegistroOre() {
     return new Date(anno, mese, 0).getDate();
   }, [mese, anno]);
 
-  // Helper: normalizza la risposta del backend (vecchio formato array piatto O nuovo { metodo, righe })
-  function parseOreResponse(res) {
-    if (!res) return { metodo: null, righe: [] };
-    if (Array.isArray(res)) {
-      // Vecchio formato: array piatto di righe
-      const righe = res;
-      const metodo = righe.length > 0 ? (righe[0].metodo_inserimento || 'Calendarizzata') : null;
-      return { metodo, righe };
-    }
-    // Nuovo formato: { metodo, righe }
-    return { metodo: res.metodo || null, righe: res.righe || [] };
-  }
+  useEffect(() => {
+    let active = true;
+    Promise.all([recuperaElencoDipendenti(), recuperaElencoClienti()])
+      .then(([dips, clis]) => { if (active) { setDipendenti(dips || []); setClienti(clis || []); } })
+      .catch(err => { if (active) setModalState({ isOpen: true, type: 'error', message: err.message }); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
-    async function inizializza() {
-      try {
-        const [dips, clis] = await Promise.all([
-          recuperaElencoDipendenti(),
-          recuperaElencoClienti()
-        ]);
-        setDipendenti(dips || []);
-        setClienti(clis || []);
+    const warn = event => {
+      if (isDirty || savingRef.current) { event.preventDefault(); event.returnValue = ''; }
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
 
-        const dipSalvato = sessionStorage.getItem('ro_dipendente') || '';
-        const meseSalvato = Number(sessionStorage.getItem('ro_mese')) || new Date().getMonth() + 1;
-        const annoSalvato = Number(sessionStorage.getItem('ro_anno')) || new Date().getFullYear();
-
-        console.log('[INIT] dipSalvato:', dipSalvato, 'mese:', meseSalvato, 'anno:', annoSalvato);
-
-        if (dipSalvato) {
-          const numGiorni = new Date(annoSalvato, meseSalvato, 0).getDate();
-          console.log('[INIT] chiamo recuperaOreMensili...');
-          const raw = await recuperaOreMensili(dipSalvato, meseSalvato, annoSalvato);
-          console.log('[INIT] risposta recuperaOreMensili:', JSON.stringify(raw));
-          const { metodo: metodoRes, righe } = parseOreResponse(raw);
-          console.log('[INIT] metodo:', metodoRes, 'righe:', righe.length);
-          if (righe.length > 0 && metodoRes) {
-            setMetodoInserimento(metodoRes);
-            setIsReadOnly(true);
-            if (metodoRes === 'Mensile Totale') {
-              setTotaleMensileData(righe.map(r => ({
-                id: r.id || Math.random().toString(36).substring(7),
-                idCliente: r.idCliente || '',
-                causale: r.causale || 'Ordinario',
-                ore_totali: r.ore_totali || 0,
-                note: r.note || ''
-              })));
-            } else {
-              const cal = Array.from({length: numGiorni}, () => []);
-              righe.forEach(r => {
-                if (!r.giorni) return;
-                r.giorni.forEach((ore, gIndex) => {
-                  if (gIndex >= numGiorni) return;
-                  const h = parseFloat(ore);
-                  if (h > 0) {
-                    cal[gIndex].push({
-                      id: Math.random().toString(36).substring(7),
-                      idCliente: r.idCliente || '',
-                      causale: r.causale || 'Ordinario',
-                      ore: h
-                    });
-                  }
-                });
-              });
-              setGiorniData(cal);
-            }
-          } else {
-            console.log('[INIT] Nessun dato trovato nel DB per questo dipendente/mese/anno');
-          }
-        } else {
-          console.log('[INIT] Nessun dipendente salvato in sessionStorage');
-        }
-      } catch (err) {
-        console.error('[INIT] Errore inizializzazione:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    inizializza();
-  }, []);
+  const clientiDisponibili = clienti.filter(c => !accesso.meseClientiChiuso && !accesso.clientiBloccati.includes(c.id));
+  const clientiPerRiga = r => r.bloccata
+    ? [...clienti, ...(!clienti.some(c => c.id === r.idCliente) ? [{ id: r.idCliente, ragione_sociale: r.cliente }] : [])]
+    : clientiDisponibili;
 
   // Conversione dal DB al formato Calendario
   const righeToCalendar = useCallback((righe, numGiorni) => {
@@ -207,6 +149,10 @@ export default function RegistroOre() {
         if (h > 0) {
           cal[gIndex].push({
             id: Math.random().toString(36).substring(7),
+            sourceId: r.id,
+            bloccata: r.bloccata,
+            cliente: r.cliente,
+            note: r.note || '',
             idCliente: r.idCliente || '',
             causale: r.causale || 'Ordinario',
             ore: h
@@ -222,14 +168,16 @@ export default function RegistroOre() {
     const righeMap = {};
     calData.forEach((entries, gIndex) => {
       entries.forEach(entry => {
-        const h = parseFloat(entry.ore);
+        if (entry.bloccata) return;
+        const h = Number(entry.ore || 0);
+        if (!Number.isFinite(h) || h < 0) throw new Error('Inserisci ore valide e non negative prima di salvare.');
         if (h > 0) {
-          const key = `${entry.idCliente || ''}_${entry.causale || 'Ordinario'}`;
+          const key = JSON.stringify([entry.sourceId || null, entry.idCliente || '', entry.causale || 'Ordinario', entry.note || '']);
           if (!righeMap[key]) {
             righeMap[key] = {
               idCliente: entry.idCliente || null,
               causale: entry.causale || 'Ordinario',
-              note: '',
+              note: entry.note || '',
               giorni: Array(calData.length).fill('')
             };
           }
@@ -242,63 +190,50 @@ export default function RegistroOre() {
   }, []);
 
   const caricaGriglia = useCallback(async (dipId, m, a) => {
-    const numGiorni = new Date(a, m, 0).getDate();
+    const request = ++loadRequestRef.current;
     setIsLoading(true);
+    setIsReadOnly(true);
+    setSelectedDayIndex(null);
+    revisionRef.current = null;
     try {
-      const raw = await recuperaOreMensili(dipId, m, a);
-      const { metodo: metodoRes, righe } = parseOreResponse(raw);
-      if (righe.length > 0 && metodoRes) {
-        setMetodoInserimento(metodoRes);
-        if (metodoRes === 'Mensile Totale') {
-          setTotaleMensileData(righe.map(r => ({
-            id: r.id || Math.random().toString(36).substring(7),
-            idCliente: r.idCliente || '',
-            causale: r.causale || 'Ordinario',
-            ore_totali: r.ore_totali || 0,
-            note: r.note || ''
-          })));
-        } else {
-          setGiorniData(righeToCalendar(righe, numGiorni));
-        }
-        setIsDirty(false);
-        setIsReadOnly(true);
-      } else {
+      if (!dipId) {
         setMetodoInserimento(null);
-        setGiorniData(Array.from({length: numGiorni}, () => []));
+        setGiorniData([]);
         setTotaleMensileData([]);
+        return;
       }
+      const raw = await recuperaOreMensili(dipId, m, a);
+      if (request !== loadRequestRef.current) return;
+      if (!raw.revisione) throw new Error('Aggiorna il server prima di modificare le ore.');
+      revisionRef.current = raw.revisione;
+      setAccesso({ solaLettura: raw.solaLettura, clientiBloccati: raw.clientiBloccati || [],
+        meseClientiChiuso: raw.meseClientiChiuso, haOreBlindate: raw.righe.some(r => r.bloccata) });
+      setMetodoInserimento(raw.metodo);
+      setTotaleMensileData(raw.metodo === 'Mensile Totale' ? raw.righe.map(r => ({ ...r, idCliente: r.idCliente || '' })) : []);
+      setGiorniData(righeToCalendar(raw.metodo === 'Mensile Totale' ? [] : raw.righe, new Date(a, m, 0).getDate()));
+      setIsDirty(false);
+      setSaveStatus('saved');
     } catch (err) {
-      console.error(err);
-      setModalState({ isOpen: true, type: 'error', message: 'Errore nel caricamento delle ore.' });
+      if (request !== loadRequestRef.current) return;
+      setAccesso(prev => ({ ...prev, solaLettura: true }));
+      setModalState({ isOpen: true, type: 'error', message: err.message || 'Errore nel caricamento delle ore.' });
     } finally {
-      setIsLoading(false);
+      if (request === loadRequestRef.current) setIsLoading(false);
     }
   }, [righeToCalendar]);
 
   useEffect(() => {
-    // Al primo render, i dati vengono caricati da inizializza().
-    // Questo useEffect deve scattare solo quando l'utente CAMBIA dipendente/mese/anno.
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    if (idDipendente && mese && anno) {
-      caricaGriglia(idDipendente, mese, anno);
-    } else {
-      setMetodoInserimento(null);
-      setGiorniData([]);
-      setTotaleMensileData([]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idDipendente, mese, anno]);
+    caricaGriglia(idDipendente, mese, anno);
+    return () => { loadRequestRef.current += 1; };
+  }, [idDipendente, mese, anno, caricaGriglia]);
 
   const handlePrecompila = async () => {
-    if (!idDipendente || metodoInserimento !== 'Calendarizzata') return;
+    if (!idDipendente || metodoInserimento !== 'Calendarizzata' || isReadOnly || savingRef.current) return;
     setIsLoading(true);
     try {
       const prog = await precompilaDaProgrammaFisso(idDipendente, mese, anno);
       if (prog && prog.length > 0) {
-        const nuoveGiorni = righeToCalendar(prog, giorniMese);
+        const nuoveGiorni = righeToCalendar(prog.filter(r => !accesso.meseClientiChiuso && !accesso.clientiBloccati.includes(r.idCliente)), giorniMese);
         const merged = giorniData.length ? [...giorniData] : Array.from({length: giorniMese}, () => []);
         nuoveGiorni.forEach((entries, idx) => {
           if (entries.length > 0) {
@@ -318,13 +253,13 @@ export default function RegistroOre() {
   };
 
   const salvaOre = useCallback(async (isAutosave = false) => {
-    if (!idDipendente || !metodoInserimento) return;
+    if (!idDipendente || !metodoInserimento || accesso.solaLettura || isLoading || isUploading || savingRef.current || !revisionRef.current) return;
     if (!isAutosave && autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     }
     const editVersion = editVersionRef.current;
-    pendingSavesRef.current += 1;
+    savingRef.current = true;
     setIsSaving(true);
     setSaveStatus('saving');
     try {
@@ -332,7 +267,7 @@ export default function RegistroOre() {
       if (metodoInserimento === 'Mensile Totale') {
         payload = {
           idDipendente, mese, anno, metodoInserimento: 'Mensile Totale',
-          righe: totaleMensileData.map(r => ({
+          righe: totaleMensileData.filter(r => !r.bloccata).map(r => ({
             idCliente: r.idCliente,
             causale: r.causale,
             note: r.note,
@@ -352,9 +287,9 @@ export default function RegistroOre() {
         };
       }
       
-      const saveTask = saveQueueRef.current.then(() => salvaRegistroOreMensili(payload));
-      saveQueueRef.current = saveTask.catch(() => {});
-      await saveTask;
+      payload.revisione = revisionRef.current;
+      const result = await salvaRegistroOreMensili(payload);
+      revisionRef.current = result.revisione;
       if (editVersion === editVersionRef.current) {
         setIsDirty(false);
         setSaveStatus('saved');
@@ -364,22 +299,20 @@ export default function RegistroOre() {
       }
     } catch (err) {
       console.error(err);
-      if (editVersion === editVersionRef.current && pendingSavesRef.current === 1) setSaveStatus('error');
-      if (!isAutosave) {
-        setModalState({ isOpen: true, type: 'error', message: 'Errore nel salvataggio delle ore.' });
-      }
+      setSaveStatus('error');
+      setModalState({ isOpen: true, type: 'error', message: err.message || 'Salvataggio non riuscito. Le modifiche restano nella pagina.' });
     } finally {
-      pendingSavesRef.current -= 1;
-      setIsSaving(pendingSavesRef.current > 0);
+      savingRef.current = false;
+      setIsSaving(false);
     }
-  }, [idDipendente, metodoInserimento, mese, anno, totaleMensileData, giorniData, calendarToRighe]);
+  }, [idDipendente, metodoInserimento, mese, anno, totaleMensileData, giorniData, calendarToRighe, accesso.solaLettura, isLoading, isUploading]);
 
   useEffect(() => {
     editVersionRef.current += 1;
   }, [idDipendente, mese, anno, metodoInserimento, giorniData, totaleMensileData]);
 
   useEffect(() => {
-    if (!isDirty || !metodoInserimento) return;
+    if (!isDirty || !metodoInserimento || isSaving || isLoading || isUploading || saveStatus === 'error') return;
 
     const timeout = setTimeout(() => salvaOre(true), 1500);
     autosaveTimerRef.current = timeout;
@@ -387,20 +320,22 @@ export default function RegistroOre() {
       clearTimeout(timeout);
       if (autosaveTimerRef.current === timeout) autosaveTimerRef.current = null;
     };
-  }, [isDirty, metodoInserimento, salvaOre]);
+  }, [isDirty, metodoInserimento, salvaOre, isSaving, isLoading, isUploading, saveStatus]);
 
   const handleResetMetodo = async () => {
+    if (savingRef.current || isDirty || accesso.solaLettura || accesso.haOreBlindate) return;
     setResetModalOpen(false);
     setIsLoading(true);
     try {
-      await svuotaRegistroOreMensili(idDipendente, mese, anno);
+      const result = await svuotaRegistroOreMensili(idDipendente, mese, anno, revisionRef.current);
+      revisionRef.current = result.revisione;
       setMetodoInserimento(null);
       setGiorniData(Array.from({length: giorniMese}, () => []));
       setTotaleMensileData([]);
       setIsDirty(false);
     } catch(err) {
       console.error(err);
-      setModalState({ isOpen: true, type: 'error', message: 'Errore nel reset delle ore.' });
+      setModalState({ isOpen: true, type: 'error', message: err.message || 'Errore nel reset delle ore.' });
     } finally {
       setIsLoading(false);
     }
@@ -408,7 +343,8 @@ export default function RegistroOre() {
 
   // Funzioni gestione griglia (Calendarizzata)
   const addEntryToGiorno = (gIndex) => {
-    const d = [...giorniData];
+    if (isReadOnly) return;
+    const d = giorniData.map(entries => entries.map(e => ({ ...e })));
     d[gIndex].push({
       id: Math.random().toString(36).substring(7),
       idCliente: '',
@@ -419,13 +355,15 @@ export default function RegistroOre() {
     setIsDirty(true);
   };
   const removeEntryFromGiorno = (gIndex, entryId) => {
-    const d = [...giorniData];
+    if (isReadOnly || giorniData[gIndex]?.find(e => e.id === entryId)?.bloccata) return;
+    const d = giorniData.map(entries => entries.map(e => ({ ...e })));
     d[gIndex] = d[gIndex].filter(e => e.id !== entryId);
     setGiorniData(d);
     setIsDirty(true);
   };
   const updateEntry = (gIndex, entryId, field, value) => {
-    const d = [...giorniData];
+    if (isReadOnly || giorniData[gIndex]?.find(e => e.id === entryId)?.bloccata) return;
+    const d = giorniData.map(entries => entries.map(e => ({ ...e })));
     const entry = d[gIndex].find(e => e.id === entryId);
     if (entry) {
       if (field === 'ore') {
@@ -441,6 +379,7 @@ export default function RegistroOre() {
 
   // Funzioni gestione Mensile Totale
   const addRigaTotale = () => {
+    if (isReadOnly) return;
     setTotaleMensileData(prev => [
       ...prev,
       { id: Math.random().toString(36).substring(7), idCliente: '', causale: 'Ordinario', ore_totali: '', note: '' }
@@ -448,10 +387,12 @@ export default function RegistroOre() {
     setIsDirty(true);
   };
   const removeRigaTotale = (id) => {
+    if (isReadOnly || totaleMensileData.find(r => r.id === id)?.bloccata) return;
     setTotaleMensileData(prev => prev.filter(r => r.id !== id));
     setIsDirty(true);
   };
   const updateRigaTotale = (id, field, value) => {
+    if (isReadOnly || totaleMensileData.find(r => r.id === id)?.bloccata) return;
     setTotaleMensileData(prev => prev.map(r => {
       if (r.id === id) {
         if (field === 'ore_totali') {
@@ -504,7 +445,7 @@ export default function RegistroOre() {
               <h1 className="text-2xl font-bold text-slate-50">Registro Ore</h1>
               <div className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 p-1 rounded-lg">
                 <select 
-                  value={mese} 
+                  value={mese} disabled={isDirty || isSaving || isUploading || isLoading}
                   onChange={(e) => setMese(Number(e.target.value))}
                   className="bg-transparent text-indigo-400 font-bold uppercase tracking-wider text-lg focus:outline-none cursor-pointer px-2"
                 >
@@ -512,7 +453,7 @@ export default function RegistroOre() {
                 </select>
                 <input 
                   type="number" 
-                  value={anno} 
+                  value={anno} disabled={isDirty || isSaving || isUploading || isLoading}
                   onChange={(e) => setAnno(Number(e.target.value))}
                   className="bg-transparent text-indigo-400 font-bold uppercase tracking-wider text-lg focus:outline-none w-20 px-1"
                 />
@@ -530,7 +471,7 @@ export default function RegistroOre() {
           {/* Gruppo Selettore Dipendente */}
           <div className="flex items-center gap-2 bg-slate-800 p-1.5 rounded-xl shadow-sm border border-slate-700 w-full sm:w-auto">
             <select 
-              value={idDipendente} 
+              value={idDipendente} disabled={isDirty || isSaving || isUploading || isLoading}
               onChange={(e) => setIdDipendente(e.target.value)}
               className="p-2 bg-slate-900/50 border border-slate-700 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[250px] flex-1 sm:flex-none text-slate-200"
             >
@@ -546,7 +487,7 @@ export default function RegistroOre() {
             {metodoInserimento === 'Calendarizzata' && !isReadOnly && (
               <button 
                 onClick={() => handlePrecompila()}
-                disabled={!idDipendente || isLoading}
+                disabled={!idDipendente || isLoading || isSaving}
                 className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors border border-slate-700 shadow-sm"
               >
                 <Download className="w-4 h-4" /> Importa Programma
@@ -555,7 +496,8 @@ export default function RegistroOre() {
 
             {metodoInserimento && !isReadOnly && (
               <button 
-                onClick={() => setResetModalOpen(true)}
+                disabled={accesso.haOreBlindate || accesso.solaLettura || isDirty || isSaving || isLoading || isUploading}
+                  onClick={() => setResetModalOpen(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-colors border border-red-500/30 shadow-sm"
                 title="Cambia il metodo di inserimento svuotando i dati correnti"
               >
@@ -566,6 +508,7 @@ export default function RegistroOre() {
             {idDipendente && metodoInserimento && (
               <>
                 <button 
+                  disabled={accesso.haOreBlindate || accesso.solaLettura || isDirty || isSaving || isLoading || isUploading}
                   onClick={() => setResetModalOpen(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-colors border border-red-500/30 shadow-sm"
                   title="Pulisci l'intero mese"
@@ -574,6 +517,7 @@ export default function RegistroOre() {
                 </button>
                 
                 <button 
+                  disabled={accesso.solaLettura || isLoading || isUploading || isSaving || isDirty}
                   onClick={() => setIsReadOnly(!isReadOnly)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors border shadow-sm
                     ${isReadOnly 
@@ -602,7 +546,7 @@ export default function RegistroOre() {
             
             <button 
               onClick={() => fileInputRef.current?.click()}
-              disabled={!idDipendente || isUploading}
+              disabled={!idDipendente || isUploading || isLoading || isSaving || isDirty || accesso.solaLettura}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600/20 text-indigo-400 rounded-lg text-sm font-medium hover:bg-indigo-600/30 disabled:opacity-50 transition-colors border border-indigo-500/30 shadow-sm"
               title="Carica un Foglio Presenze Excel precedentemente compilato"
             >
@@ -620,6 +564,17 @@ export default function RegistroOre() {
         </div>
       </div>
 
+      {idDipendente && (
+        <div className="mb-4 flex items-center justify-between gap-4 text-sm text-amber-200" role="status">
+          <span>{accesso.solaLettura ? '🔒 Dipendente blindato o registro non disponibile: sola lettura.'
+            : accesso.haOreBlindate || accesso.meseClientiChiuso ? '🔒 Le ore dei clienti blindati restano visibili e nei totali, ma non modificabili.'
+            : 'Le modifiche vengono salvate automaticamente.'}</span>
+          <button className="underline shrink-0" disabled={isSaving || isUploading || isLoading}
+            onClick={() => {
+              if (!isDirty || window.confirm('Ricaricare e scartare le modifiche non salvate?')) caricaGriglia(idDipendente, mese, anno);
+            }}>Ricarica registro</button>
+        </div>
+      )}
       <div className="flex-1 bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden flex flex-col relative">
         {isLoading && (
           <div className="absolute inset-0 bg-slate-800/70 z-10 flex items-center justify-center text-indigo-400">
@@ -643,6 +598,7 @@ export default function RegistroOre() {
               
               <div className="flex flex-col sm:flex-row gap-6 justify-center">
                 <button 
+                  disabled={accesso.solaLettura || isLoading || isUploading}
                   onClick={() => {
                     setMetodoInserimento('Calendarizzata');
                     setGiorniData(Array.from({length: giorniMese}, () => []));
@@ -660,6 +616,7 @@ export default function RegistroOre() {
                 </button>
 
                 <button 
+                  disabled={accesso.solaLettura || isLoading || isUploading}
                   onClick={() => {
                     setMetodoInserimento('Mensile Totale');
                     setTotaleMensileData([]);
@@ -705,12 +662,12 @@ export default function RegistroOre() {
                     {totaleMensileData.map((riga) => (
                       <div key={riga.id} className="flex flex-wrap md:flex-nowrap gap-3 items-center bg-slate-900/80 p-3 rounded-lg border border-slate-700">
                         <div className="w-full md:w-1/3">
-                          <label className="block text-xs font-medium text-slate-400 mb-1">Cliente / Destinazione</label>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Cliente / Destinazione {riga.bloccata && '🔒 Blindato'}</label>
                           <SearchableClientSelect 
                             value={causaliConCliente.includes(riga.causale) ? riga.idCliente : ''}
                             onChange={(val) => updateRigaTotale(riga.id, 'idCliente', val)}
-                            disabled={isReadOnly || !causaliConCliente.includes(riga.causale)}
-                            clienti={clienti}
+                            disabled={isReadOnly || riga.bloccata || !causaliConCliente.includes(riga.causale)}
+                            clienti={clientiPerRiga(riga)}
                             placeholder="-- Seleziona (Facoltativo) --"
                             className={`bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none`}
                           />
@@ -727,7 +684,7 @@ export default function RegistroOre() {
                                 updateRigaTotale(riga.id, 'idCliente', '');
                               }
                             }}
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || riga.bloccata}
                             className={`w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`}
                           >
                             {causali.map(c => <option key={c} value={c}>{c}</option>)}
@@ -742,7 +699,7 @@ export default function RegistroOre() {
                               value={riga.ore_totali}
                               onChange={(e) => updateRigaTotale(riga.id, 'ore_totali', e.target.value)}
                               placeholder="0.0"
-                              disabled={isReadOnly}
+                              disabled={isReadOnly || riga.bloccata}
                               className={`w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-emerald-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none pr-8 ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`}
                             />
                             <span className="absolute right-3 top-2.5 text-slate-500 font-medium">h</span>
@@ -756,12 +713,12 @@ export default function RegistroOre() {
                             value={riga.note}
                             onChange={(e) => updateRigaTotale(riga.id, 'note', e.target.value)}
                             placeholder="Note aggiuntive..."
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || riga.bloccata}
                             className={`w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`}
                           />
                         </div>
 
-                        {!isReadOnly && (
+                        {!isReadOnly && !riga.bloccata && (
                           <div className="w-full md:w-auto flex justify-end md:mt-5">
                             <button 
                               onClick={() => removeRigaTotale(riga.id)}
@@ -862,7 +819,7 @@ export default function RegistroOre() {
                           <div key={entry.id} className="bg-slate-900/60 p-1.5 rounded-md border border-slate-700/30 flex flex-col gap-0.5 text-xs shadow-sm">
                             {clientName && (
                               <span className="font-medium text-slate-300 truncate" title={clientName}>
-                                {clientName}
+                                {entry.bloccata && '🔒 '}{clientName}
                               </span>
                             )}
                             <div className="flex justify-between items-center gap-2 mt-0.5">
@@ -952,9 +909,9 @@ export default function RegistroOre() {
                     {/* Header della singola voce: Titolo Voce N e Pulsante Elimina */}
                     <div className="flex justify-between items-center border-b border-slate-700/50 pb-2">
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                        Voce #{idx + 1}
+                        Voce #{idx + 1} {entry.bloccata && '🔒 Blindato'}
                       </span>
-                      {!isReadOnly && (
+                      {!isReadOnly && !entry.bloccata && (
                         <button 
                           onClick={() => removeEntryFromGiorno(selectedDayIndex, entry.id)}
                           className="text-red-400 hover:text-white hover:bg-red-500 px-2 py-1 rounded transition-colors text-xs font-medium flex items-center gap-1"
@@ -971,8 +928,8 @@ export default function RegistroOre() {
                         <SearchableClientSelect 
                           value={causaliConCliente.includes(entry.causale) ? entry.idCliente : ''}
                           onChange={(val) => updateEntry(selectedDayIndex, entry.id, 'idCliente', val)}
-                          disabled={isReadOnly || !causaliConCliente.includes(entry.causale)}
-                          clienti={clienti}
+                          disabled={isReadOnly || entry.bloccata || !causaliConCliente.includes(entry.causale)}
+                          clienti={clientiPerRiga(entry)}
                           placeholder="-- Nessun Cliente --"
                           className={`bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none`}
                         />
@@ -990,7 +947,7 @@ export default function RegistroOre() {
                               updateEntry(selectedDayIndex, entry.id, 'idCliente', '');
                             }
                           }}
-                          disabled={isReadOnly}
+                          disabled={isReadOnly || entry.bloccata}
                           className={`w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none 
                             ${!causaliConCliente.includes(entry.causale) ? 'text-amber-400 font-medium' : 'text-slate-200'} ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}
                           `}
@@ -1008,7 +965,7 @@ export default function RegistroOre() {
                             placeholder="0.0"
                             value={entry.ore}
                             onChange={(e) => updateEntry(selectedDayIndex, entry.id, 'ore', e.target.value)}
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || entry.bloccata}
                             className={`w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm font-bold text-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none pr-8 text-center ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`}
                           />
                           <span className="absolute right-3 top-2.5 text-slate-500 font-medium">h</span>

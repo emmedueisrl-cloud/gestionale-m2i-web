@@ -1,4 +1,5 @@
 const { knex, getVal } = require('../db');
+const { registroState, assertRevision } = require('../registro_ore_state');
 
 function durataDiurna(oraInizio, oraFine) {
   const valida = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -14,48 +15,49 @@ function durataDiurna(oraInizio, oraFine) {
 
 module.exports = {
   async recuperaOreMensili(idDipendente, mese, anno) {
-    const rows = await knex('registro_ore as r')
-      .leftJoin('clienti as c', 'r.cliente_id', 'c.id')
-      .select('r.*', 'c.ragione_sociale as clienteNome')
-      .where({
-        'r.dipendente_id': idDipendente,
-        'r.mese': mese,
-        'r.anno': anno
-      });
+    return knex.transaction(async trx => {
+      const state = await registroState(trx, idDipendente, Number(mese), Number(anno));
+      const names = new Map((await trx('clienti').select('id', 'ragione_sociale')).map(c => [c.id, c.ragione_sociale]));
+      const rows = state.rows.map(r => ({ ...r, clienteNome: names.get(r.cliente_id) }));
 
-    let metodo = null;
-    if (rows.length > 0) {
-      metodo = rows[0].metodo_inserimento || 'Calendarizzata';
-    }
-
-    const righe = rows.map(r => {
-      const entry = {
-        id: r.id,
-        idCliente: r.cliente_id,
-        cliente: r.clienteNome || "Nessuno",
-        causale: r.causale_assenza || "Ordinario",
-        note: r.note || "",
-        giorni: [],
-        ore_totali: r.ore_totali || 0
-      };
-      for (let i = 1; i <= 31; i++) {
-        entry.giorni.push(r[`giorno_${i}`] || 0);
+      let metodo = null;
+      if (rows.length > 0) {
+        metodo = rows[0].metodo_inserimento || 'Calendarizzata';
       }
-      return entry;
+
+      const righe = rows.map(r => {
+        const entry = {
+          id: r.id,
+          bloccata: state.solaLettura || state.clienteBloccato(r.cliente_id),
+          idCliente: r.cliente_id,
+          cliente: r.clienteNome || "Nessuno",
+          causale: r.causale_assenza || "Ordinario",
+          note: r.note || "",
+          giorni: [],
+          ore_totali: r.ore_totali || 0
+        };
+        for (let i = 1; i <= 31; i++) {
+          entry.giorni.push(r[`giorno_${i}`] || 0);
+        }
+        return entry;
+      });
+      return { metodo, righe, revisione: state.revisione, solaLettura: state.solaLettura,
+        clientiBloccati: state.clientiBloccati, meseClientiChiuso: state.meseClientiChiuso };
     });
-    
-    return { metodo, righe };
   },
 
-  async svuotaRegistroOreMensili(idDipendente, mese, anno) {
-    await knex('registro_ore')
-      .where({ dipendente_id: idDipendente, mese, anno })
-      .del();
-    await knex('log_attivita').insert({
-      categoria: "Ore Mensili", icona: "🗑️", colore: "#ef4444",
-      descrizione: `Svuotato registro ore di ${mese}/${anno} per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
+  async svuotaRegistroOreMensili(idDipendente, mese, anno, revisione) {
+    return knex.transaction(async trx => {
+      const state = await registroState(trx, idDipendente, Number(mese), Number(anno));
+      assertRevision(state, revisione);
+      if (state.protectedRows.length) throw new Error('Sono presenti ore blindate: non puoi svuotare il mese o cambiare metodo.');
+      await trx('registro_ore').where({ dipendente_id: idDipendente, mese, anno }).del();
+      await trx('log_attivita').insert({
+        categoria: 'Ore Mensili', icona: '🗑️', colore: '#ef4444',
+        descrizione: `Svuotato registro ore di ${mese}/${anno} per dipendente ${idDipendente}`, eseguito_da: 'LocalServer'
+      });
+      return { success: true, revisione: (await registroState(trx, idDipendente, Number(mese), Number(anno))).revisione };
     });
-    return true;
   },
 
   async salvaRegistroOreMensili(dati) {
@@ -66,36 +68,72 @@ module.exports = {
     const idDipendente = getVal(dati, "idDipendente");
     const mese = Number(getVal(dati, "mese"));
     const anno = Number(getVal(dati, "anno"));
-    const righe = getVal(dati, "righe");
+    let righe = getVal(dati, "righe");
     const metodoInserimento = getVal(dati, "metodoInserimento") || 'Calendarizzata';
     if (!Number.isInteger(mese) || mese < 1 || mese > 12 || !Number.isInteger(anno) || anno < 2000 || !Array.isArray(righe)) {
       throw new Error('Dati del registro ore non validi');
     }
-    const giorniNelMese = new Date(anno, mese, 0).getDate();
-    const totaliGiornalieri = Array(31).fill(0);
-    for (const r of righe) {
-      if (!r || typeof r !== 'object') throw new Error('Riga ore non valida');
-      if (metodoInserimento === 'Mensile Totale') {
-        const ore = Number(r.ore_totali || 0);
-        if (!Number.isFinite(ore) || ore < 0 || ore > giorniNelMese * 12) throw new Error('Ore mensili non valide');
-      } else {
-        if (!Array.isArray(r.giorni)) throw new Error('Giorni del registro ore non validi');
-        for (let i = 0; i < 31; i++) {
-          const ore = Number(r.giorni[i] || 0);
-          if (!Number.isFinite(ore) || ore < 0 || (i >= giorniNelMese && ore !== 0)) throw new Error(`Ore non valide al giorno ${i + 1}`);
-          totaliGiornalieri[i] += ore;
-          if (totaliGiornalieri[i] > 12) throw new Error(`Il giorno ${i + 1} supera il limite di 12 ore complessive`);
+    if (!['Calendarizzata', 'Mensile Totale'].includes(metodoInserimento)) throw new Error('Metodo di inserimento non valido');
+    return knex.transaction(async trx => {
+      const state = await registroState(trx, idDipendente, mese, anno);
+      assertRevision(state, getVal(dati, 'revisione'));
+      if (state.protectedRows.some(r => (r.metodo_inserimento || 'Calendarizzata') !== metodoInserimento)) {
+        throw new Error('Sono presenti ore blindate: non puoi cambiare metodo.');
+      }
+      if (getVal(dati, 'importazioneExcel') === true) {
+        // A complete Excel sheet may repeat protected hours, but cannot change them.
+        const aggregate = entries => {
+          const map = new Map();
+          for (const r of entries) {
+            const key = JSON.stringify([r.idCliente, r.causale || 'Ordinario']);
+            const values = map.get(key) || Array(31).fill(0);
+            for (let i = 0; i < 31; i++) values[i] += Number(r.giorni?.[i] || 0);
+            map.set(key, values);
+          }
+          return JSON.stringify([...map].sort(([a], [b]) => a.localeCompare(b)));
+        };
+        const incoming = righe.filter(r => state.clienteBloccato(r?.idCliente));
+        const included = new Set(incoming.map(r => r.idCliente));
+        const stored = state.protectedRows.filter(r => included.has(r.cliente_id)).map(r => ({
+          idCliente: r.cliente_id, causale: r.causale_assenza,
+          giorni: Array.from({ length: 31 }, (_, i) => r[`giorno_${i + 1}`])
+        }));
+        if (aggregate(incoming) !== aggregate(stored)) throw new Error('Il file Excel modifica ore di un cliente blindato: importazione annullata.');
+        righe = righe.filter(r => !state.clienteBloccato(r?.idCliente) && r.giorni?.some(h => Number(h) !== 0));
+      }
+      if (righe.some(r => state.clienteBloccato(r?.idCliente))) {
+        throw new Error('Non puoi inserire o modificare ore di un cliente blindato.');
+      }
+      const giorniNelMese = new Date(anno, mese, 0).getDate();
+      const totaliGiornalieri = Array(31).fill(0);
+      let totaleMensile = 0;
+      const daValidare = [...righe, ...state.protectedRows.map(r => ({
+        ore_totali: r.ore_totali, giorni: Array.from({ length: 31 }, (_, i) => r[`giorno_${i + 1}`])
+      }))];
+      for (const r of daValidare) {
+        if (!r || typeof r !== 'object') throw new Error('Riga ore non valida');
+        if (metodoInserimento === 'Mensile Totale') {
+          const ore = Number(r.ore_totali || 0);
+          totaleMensile += ore;
+          if (!Number.isFinite(ore) || ore < 0 || totaleMensile > giorniNelMese * 12) throw new Error('Ore mensili non valide');
+        } else {
+          if (!Array.isArray(r.giorni)) throw new Error('Giorni del registro ore non validi');
+          for (let i = 0; i < 31; i++) {
+            const ore = Number(r.giorni[i] || 0);
+            if (!Number.isFinite(ore) || ore < 0 || (i >= giorniNelMese && ore !== 0)) throw new Error(`Ore non valide al giorno ${i + 1}`);
+            totaliGiornalieri[i] += ore;
+            if (totaliGiornalieri[i] > 12) throw new Error(`Il giorno ${i + 1} supera il limite di 12 ore complessive`);
+          }
         }
       }
-    }
 
-    return knex.transaction(async trx => {
-      const dipInfo = await trx('dipendenti').select('paga_oraria_reale').where('id', idDipendente).first();
+      const dipInfo = state.employee;
       if (!dipInfo) throw new Error('Dipendente non trovato');
       const pagaOraria = Number(dipInfo.paga_oraria_reale) || 0;
 
       await trx('registro_ore')
         .where({ dipendente_id: idDipendente, mese, anno })
+        .whereNotIn('id', state.protectedRows.map(r => r.id))
         .del();
 
       for (const r of righe) {
@@ -132,12 +170,15 @@ module.exports = {
         descrizione: `Salvate ore mensili (${metodoInserimento}) di ${mese}/${anno} per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
       });
 
-      return true;
+      return { success: true, revisione: (await registroState(trx, idDipendente, mese, anno)).revisione };
     });
   },
 
   async precompilaDaProgrammaFisso(idDipendente, mese, anno) {
-    const prog = await knex('programma_fisso').where('dipendente_id', idDipendente);
+    const state = await knex.transaction(trx => registroState(trx, idDipendente, Number(mese), Number(anno)));
+    if (state.solaLettura) throw new Error('Registro in sola lettura.');
+    const prog = (await knex('programma_fisso').where('dipendente_id', idDipendente))
+      .filter(r => !state.clienteBloccato(r.cliente_id));
     if (prog.length === 0) return [];
 
     const mapGiorni = { "Lunedì": 1, "Martedì": 2, "Mercoledì": 3, "Giovedì": 4, "Venerdì": 5, "Sabato": 6, "Domenica": 7 };

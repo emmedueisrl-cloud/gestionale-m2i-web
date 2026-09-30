@@ -125,7 +125,10 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
       assert.equal(response.status, 200);
       return response.json();
     };
-    const saveHours = data => runFunction('salvaPresenzeMensili', data);
+    const saveHours = async data => {
+      const current = await runFunction('recuperaOreMensili', data.idDipendente, data.mese, data.anno);
+      return runFunction('salvaPresenzeMensili', { ...data, revisione: current.data?.revisione });
+    };
     const hoursData = { idDipendente: employeeId, mese: 7, anno: 2026, metodoInserimento: 'Mensile Totale', righe: [{ ore_totali: 5 }] };
     assert.equal((await saveHours(hoursData)).success, true);
     assert.equal((await saveHours({ ...hoursData, righe: [{ ore_totali: 8, idCliente: 'C-INESISTENTE' }] })).success, false);
@@ -142,6 +145,35 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
       });
     });
     assert.deepEqual(savedHours, [{ dipendente_id: employeeId, ore_totali: 5 }]);
+    // Exercise the actual multipart Excel path, including a zeroed locked column.
+    await new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(path.join(temporaryDir, 'gestionale.db'));
+      db.exec("INSERT INTO clienti(id,ragione_sociale,partita_iva) VALUES ('C_XL_LOCK','Cliente XL blindato','XL-LOCK'),('C_XL_OPEN','Cliente XL libero','XL-OPEN');", error => db.close(() => error ? reject(error) : resolve()));
+    });
+    const xlRow = (idCliente, hours) => ({ idCliente, causale: 'Ordinario', giorni: [hours, ...Array(30).fill(0)] });
+    assert.equal((await saveHours({ idDipendente: employeeId, mese: 8, anno: 2026, righe: [xlRow('C_XL_LOCK', 3), xlRow('C_XL_OPEN', 2)] })).success, true);
+    await new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(path.join(temporaryDir, 'gestionale.db'));
+      db.exec("INSERT INTO righe_bloccate_elaborati(tipo,mese,anno,soggetto_id,snapshot,bloccata_at) VALUES ('cliente',8,2026,'C_XL_LOCK','{}','2026-09-30T00:00:00.000Z');", error => db.close(() => error ? reject(error) : resolve()));
+    });
+    const uploadHours = async lockedHours => {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      const sheet = wb.addWorksheet('Presenze');
+      sheet.addRow(['Giorno', 'Cliente XL blindato', 'Cliente XL libero']);
+      sheet.addRow([1, lockedHours, 4]);
+      const state = (await runFunction('recuperaOreMensili', employeeId, 8, 2026)).data;
+      const form = new FormData();
+      form.append('dipendente_id', employeeId); form.append('mese', '8'); form.append('anno', '2026');
+      form.append('revisione', state.revisione);
+      form.append('file', new Blob([await wb.xlsx.writeBuffer()]), 'presenze.xlsx');
+      return fetch(`${base}/api/excel/carica-presenze`, { method: 'POST', headers: { Cookie: cookie }, body: form });
+    };
+    assert.equal((await uploadHours(3)).status, 200);
+    const importedHours = (await runFunction('recuperaOreMensili', employeeId, 8, 2026)).data;
+    assert.deepEqual(importedHours.righe.map(r => [r.idCliente, r.ore_totali]), [['C_XL_LOCK', 3], ['C_XL_OPEN', 4]]);
+    assert.equal((await uploadHours(0)).ok, false);
+    assert.deepEqual((await runFunction('recuperaOreMensili', employeeId, 8, 2026)).data, importedHours);
     const fixedSchedule = {
       idDipendente: employeeId,
       impegni: [{ giornoSettimana: 'Lunedì', oraInizio: '09:00', oraFine: '12:00', idCliente: null, note: 'Prova rollback' }]
