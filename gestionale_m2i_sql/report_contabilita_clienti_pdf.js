@@ -17,7 +17,7 @@ const euro = value => `€ ${number(value).toLocaleString('it-IT', { minimumFrac
 const hours = value => number(value).toLocaleString('it-IT', { maximumFractionDigits: 2 });
 const total = rows => rows.reduce((sum, row) => sum + number(row.importoTotale), 0);
 
-function buildReportContabilitaClientiPDF(rows, mese, anno) {
+function buildReportContabilitaClientiPDF(rows, mese, anno, mancanti = 0) {
   const periodo = `${months[Number(mese) - 1] || mese} ${anno}`;
   const daElaborare = rows.filter(row => !row.fatture?.length && !row.fatturaInviataAt);
   const elaborate = rows.filter(row => row.fatture?.length || row.fatturaInviataAt);
@@ -32,7 +32,8 @@ function buildReportContabilitaClientiPDF(rows, mese, anno) {
   };
 
   const metric = (label, items, color, background) => ({
-    table: { widths: ['*', 95], body: [[
+    width: '*',
+    table: { widths: [390, 95], body: [[
       { stack: [
         { text: label.toUpperCase(), fontSize: 12, bold: true, color },
         { text: euro(total(items)), fontSize: 21, bold: true, color: '#063f32', margin: [0, 3, 0, 0] }
@@ -61,8 +62,16 @@ function buildReportContabilitaClientiPDF(rows, mese, anno) {
       ...invoices.map(invoice => `Fattura ${invoice.numero} del ${invoice.data}: ${euro(invoice.importo)}`)
     ].filter(Boolean);
     const value = (text, bold = false) => ({ text: String(text), fontSize: 10.5, bold, color: '#103d34', alignment: 'center', fillColor: color });
+    const nameWords = String(row.ragioneSociale || 'Cliente').trim().split(/\s+/);
+    const nameCell = {
+      text: [
+        { text: nameWords.slice(0, 3).join(' '), fontSize: 13.5, bold: true },
+        ...(nameWords.length > 3 ? [{ text: ` ${nameWords.slice(3).join(' ')}`, fontSize: 10.5, bold: true }] : [])
+      ],
+      color: '#103d34', alignment: 'center', fillColor: color
+    };
     const values = [
-      value(row.ragioneSociale || 'Cliente', true), value(hours(row.oreLavorate)),
+      nameCell, value(hours(row.oreLavorate)),
       value(number(row.maggiorazioni) || number(row.sconti)
         ? `+ ${euro(row.maggiorazioni)}\n- ${euro(row.sconti)}` : '-'),
       value(euro(row.imponibile)), value(row.tipoTassazione || 'IVA'),
@@ -70,14 +79,13 @@ function buildReportContabilitaClientiPDF(rows, mese, anno) {
       value(euro(row.importoTotale), true), value(`${euro(row.costoPersonale)}\n${row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}`),
       value(`${euro(row.residuoSenzaStipendi)}\n${row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}`, true), value(euro(row.tariffaOraria))
     ];
-    values[0].alignment = 'left';
     return [{
       table: { widths, body: [
         values,
-        [{ colSpan: widths.length, text: [
+        [{ text: '', fillColor: color }, { colSpan: widths.length - 1, text: [
           { text: `${status}  ·  `, bold: true, color: registered ? '#075a35' : '#075e77' },
           { text: notes.join('  |  ') || 'Nessuna nota', color: '#244d46' }
-        ], fontSize: 10.5, fillColor: registered ? '#d9f4e2' : row.fatturaInviataAt ? '#edf9f1' : '#eef7fb' }, ...Array(widths.length - 1).fill('')]
+        ], fontSize: 10.5, fillColor: registered ? '#d9f4e2' : row.fatturaInviataAt ? '#edf9f1' : '#eef7fb' }, ...Array(widths.length - 2).fill('')]
       ] },
       layout: { ...cellLayout, paddingTop: rowIndex => rowIndex === 0 ? 9 : 7, paddingBottom: rowIndex => rowIndex === 0 ? 9 : 7 }
     }];
@@ -100,8 +108,8 @@ function buildReportContabilitaClientiPDF(rows, mese, anno) {
   };
 
   const docDefinition = {
-    pageSize: 'A3', pageOrientation: 'landscape', pageMargins: [24, 220, 24, 36],
-    header: () => ({
+    pageSize: 'A3', pageOrientation: 'landscape', pageMargins: [24, 24, 24, 36],
+    content: [{
       stack: [
         {
           table: { widths: ['*', 240], body: [[
@@ -115,7 +123,7 @@ function buildReportContabilitaClientiPDF(rows, mese, anno) {
             { stack: [
               { text: 'PERIODO DI RIFERIMENTO', fontSize: 11, bold: true, color: '#d9f7e9' },
               { text: periodo, fontSize: 18, bold: true, color: '#ffffff', margin: [0, 8, 0, 0] },
-              { text: `${rows.length} clienti`, fontSize: 12, color: '#d9f7e9', margin: [0, 6, 0, 0] }
+              { text: `${rows.length}/${Number(mancanti) || 0} clienti`, fontSize: 12, color: '#d9f7e9', margin: [0, 6, 0, 0] }
             ] }
           ]] },
           layout: { fillColor: () => '#075c45', hLineWidth: () => 0, vLineWidth: () => 0,
@@ -123,14 +131,13 @@ function buildReportContabilitaClientiPDF(rows, mese, anno) {
           margin: [0, 0, 0, 8]
         },
         { columns: [
-          metric('Da fatturare', daElaborare, '#145a83', '#e1f2fc'),
-          metric('Fatturato', elaborate, '#087a59', '#d9f3e3')
+          metric('Fatture elaborate', elaborate, '#087a59', '#d9f3e3'),
+          metric('Da elaborare', daElaborare, '#145a83', '#e1f2fc')
         ], columnGap: 8 }
-      ], margin: [24, 15, 24, 0]
-    }),
-    content: [
-      ...section('Fatture da elaborare', daElaborare, '#116c9a'),
-      ...section('Fatture elaborate', elaborate, '#087a59')
+      ], margin: [0, 0, 0, 0]
+    },
+      ...section('Fatture elaborate', elaborate, '#087a59'),
+      ...section('Fatture da elaborare', daElaborare, '#116c9a')
     ],
     footer: (page, pages) => ({ columns: [
       { text: `Report generato il ${new Date().toLocaleDateString('it-IT')}` },

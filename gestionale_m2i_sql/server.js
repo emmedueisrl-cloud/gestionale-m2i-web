@@ -136,6 +136,8 @@ app.get('/api/contabilita/fatture/:id/allegato', async (req, res) => {
 });
 app.get(`/api/contabilita/${tipo}/${anno}/${mese}`, handleWorkflow(req =>
   workflowElaborati.accountingRows(req.params.tipo, req.params.mese, req.params.anno)));
+app.get(`/api/contabilita/${tipo}/${anno}/${mese}/mancanti`, handleWorkflow(req =>
+  workflowElaborati.missingCount(req.params.tipo, req.params.mese, req.params.anno)));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
@@ -485,15 +487,34 @@ app.post('/api/run', async (req, res) => {
 // ==========================================
 const pdfGenerator = require('./pdf_generator');
 const { buildReportContabilitaClientiPDF } = require('./report_contabilita_clienti_pdf');
+const { buildReportContabilitaDipendentiPDF } = require('./report_contabilita_dipendenti_pdf');
 
 app.get('/api/contabilita/pdf/report-clienti/:anno/:mese', async (req, res) => {
   try {
     const { anno, mese } = req.params;
     workflowElaborati.period('cliente', mese, anno);
-    const rows = await workflowElaborati.accountingRows('cliente', mese, anno);
-    const doc = buildReportContabilitaClientiPDF(rows, mese, anno);
+    const [rows, missing] = await Promise.all([
+      workflowElaborati.accountingRows('cliente', mese, anno),
+      workflowElaborati.missingCount('cliente', mese, anno)
+    ]);
+    const doc = buildReportContabilitaClientiPDF(rows, mese, anno, missing.mancanti);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Report_Fatture_Clienti_${mese}_${anno}.pdf"`);
+    res.send(await doc.getBuffer());
+  } catch (error) { res.status(400).send(error.message); }
+});
+
+app.get('/api/contabilita/pdf/report-dipendenti/:anno/:mese', async (req, res) => {
+  try {
+    const { anno, mese } = req.params;
+    workflowElaborati.period('dipendente', mese, anno);
+    const [rows, missing] = await Promise.all([
+      workflowElaborati.accountingRows('dipendente', mese, anno),
+      workflowElaborati.missingCount('dipendente', mese, anno)
+    ]);
+    const doc = buildReportContabilitaDipendentiPDF(rows, mese, anno, missing.mancanti);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Report_Stipendi_Dipendenti_${mese}_${anno}.pdf"`);
     res.send(await doc.getBuffer());
   } catch (error) { res.status(400).send(error.message); }
 });

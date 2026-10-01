@@ -6,11 +6,12 @@ import ModernModal from '../../components/ui/ModernModal';
 import CellaNota from '../../components/ui/CellaNota';
 import { workflowRequest, workflowPeriod, contabilitaPeriod } from '../../api/workflowElaborati';
 import useElementHeight from '../../hooks/useElementHeight';
+import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 
 export default function ElaboratoDipendenti() {
-  const dataOdierna = new Date();
-  const [mese, setMese] = useState(dataOdierna.getMonth() + 1);
-  const [anno, setAnno] = useState(dataOdierna.getFullYear());
+  const [periodoIniziale] = useState(mesePredefinitoElaborati);
+  const [mese, setMese] = useState(periodoIniziale.mese);
+  const [anno, setAnno] = useState(periodoIniziale.anno);
   
   const [dati, setDati] = useState([]);
   const [isChiuso, setIsChiuso] = useState(false);

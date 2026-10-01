@@ -7,8 +7,8 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
 
   const menu = area === 'contabilita' ? [
     { type: 'header', label: 'Elaborati pronti' },
-    { type: 'item', label: '🧾 Clienti e fatture', path: '/contabilita/clienti' },
-    { type: 'item', label: '💶 Dipendenti e pagamenti', path: '/contabilita/dipendenti' }
+    { type: 'item', label: '🧾 Fatturazione', path: '/contabilita/clienti' },
+    { type: 'item', label: '💶 Stipendi', path: '/contabilita/dipendenti' }
   ] : [
     { type: 'item', label: '🏠 Dashboard', path: '/admin/dashboard' },
     
@@ -57,7 +57,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
 
       {/* Sidebar vera e propria */}
       <div 
-        className={`fixed inset-y-0 left-0 z-50 w-80 border-r flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 ${isAccounting ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'} ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-50 border-r flex flex-col transition-transform duration-300 ease-in-out md:translate-x-0 ${isAccounting ? 'w-56 bg-white border-slate-200' : 'w-80 bg-slate-900 border-slate-800'} ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className={`flex items-center justify-center h-16 border-b shrink-0 ${isAccounting ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
           <h1 className="text-2xl font-black bg-gradient-to-r from-indigo-500 to-indigo-400 bg-clip-text text-transparent tracking-tighter">
@@ -69,7 +69,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
             {menu.map((m, idx) => {
               if (m.type === 'header') {
                 return (
-                  <li key={idx} className={`mt-8 mb-3 px-3 text-sm font-black uppercase tracking-widest ${isAccounting ? 'text-indigo-700' : 'text-indigo-300/80'}`}>
+                  <li key={idx} className={`mt-8 mb-3 px-3 font-black uppercase ${isAccounting ? 'text-[15px] tracking-wide text-indigo-700' : 'text-sm tracking-widest text-indigo-300/80'}`}>
                     {m.label}
                   </li>
                 );
@@ -83,7 +83,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
                     navigate(m.path);
                     setIsOpen(false);
                   }}
-                  className={`pl-7 pr-3 py-2 rounded-lg cursor-pointer transition-colors text-sm font-medium ${isAccounting ? (isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100') : (isActive ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white')}`}
+                  className={`${isAccounting ? 'px-4 py-3 text-[17px] font-semibold' : 'pl-7 pr-3 py-2 text-sm font-medium'} rounded-lg cursor-pointer transition-colors ${isAccounting ? (isActive ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700 hover:bg-slate-100') : (isActive ? 'bg-indigo-500/10 text-indigo-400' : 'text-slate-300 hover:bg-slate-800 hover:text-white')}`}
                 >
                   {m.label}
                 </li>
@@ -94,7 +94,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
         
         <div className={`p-4 border-t ${isAccounting ? 'border-slate-200' : 'border-slate-800'}`}>
           <button 
-            className={`w-full px-4 py-2 rounded-lg transition-colors text-sm font-medium flex items-center justify-center gap-2 ${isAccounting ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+            className={`w-full px-3 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${isAccounting ? 'bg-slate-100 text-[16px] font-semibold text-slate-700 hover:bg-slate-200' : 'text-sm font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'}`}
             onClick={async () => {
               try {
                 const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/auth/logout`, {
