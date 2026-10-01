@@ -22,6 +22,9 @@ function period(tipo, mese, anno) {
 }
 
 async function initialize() {
+  if (!await knex.schema.hasColumn('clienti', 'data_cessazione')) {
+    await knex.raw('ALTER TABLE clienti ADD COLUMN data_cessazione TEXT');
+  }
   if (!await knex.schema.hasTable('periodi_elaborati')) {
     await knex.schema.createTable('periodi_elaborati', t => {
       t.string('tipo', 20).notNullable(); t.integer('mese').notNullable(); t.integer('anno').notNullable();

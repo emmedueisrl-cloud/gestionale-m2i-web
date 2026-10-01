@@ -148,8 +148,8 @@ export async function eliminaRegolazioneCliente(idRegolazione) {
   return await apiCall('eliminaRegolazioneCliente', [idRegolazione]);
 }
 
-export async function cessaCliente(id) {
-  return await apiCall('cessaCliente', [id]);
+export async function cessaCliente(id, dataCessazione) {
+  return await apiCall('cessaCliente', [id, dataCessazione]);
 }
 
 export async function riattivaCliente(id) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Building2, Loader2, Plus, Eye, Edit, Trash2, Power } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable';
@@ -11,6 +11,7 @@ export default function ClientiPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [viewCestino, setViewCestino] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
+  const dataCessazioneRef = useRef(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -36,12 +37,12 @@ export default function ClientiPage() {
   const handleElimina = async (idToEliminate) => {
     if (!idToEliminate) return;
     try {
-      const res = await eliminaCliente(idToEliminate);
+      await eliminaCliente(idToEliminate);
       setModal({
         isOpen: true,
         type: 'success',
-        title: res.cestinato ? 'Spostato nel Cestino' : 'Eliminato Definitivamente',
-        content: res.cestinato ? 'Il cliente aveva azioni collegate (fatture, ore, etc.) ed è stato spostato nel cestino in sicurezza.' : 'Il cliente è stato rimosso definitivamente.',
+        title: 'Spostato nel Cestino',
+        content: 'Il cliente è stato cessato e spostato nel cestino. I suoi dati sono conservati e potrà essere ripristinato.',
         primaryAction: {
           label: 'Chiudi',
           onClick: () => {
@@ -61,16 +62,16 @@ export default function ClientiPage() {
     }
   };
 
-  const handleCessa = async (id) => {
+  const handleCessa = async (id, dataCessazione) => {
     try {
-      await cessaCliente(id);
+      await cessaCliente(id, dataCessazione);
       loadData();
-    } catch  {
+    } catch (error) {
       setModal({
         isOpen: true,
         type: 'error',
         title: 'Attenzione',
-        content: 'Errore durante la cessazione.',
+        content: error.message || 'Errore durante la cessazione.',
         primaryAction: { label: 'Chiudi', onClick: () => setModal({ isOpen: false }) }
       });
     }
@@ -114,7 +115,7 @@ export default function ClientiPage() {
       header: 'Stato', 
       accessor: 'attivo',
       render: (row) => {
-        let stato = row.attivo === 'SI' ? 'Attivo' : (row.attivo === 'Cessato' ? 'Cessato' : (row.attivo === 'Bozza' ? 'Bozza' : 'Non Attivo'));
+        let stato = row.attivo === 'SI' ? 'Attivo' : (row.attivo === 'Cessato' ? `Cessato${row.data_cessazione ? ` dal ${row.data_cessazione.split('-').reverse().join('/')}` : ''}` : (row.attivo === 'Bozza' ? 'Bozza' : 'Non Attivo'));
         let colorClass = row.attivo === 'SI' ? 'bg-emerald-500/20 text-emerald-300' : (row.attivo === 'Cessato' ? 'bg-fuchsia-500/20 text-fuchsia-400' : (row.attivo === 'Bozza' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-500/20 text-slate-300'));
         
         return (
@@ -153,12 +154,23 @@ export default function ClientiPage() {
                       isOpen: true,
                       type: 'warning',
                       title: 'Conferma Cessazione',
-                      content: `Sei sicuro di voler cessare il cliente ${row.ragione_sociale}? Non comparirà più nella fatturazione mensile.`,
+                      content: (
+                        <div className="space-y-3 text-left">
+                          <p>Indica la data di cessazione di {row.ragione_sociale}. Il cliente comparirà nell’elaborato fino al mese indicato, ma non nei mesi successivi.</p>
+                          <label className="block font-semibold text-slate-200" htmlFor="data-cessazione-cliente">Data di cessazione</label>
+                          <input id="data-cessazione-cliente" ref={dataCessazioneRef} type="date" required
+                            defaultValue={new Date().toLocaleDateString('sv-SE')}
+                            max={new Date().toLocaleDateString('sv-SE')}
+                            className="w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-white" />
+                        </div>
+                      ),
                       primaryAction: {
                         label: 'Cessa Cliente',
                         onClick: () => {
+                          const data = dataCessazioneRef.current?.value;
+                          if (!data) { window.alert('Seleziona la data di cessazione.'); return; }
                           setModal({ isOpen: false });
-                          handleCessa(row.id);
+                          handleCessa(row.id, data);
                         }
                       },
                       secondaryAction: {
@@ -190,7 +202,7 @@ export default function ClientiPage() {
                     isOpen: true,
                     type: 'warning',
                     title: 'Conferma Eliminazione',
-                    content: `Sei sicuro di voler eliminare il cliente ${row.ragione_sociale}? Se ci sono documenti collegati verrà spostato nel cestino.`,
+                    content: `Spostare ${row.ragione_sociale} nel cestino e cessarlo automaticamente? Non è possibile se compare in un mese blindato: in quel caso usa “Cessa Cliente”.`,
                     primaryAction: {
                       label: 'Elimina',
                       onClick: () => handleElimina(row.id)

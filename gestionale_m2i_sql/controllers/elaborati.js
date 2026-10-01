@@ -250,7 +250,15 @@ module.exports = {
 
     const cli = await connection('clienti')
       .select('id', 'ragione_sociale', 'tariffa_oraria_operatore', 'quotazione_tipo', 'quotazione_importo', 'tipo_tassazione', 'percentuale_tassazione', 'note_fisse_elaborato')
-      .where('attivo', 'SI');
+      .where(function() { this.where('cestinato', 0).orWhereNull('cestinato'); })
+      .where(function() {
+        this.where('attivo', 'SI')
+          .orWhere(function() {
+            this.where('attivo', 'Cessato')
+              .whereNotNull('data_cessazione')
+              .where('data_cessazione', '>=', `${anno}-${String(mese).padStart(2, '0')}-01`);
+          });
+      });
       
     const noteMensili = await connection('note_elaborati').where({ tipo: 'cliente', mese, anno });
     const notePerCliente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));
@@ -362,6 +370,11 @@ module.exports = {
       const chiuso = await trx('mesi_chiusi_clienti').where({ mese, anno }).first();
       if (chiuso) throw new Error('Mese clienti già chiuso: lo storico non può essere sovrascritto. Sbloccalo entro 30 giorni prima di richiuderlo.');
       const ids = datiElaborati.map(d => d.idCliente);
+      const corrente = await module.exports.ottieniElaboratoClienti(mese, anno, trx);
+      const idsCorrenti = new Set(corrente.dati.map(d => d.idCliente));
+      if (ids.length !== idsCorrenti.size || ids.some(id => !idsCorrenti.has(id))) {
+        throw new Error('L’elenco clienti è cambiato: ricarica l’elaborato prima di chiudere il mese.');
+      }
       const blocchi = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno });
       const snapshotPerId = new Map(blocchi.map(b => [b.soggetto_id, JSON.parse(b.snapshot)]));
       if (blocchi.some(b => !ids.includes(b.soggetto_id))) throw new Error('La chiusura non può escludere righe già blindate.');

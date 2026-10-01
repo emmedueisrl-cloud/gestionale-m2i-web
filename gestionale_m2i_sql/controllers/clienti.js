@@ -4,6 +4,28 @@ const { knex, generaIDIncrementale, getVal } = require('../db');
 const fs = require('fs');
 const path = require('path');
 
+function validaDataCessazione(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+      Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ||
+      new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) {
+    throw new Error('Inserisci una data di cessazione valida (AAAA-MM-GG).');
+  }
+  return value;
+}
+
+function dataOdiernaItaliana() {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(new Date());
+  const part = type => parts.find(item => item.type === type).value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+async function meseBlindatoCliente(trx, id) {
+  const riga = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', soggetto_id: id }).first();
+  if (riga) return riga;
+  return trx('dettaglio_mesi_chiusi_clienti').where({ cliente_id: id }).first();
+}
+
 module.exports = {
   async recuperaClientiAttivi() {
     const list = await knex('clienti')
@@ -125,54 +147,47 @@ module.exports = {
   },
 
   async eliminaCliente(id) {
-    const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', ownerFolder(id));
-    const hasAttachments = fs.existsSync(dir) && fs.readdirSync(dir).length > 0;
-    // 1. Controlla dipendenze
-    const dipendenzeFatture = await knex('fatture').where('cliente_id', id).count('* as cnt').first();
-    const dipendenzeProgFisso = await knex('programma_fisso').where('cliente_id', id).count('* as cnt').first();
-    const dipendenzeAgenda = await knex('agenda_caposquadra').where('cliente_id', id).count('* as cnt').first();
-    const dipendenzeMesiClienti = await knex('dettaglio_mesi_chiusi_clienti').where('cliente_id', id).count('* as cnt').first();
-    const dipendenzeMesiProvv = await knex('dettaglio_mesi_chiusi_provvigioni').where('cliente_id', id).count('* as cnt').first();
-    
-    const hasDipendenze = 
-      (dipendenzeFatture && dipendenzeFatture.cnt > 0) ||
-      (dipendenzeProgFisso && dipendenzeProgFisso.cnt > 0) ||
-      (dipendenzeAgenda && dipendenzeAgenda.cnt > 0) ||
-      (dipendenzeMesiClienti && dipendenzeMesiClienti.cnt > 0) ||
-      (dipendenzeMesiProvv && dipendenzeMesiProvv.cnt > 0);
-
-    if (hasDipendenze || hasAttachments) {
-      // Soft delete
-      await knex('clienti').where('id', id).update({ cestinato: 1 });
-      await knex('log_attivita').insert({
-        categoria: "Clienti", icona: "🗑️", colore: "#ef4444",
-        descrizione: `Cliente spostato nel cestino (Soft Delete): <b>${id}</b>`, eseguito_da: "LocalServer"
+    return knex.transaction(async trx => {
+      const cliente = await trx('clienti').where({ id }).first();
+      if (!cliente) throw new Error('Cliente non trovato.');
+      if (cliente.cestinato) throw new Error('Cliente già nel cestino.');
+      if (await meseBlindatoCliente(trx, id)) {
+        throw new Error('Cliente presente in un mese blindato: può essere solo cessato, non eliminato.');
+      }
+      await trx('clienti').where({ id }).update({
+        cestinato: 1, attivo: 'Cessato', data_cessazione: cliente.data_cessazione || dataOdiernaItaliana()
+      });
+      await trx('log_attivita').insert({
+        categoria: 'Clienti', icona: '🗑️', colore: '#ef4444',
+        descrizione: `Cliente cessato e spostato nel cestino: <b>${id}</b>`, eseguito_da: 'LocalServer'
       });
       return { cestinato: true };
-    } else {
-      // Nessuna cancellazione di cartelle: i clienti con allegati vanno nel cestino.
-      await knex.transaction(async trx => {
-      await trx('clienti').where('id', id).del();
-      await trx('log_attivita').insert({
-        categoria: "Clienti", icona: "☠️", colore: "#dc2626",
-        descrizione: `Eliminazione definitiva cliente (Hard Delete): <b>${id}</b>`, eseguito_da: "LocalServer"
-      });
-      });
-      return { cestinato: false };
-    }
+    });
   },
 
-  async cessaCliente(id) {
-    await knex('clienti').where('id', id).update({ attivo: 'Cessato' });
-    await knex('log_attivita').insert({
-      categoria: "Clienti", icona: "🛑", colore: "#f97316",
-      descrizione: `Cliente impostato come Cessato: <b>${id}</b>`, eseguito_da: "LocalServer"
+  async cessaCliente(id, dataCessazione) {
+    const data = validaDataCessazione(dataCessazione);
+    if (data > dataOdiernaItaliana()) throw new Error('La data di cessazione non può essere futura.');
+    return knex.transaction(async trx => {
+      const cliente = await trx('clienti').where({ id }).first();
+      if (!cliente || cliente.cestinato) throw new Error('Cliente non disponibile.');
+      const bloccate = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', soggetto_id: id }).select('mese', 'anno');
+      const storiche = await trx('dettaglio_mesi_chiusi_clienti').where({ cliente_id: id }).select('mese', 'anno');
+      const meseFine = data.slice(0, 7);
+      if ([...bloccate, ...storiche].some(r => `${r.anno}-${String(r.mese).padStart(2, '0')}` > meseFine)) {
+        throw new Error('La data di cessazione precede un mese già blindato per questo cliente.');
+      }
+      await trx('clienti').where({ id }).update({ attivo: 'Cessato', data_cessazione: data });
+      await trx('log_attivita').insert({
+        categoria: 'Clienti', icona: '🛑', colore: '#f97316',
+        descrizione: `Cliente cessato dal ${data}: <b>${id}</b>`, eseguito_da: 'LocalServer'
+      });
+      return true;
     });
-    return true;
   },
 
   async riattivaCliente(id) {
-    await knex('clienti').where('id', id).update({ attivo: 'SI' });
+    await knex('clienti').where('id', id).update({ attivo: 'SI', data_cessazione: null });
     await knex('log_attivita').insert({
       categoria: "Clienti", icona: "✅", colore: "#10b981",
       descrizione: `Cliente riattivato: <b>${id}</b>`, eseguito_da: "LocalServer"
