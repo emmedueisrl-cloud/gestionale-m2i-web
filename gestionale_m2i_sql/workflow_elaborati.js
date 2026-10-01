@@ -206,11 +206,21 @@ async function accountingRows(tipo, mese, anno) {
       const invoices = await registrationStatuses(trx, await trx('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
       const sent = await trx('fatture_inviate_elaborati').where({ mese: p.mese, anno: p.anno });
       const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
-      const dipendenti = (await elaborati.ottieniElaboratoMensile(p.mese, p.anno, trx)).dati;
-      const meseDipendentiChiuso = Boolean(await trx('mesi_chiusi_dipendenti').where({ mese: p.mese, anno: p.anno }).first());
+      const dipendentiElaborato = (await elaborati.ottieniElaboratoMensile(p.mese, p.anno, trx)).dati;
+      const buste = await trx('buste_paga')
+        .select('dipendente_id', 'importo_netto')
+        .where({ mese: String(p.mese), anno: String(p.anno) })
+        .orderBy('data_creazione', 'asc');
+      const nettoBustaPerDipendente = new Map(buste.map(item => [String(item.dipendente_id), Number(item.importo_netto)]));
+      const dipendenti = dipendentiElaborato.map(row => ({
+        ...row,
+        nettoBusta: nettoBustaPerDipendente.has(String(row.idDipendente))
+          ? nettoBustaPerDipendente.get(String(row.idDipendente))
+          : null
+      }));
       const oreRegistrate = await trx('registro_ore').select('dipendente_id', 'cliente_id', 'ore_totali', 'causale_assenza').where({ mese: p.mese, anno: p.anno });
       const costiPersonale = calcolaCostoPersonalePerCliente(dipendenti, oreRegistrate);
-      const statoCosti = statoCostoPersonalePerCliente(dipendenti, oreRegistrate, meseDipendentiChiuso);
+      const statoCosti = statoCostoPersonalePerCliente(dipendenti, oreRegistrate);
       return rows.map(row => {
         const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), statoRiconciliazione: f.stato_riconciliazione }));
         const actual = linked.reduce((sum, f) => sum + f.importo, 0);

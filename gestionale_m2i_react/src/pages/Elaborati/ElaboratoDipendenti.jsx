@@ -193,16 +193,21 @@ export default function ElaboratoDipendenti() {
       render: (row) => <span className="font-bold">{parseFloat(row.oreLavorate || 0).toFixed(2)}</span>
     },
     { 
-      header: <>Paga<br />Oraria</>,
+      header: 'Paga',
       accessor: 'pagaOraria',
-      cardLabel: 'Paga oraria',
-      width: 130,
-      render: (row) => (
-        <div>
-          <span>{row.tipoPaga === 'Mensile' ? '📅 Mensile' : '⏱ Oraria'}: </span>
-          <span className="font-medium">€ {parseFloat(row.pagaOraria || 0).toFixed(2)}</span>
-        </div>
-      )
+      cardLabel: 'Paga',
+      width: 155,
+      render: (row) => {
+        const haBusta = Object.hasOwn(nettiBusta, row.idDipendente);
+        const oreTotali = Number(row.oreLavorate) || 0;
+        const pagaOrariaBusta = haBusta && oreTotali > 0 ? nettiBusta[row.idDipendente] / oreTotali : null;
+        return <div className="space-y-1 text-left leading-tight">
+          <div><span className="font-semibold text-slate-300">Concordato:</span> <span className="font-bold text-white">€ {parseFloat(row.pagaOraria || 0).toFixed(2)}</span></div>
+          <div><span className="font-semibold text-emerald-300">Busta:</span> {pagaOrariaBusta == null
+            ? <span className="text-slate-500">{haBusta ? 'ore non disponibili' : 'non caricata'}</span>
+            : <span className="font-bold text-emerald-300">€ {pagaOrariaBusta.toFixed(2)}</span>}</div>
+        </div>;
+      }
     },
     { 
       header: <>Netto per<br />Lavorato</>,

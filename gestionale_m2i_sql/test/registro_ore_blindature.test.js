@@ -133,14 +133,14 @@ test('protezioni SQL restano attive anche fuori dal salvataggio applicativo', as
   await assert.rejects(() => knex('registro_ore').insert({ ...where, ore_totali: 1 }), /blindata/);
 });
 
-test('costo definitivo solo con tutte le righe dipendenti blindate o con il mese chiuso', () => {
+test('costo provvisorio dal netto elaborato e definitivo solo con tutte le buste necessarie', () => {
   const records = [{ dipendente_id: 'D1', cliente_id: 'C', ore_totali: 20 }, { dipendente_id: 'D2', cliente_id: 'C', ore_totali: 10 }];
-  const righeMeseParziali = [{ idDipendente: 'D1', rigaBloccata: true }, { idDipendente: 'D2', rigaBloccata: true }, { idDipendente: 'D3', rigaBloccata: false }];
-  assert.equal(statoCostoPersonalePerCliente(righeMeseParziali, records).get('C'), false);
-  assert.equal(statoCostoPersonalePerCliente(righeMeseParziali, records, true).get('C'), true);
-  assert.equal(statoCostoPersonalePerCliente(righeMeseParziali.map(r => ({ ...r, rigaBloccata: true })), records).get('C'), true);
+  const righe = [{ idDipendente: 'D1', stipendioNetto: 1200, nettoBusta: 1000 }, { idDipendente: 'D2', stipendioNetto: 900, nettoBusta: null }];
+  assert.equal(statoCostoPersonalePerCliente(righe, records).get('C'), false);
+  assert.equal(statoCostoPersonalePerCliente(righe.map(r => ({ ...r, nettoBusta: r.nettoBusta ?? 850 })), records).get('C'), true);
   const dip = [{ idDipendente: 'D1', stipendioNetto: 1200 }];
   assert.equal(calcolaCostoPersonalePerCliente(dip, [records[0], { dipendente_id: 'D1', cliente_id: 'B', ore_totali: 80 }]).get('C'), 240);
+  assert.equal(calcolaCostoPersonalePerCliente([{ ...dip[0], nettoBusta: 1000 }], [records[0], { dipendente_id: 'D1', cliente_id: 'B', ore_totali: 80 }]).get('C'), 200);
   assert.equal(calcolaCostoPersonalePerCliente(dip, [records[0], { dipendente_id: 'D1', cliente_id: 'B', ore_totali: 100 }]).get('C'), 200);
 });
 
@@ -182,7 +182,7 @@ test('dipendenti: blindatura senza conferma e chiusura solo con Chiudi Mese, anc
   assert.equal((await knex('dettaglio_mesi_chiusi_dipendenti').where({ mese: 12, anno: 2026 })).length, current.dati.length);
 });
 
-test('blindatura reale usa snapshot transazionale; il costo diventa definitivo solo alla chiusura completa', async () => {
+test('blindatura reale usa snapshot transazionale; il costo diventa definitivo e si ricalcola con la busta', async () => {
   const f = await fixture();
   const elaborati = require('../controllers/elaborati');
   const get = () => ore.recuperaOreMensili(f.id, 11, 2026);
@@ -214,7 +214,12 @@ test('blindatura reale usa snapshot transazionale; il costo diventa definitivo s
   assert.equal(row.costoPersonaleDefinitivo, false);
   await elaborati.chiudiMeseDipendenti(11, 2026, (await elaborati.ottieniElaboratoMensile(11, 2026)).dati);
   row = (await workflow.accountingRows('cliente', 11, 2026)).find(r => r.idCliente === f.a);
+  assert.equal(row.costoPersonaleDefinitivo, false);
+  const costoProvvisorio = row.costoPersonale;
+  await knex('buste_paga').insert({ id: `BUSTA_${f.id}`, dipendente_id: f.id, mese: '11', anno: '2026', importo_netto: 4321 });
+  row = (await workflow.accountingRows('cliente', 11, 2026)).find(r => r.idCliente === f.a);
   assert.equal(row.costoPersonaleDefinitivo, true);
+  assert.notEqual(row.costoPersonale, costoProvvisorio);
   await assert.rejects(() => save(5), /sola lettura/);
 });
 

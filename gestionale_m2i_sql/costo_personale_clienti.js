@@ -1,7 +1,10 @@
 const CAUSALI_LAVORO = new Set(['ordinario', 'straordinario', 'extra']);
 
 function calcolaCostoPersonalePerCliente(dipendenti, registrazioniOre) {
-  const nettoPerDipendente = new Map(dipendenti.map(row => [String(row.idDipendente), Number(row.stipendioNetto) || 0]));
+  const nettoPerDipendente = new Map(dipendenti.map(row => [
+    String(row.idDipendente),
+    row.nettoBusta !== null && row.nettoBusta !== undefined ? Number(row.nettoBusta) || 0 : Number(row.stipendioNetto) || 0
+  ]));
   const oreTotaliPerDipendente = new Map();
   const orePerDipendenteCliente = new Map();
 
@@ -32,13 +35,15 @@ function calcolaCostoPersonalePerCliente(dipendenti, registrazioniOre) {
   return new Map([...costi].map(([idCliente, costo]) => [idCliente, Math.round((costo + Number.EPSILON) * 100) / 100]));
 }
 
-function statoCostoPersonalePerCliente(dipendenti, registrazioniOre, meseChiuso = false) {
-  const costoDefinitivo = Boolean(meseChiuso) || (dipendenti.length > 0 && dipendenti.every(r => r.rigaBloccata === true));
+function statoCostoPersonalePerCliente(dipendenti, registrazioniOre) {
+  const bustaDisponibile = new Map(dipendenti.map(row => [
+    String(row.idDipendente), row.nettoBusta !== null && row.nettoBusta !== undefined
+  ]));
   const stati = new Map();
   for (const r of registrazioniOre) {
     if (!r.cliente_id || Number(r.ore_totali) <= 0 || !CAUSALI_LAVORO.has(String(r.causale_assenza || 'Ordinario').trim().toLowerCase())) continue;
     const id = String(r.cliente_id);
-    stati.set(id, costoDefinitivo);
+    stati.set(id, stati.get(id) !== false && bustaDisponibile.get(String(r.dipendente_id)) === true);
   }
   return stati;
 }

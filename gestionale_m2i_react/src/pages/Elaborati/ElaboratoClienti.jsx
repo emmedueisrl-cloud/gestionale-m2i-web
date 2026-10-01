@@ -316,13 +316,19 @@ export default function ElaboratoClienti() {
         />
       )
     },
-    { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
-      <button className={`rounded px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`}
-        disabled={row.rigaBloccata && Boolean(row.fatturaInviataAt || row.fatture?.length)}
-        title={row.rigaBloccata && (row.fatturaInviataAt || row.fatture?.length) ? 'Fattura inviata o registrata: sblindatura non consentita' : undefined}
+    { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, render: row => {
+      if (isChiuso && !workflow.bloccati.includes(row.idCliente)) return <span className="text-emerald-300">Mese storico</span>;
+      const registrata = Boolean(row.fatture?.length);
+      const inviata = !registrata && Boolean(row.fatturaInviataAt);
+      const elaborata = row.rigaBloccata && (registrata || inviata);
+      const colore = registrata ? 'bg-emerald-700 text-white' : inviata ? 'bg-sky-700 text-white' : row.rigaBloccata ? 'bg-amber-700 text-white' : 'bg-indigo-700 text-white';
+      return <button className={`rounded px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-80 ${colore}`}
+        disabled={elaborata}
+        title={elaborata ? `${registrata ? 'Fattura registrata' : 'Fattura inviata'}: sblindatura non consentita` : undefined}
         onClick={() => toggleLock(row)}>
-        {row.rigaBloccata && (row.fatturaInviataAt || row.fatture?.length) ? 'Fattura elaborata' : row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
-      </button> },
+        {registrata ? 'Registrata' : inviata ? 'Inviata' : row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
+      </button>;
+    } },
     {
       header: 'Azioni',
       accessor: 'azioni',
