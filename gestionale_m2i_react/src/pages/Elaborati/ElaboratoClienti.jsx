@@ -57,7 +57,15 @@ export default function ElaboratoClienti() {
       setWorkflow(state);
       setFatturato(Object.fromEntries(accounting.map(r => [r.idCliente, r])));
       const frozen = new Map(accounting.map(r => [r.idCliente, r]));
-      setDati(prev => prev.map(r => ({ ...r, ...(frozen.get(r.idCliente) || {}) })));
+      setDati(prev => prev.map(r => {
+        const contabilita = frozen.get(r.idCliente) || {};
+        return {
+          ...r,
+          ...contabilita,
+          importoRealmenteFatturato: Number(contabilita.importoRealmenteFatturato) || 0,
+          rigaBloccata: Boolean(contabilita.rigaBloccata ?? r.rigaBloccata)
+        };
+      }));
     } catch (err) {
       console.error(err);
     } finally {
@@ -272,7 +280,7 @@ export default function ElaboratoClienti() {
       width: 90,
       render: (row) => <span className="font-bold text-slate-50">€ {parseFloat(row.importoTotale || 0).toFixed(2)}</span>
     },
-    { header: <>Realmente<br />Fatturato</>, cardLabel: 'Realmente fatturato', accessor: 'fatturato', width: 110, sortable: false, render: row => {
+    { header: <>Realmente<br />Fatturato</>, cardLabel: 'Realmente fatturato', accessor: 'importoRealmenteFatturato', width: 110, render: row => {
       const record = fatturato[row.idCliente];
       return record?.fatture?.length ? <div><strong>€ {Number(record.importoRealmenteFatturato).toFixed(2)}</strong><div className="text-xs text-amber-300">({record.differenza >= 0 ? '+' : '−'}€ {Math.abs(record.differenza).toFixed(2)})</div></div> : <span className="text-slate-500">—</span>;
     } },
@@ -307,7 +315,7 @@ export default function ElaboratoClienti() {
         />
       )
     },
-    { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
+    { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
       <button className={`rounded px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`}
         disabled={row.rigaBloccata && Boolean(row.fatturaInviataAt || row.fatture?.length)}
         title={row.rigaBloccata && (row.fatturaInviataAt || row.fatture?.length) ? 'Fattura inviata o registrata: sblindatura non consentita' : undefined}

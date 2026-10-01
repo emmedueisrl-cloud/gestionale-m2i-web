@@ -152,7 +152,7 @@ export async function cessaCliente(id, dataCessazione) {
   return await apiCall('cessaCliente', [id, dataCessazione]);
 }
 
-export async function riattivaCliente(id) {
-  return await apiCall('riattivaCliente', [id]);
+export async function riattivaCliente(id, dataRiattivazione) {
+  return await apiCall('riattivaCliente', [id, dataRiattivazione]);
 }
 

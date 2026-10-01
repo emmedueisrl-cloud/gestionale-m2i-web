@@ -248,17 +248,25 @@ module.exports = {
       };
     }
 
-    const cli = await connection('clienti')
-      .select('id', 'ragione_sociale', 'tariffa_oraria_operatore', 'quotazione_tipo', 'quotazione_importo', 'tipo_tassazione', 'percentuale_tassazione', 'note_fisse_elaborato')
-      .where(function() { this.where('cestinato', 0).orWhereNull('cestinato'); })
-      .where(function() {
-        this.where('attivo', 'SI')
-          .orWhere(function() {
-            this.where('attivo', 'Cessato')
-              .whereNotNull('data_cessazione')
-              .where('data_cessazione', '>=', `${anno}-${String(mese).padStart(2, '0')}-01`);
-          });
-      });
+    const candidati = await connection('clienti')
+      .select('id', 'ragione_sociale', 'tariffa_oraria_operatore', 'quotazione_tipo', 'quotazione_importo',
+        'tipo_tassazione', 'percentuale_tassazione', 'note_fisse_elaborato', 'attivo', 'data_cessazione')
+      .where(function() { this.where('cestinato', 0).orWhereNull('cestinato'); });
+    const periodi = candidati.length ? await connection('clienti_periodi_attivita')
+      .whereIn('cliente_id', candidati.map(c => c.id)) : [];
+    const periodiPerCliente = new Map();
+    for (const periodo of periodi) {
+      if (!periodiPerCliente.has(periodo.cliente_id)) periodiPerCliente.set(periodo.cliente_id, []);
+      periodiPerCliente.get(periodo.cliente_id).push(periodo);
+    }
+    const primoGiorno = `${anno}-${String(mese).padStart(2, '0')}-01`;
+    const ultimoGiorno = `${anno}-${String(mese).padStart(2, '0')}-${String(new Date(anno, mese, 0).getDate()).padStart(2, '0')}`;
+    const cli = candidati.filter(c => {
+      const intervalli = periodiPerCliente.get(c.id);
+      if (intervalli?.length) return intervalli.some(p => (!p.data_inizio || p.data_inizio <= ultimoGiorno) && (!p.data_fine || p.data_fine >= primoGiorno));
+      // Compatibilità per clienti creati dopo l'avvio o cessazioni storiche senza periodo migrato.
+      return c.attivo === 'SI' || (c.attivo === 'Cessato' && c.data_cessazione && c.data_cessazione >= primoGiorno);
+    });
       
     const noteMensili = await connection('note_elaborati').where({ tipo: 'cliente', mese, anno });
     const notePerCliente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));

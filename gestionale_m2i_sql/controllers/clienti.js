@@ -26,6 +26,21 @@ async function meseBlindatoCliente(trx, id) {
   return trx('dettaglio_mesi_chiusi_clienti').where({ cliente_id: id }).first();
 }
 
+async function chiudiPeriodoAttivo(trx, cliente, data) {
+  const aperto = await trx('clienti_periodi_attivita').where({ cliente_id: cliente.id }).whereNull('data_fine').first();
+  if (aperto) {
+    if (aperto.data_inizio && data < aperto.data_inizio) {
+      throw new Error('La cessazione non può precedere la data dell’ultima riattivazione.');
+    }
+    await trx('clienti_periodi_attivita').where({ id: aperto.id }).update({ data_fine: data });
+  } else if (cliente.attivo === 'SI' && !await trx('clienti_periodi_attivita').where({ cliente_id: cliente.id }).first()) {
+    // Cliente creato dopo l'avvio: il primo periodo non ha una data iniziale storica affidabile.
+    await trx('clienti_periodi_attivita').insert({ cliente_id: cliente.id, data_inizio: null, data_fine: data });
+  } else if (cliente.attivo === 'SI') {
+    throw new Error('Storico attività incoerente: manca il periodo attivo.');
+  }
+}
+
 module.exports = {
   async recuperaClientiAttivi() {
     const list = await knex('clienti')
@@ -154,8 +169,10 @@ module.exports = {
       if (await meseBlindatoCliente(trx, id)) {
         throw new Error('Cliente presente in un mese blindato: può essere solo cessato, non eliminato.');
       }
+      const dataFine = cliente.data_cessazione || dataOdiernaItaliana();
+      if (cliente.attivo === 'SI') await chiudiPeriodoAttivo(trx, cliente, dataFine);
       await trx('clienti').where({ id }).update({
-        cestinato: 1, attivo: 'Cessato', data_cessazione: cliente.data_cessazione || dataOdiernaItaliana()
+        cestinato: 1, attivo: 'Cessato', data_cessazione: dataFine
       });
       await trx('log_attivita').insert({
         categoria: 'Clienti', icona: '🗑️', colore: '#ef4444',
@@ -171,12 +188,14 @@ module.exports = {
     return knex.transaction(async trx => {
       const cliente = await trx('clienti').where({ id }).first();
       if (!cliente || cliente.cestinato) throw new Error('Cliente non disponibile.');
+      if (cliente.attivo !== 'SI') throw new Error('Solo un cliente attivo può essere cessato.');
       const bloccate = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', soggetto_id: id }).select('mese', 'anno');
       const storiche = await trx('dettaglio_mesi_chiusi_clienti').where({ cliente_id: id }).select('mese', 'anno');
       const meseFine = data.slice(0, 7);
       if ([...bloccate, ...storiche].some(r => `${r.anno}-${String(r.mese).padStart(2, '0')}` > meseFine)) {
         throw new Error('La data di cessazione precede un mese già blindato per questo cliente.');
       }
+      await chiudiPeriodoAttivo(trx, cliente, data);
       await trx('clienti').where({ id }).update({ attivo: 'Cessato', data_cessazione: data });
       await trx('log_attivita').insert({
         categoria: 'Clienti', icona: '🛑', colore: '#f97316',
@@ -186,13 +205,37 @@ module.exports = {
     });
   },
 
-  async riattivaCliente(id) {
-    await knex('clienti').where('id', id).update({ attivo: 'SI', data_cessazione: null });
-    await knex('log_attivita').insert({
-      categoria: "Clienti", icona: "✅", colore: "#10b981",
-      descrizione: `Cliente riattivato: <b>${id}</b>`, eseguito_da: "LocalServer"
+  async riattivaCliente(id, dataRiattivazione) {
+    const data = validaDataCessazione(dataRiattivazione);
+    if (data > dataOdiernaItaliana()) throw new Error('La data di riattivazione non può essere futura.');
+    return knex.transaction(async trx => {
+      const cliente = await trx('clienti').where({ id }).first();
+      if (!cliente || cliente.cestinato) throw new Error('Cliente non disponibile.');
+      if (cliente.attivo !== 'Cessato') throw new Error('Solo un cliente cessato può essere riattivato.');
+      const ultimo = await trx('clienti_periodi_attivita').where({ cliente_id: id }).orderBy('id', 'desc').first();
+      const ultimaCessazione = ultimo?.data_fine || cliente.data_cessazione;
+      if (ultimo && !ultimo.data_fine) throw new Error('Il cliente ha già un periodo di attività aperto.');
+      if (ultimaCessazione && data < ultimaCessazione) {
+        throw new Error('La riattivazione non può precedere l’ultima cessazione.');
+      }
+      const meseInizio = Number(data.slice(0, 4)) * 12 + Number(data.slice(5, 7));
+      const mesiChiusi = await trx('mesi_chiusi_clienti').select('mese', 'anno');
+      for (const mese of mesiChiusi) {
+        if (mese.anno * 12 + mese.mese < meseInizio) continue;
+        const nelloStorico = await trx('dettaglio_mesi_chiusi_clienti')
+          .where({ cliente_id: id, mese: mese.mese, anno: mese.anno }).first();
+        if (!nelloStorico) {
+          throw new Error('La riattivazione coinvolge un mese già chiuso senza questo cliente: scegli una data successiva.');
+        }
+      }
+      await trx('clienti_periodi_attivita').insert({ cliente_id: id, data_inizio: data, data_fine: null });
+      await trx('clienti').where({ id }).update({ attivo: 'SI', data_cessazione: null });
+      await trx('log_attivita').insert({
+        categoria: 'Clienti', icona: '✅', colore: '#10b981',
+        descrizione: `Cliente riattivato dal ${data}: <b>${id}</b>`, eseguito_da: 'LocalServer'
+      });
+      return true;
     });
-    return true;
   },
 
   async ripristinaCliente(id) {

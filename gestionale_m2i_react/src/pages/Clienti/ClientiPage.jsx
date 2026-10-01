@@ -12,6 +12,7 @@ export default function ClientiPage() {
   const [viewCestino, setViewCestino] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
   const dataCessazioneRef = useRef(null);
+  const dataRiattivazioneRef = useRef(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -77,16 +78,16 @@ export default function ClientiPage() {
     }
   };
 
-  const handleRiattiva = async (id) => {
+  const handleRiattiva = async (id, dataRiattivazione) => {
     try {
-      await riattivaCliente(id);
+      await riattivaCliente(id, dataRiattivazione);
       loadData();
-    } catch  {
+    } catch (error) {
       setModal({
         isOpen: true,
         type: 'error',
         title: 'Attenzione',
-        content: 'Errore durante la riattivazione.',
+        content: error.message || 'Errore durante la riattivazione.',
         primaryAction: { label: 'Chiudi', onClick: () => setModal({ isOpen: false }) }
       });
     }
@@ -188,7 +189,34 @@ export default function ClientiPage() {
                 </button>
               ) : (
                 <button 
-                  onClick={() => handleRiattiva(row.id)}
+                  onClick={() => {
+                    setModal({
+                      isOpen: true,
+                      type: 'warning',
+                      title: 'Riattiva Cliente',
+                      content: (
+                        <div className="space-y-3 text-left">
+                          <p>Indica da quando {row.ragione_sociale} è tornato attivo. I mesi tra la cessazione e questa data resteranno esclusi dagli elaborati aperti.</p>
+                          <label className="block font-semibold text-slate-200" htmlFor="data-riattivazione-cliente">Data di riattivazione</label>
+                          <input id="data-riattivazione-cliente" ref={dataRiattivazioneRef} type="date" required
+                            defaultValue={new Date().toLocaleDateString('sv-SE')}
+                            min={row.data_cessazione || undefined}
+                            max={new Date().toLocaleDateString('sv-SE')}
+                            className="w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-white" />
+                        </div>
+                      ),
+                      primaryAction: {
+                        label: 'Riattiva Cliente',
+                        onClick: () => {
+                          const data = dataRiattivazioneRef.current?.value;
+                          if (!data) { window.alert('Seleziona la data di riattivazione.'); return; }
+                          setModal({ isOpen: false });
+                          handleRiattiva(row.id, data);
+                        }
+                      },
+                      secondaryAction: { label: 'Annulla', onClick: () => setModal({ isOpen: false }) }
+                    });
+                  }}
                   className="flex items-center justify-center p-1.5 bg-slate-900 border border-emerald-700 rounded-lg text-emerald-400 hover:bg-emerald-500/20 transition-all shadow-sm"
                   title="Riattiva Cliente"
                 >

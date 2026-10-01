@@ -25,6 +25,25 @@ async function initialize() {
   if (!await knex.schema.hasColumn('clienti', 'data_cessazione')) {
     await knex.raw('ALTER TABLE clienti ADD COLUMN data_cessazione TEXT');
   }
+  if (!await knex.schema.hasTable('clienti_periodi_attivita')) {
+    await knex.schema.createTable('clienti_periodi_attivita', t => {
+      t.increments('id').primary();
+      t.string('cliente_id').notNullable().references('id').inTable('clienti').onDelete('RESTRICT');
+      t.text('data_inizio');
+      t.text('data_fine');
+    });
+  }
+  await knex.raw('CREATE UNIQUE INDEX IF NOT EXISTS idx_clienti_periodi_aperti ON clienti_periodi_attivita(cliente_id) WHERE data_fine IS NULL');
+  const clientiSenzaStorico = await knex('clienti as c')
+    .leftJoin('clienti_periodi_attivita as p', 'p.cliente_id', 'c.id')
+    .whereNull('p.id')
+    .select('c.id', 'c.attivo', 'c.data_cessazione');
+  for (const cliente of clientiSenzaStorico) {
+    if (cliente.attivo === 'SI' || (cliente.attivo === 'Cessato' && cliente.data_cessazione)) {
+      await knex('clienti_periodi_attivita').insert({ cliente_id: cliente.id, data_inizio: null,
+        data_fine: cliente.attivo === 'Cessato' ? cliente.data_cessazione : null });
+    }
+  }
   if (!await knex.schema.hasTable('periodi_elaborati')) {
     await knex.schema.createTable('periodi_elaborati', t => {
       t.string('tipo', 20).notNullable(); t.integer('mese').notNullable(); t.integer('anno').notNullable();

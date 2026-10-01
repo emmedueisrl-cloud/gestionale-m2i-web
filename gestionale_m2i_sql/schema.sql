@@ -56,6 +56,15 @@ CREATE TABLE clienti (
     creato_da TEXT
 , foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text);
 
+CREATE TABLE clienti_periodi_attivita (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT,
+    data_inizio TEXT,
+    data_fine TEXT,
+    CHECK (data_inizio IS NULL OR data_fine IS NULL OR data_inizio <= data_fine)
+);
+CREATE UNIQUE INDEX idx_clienti_periodi_aperti ON clienti_periodi_attivita(cliente_id) WHERE data_fine IS NULL;
+
 CREATE TABLE registro_ore (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mese INTEGER NOT NULL,
