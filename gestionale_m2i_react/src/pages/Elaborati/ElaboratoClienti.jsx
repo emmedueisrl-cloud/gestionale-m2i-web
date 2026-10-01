@@ -21,7 +21,7 @@ export default function ElaboratoClienti() {
   const [modalState, setModalState] = useState({ isOpen: false, type: '', title: '', message: '', primaryAction: null });
   const [modalCalendario, setModalCalendario] = useState({ isOpen: false, clienteId: null, nomeCliente: '' });
   const [note, setNote] = useState({}); // { [idCliente]: 'testo nota' }
-  const [workflow, setWorkflow] = useState({ elencoConfermato: false, attesi: [], bloccati: [] });
+  const [workflow, setWorkflow] = useState({ bloccati: [] });
   const [fatturato, setFatturato] = useState({});
   const [stickyTopRef, stickyTopHeight] = useElementHeight();
 
@@ -71,7 +71,6 @@ export default function ElaboratoClienti() {
   }, [mese, anno]);
 
   const handleChiudiMese = async () => {
-    if (dati.length > 0 && !workflow.elencoConfermato) { window.alert('Conferma prima l’elenco completo dei clienti previsti per questo mese.'); return; }
     const elaboratoVuoto = dati.length === 0;
     setModalState({
       isOpen: true,
@@ -154,14 +153,6 @@ export default function ElaboratoClienti() {
         onClick: () => setModalState(prev => ({ ...prev, isOpen: false }))
       }
     });
-  };
-
-  const confirmRoster = async () => {
-    if (!dati.length || !window.confirm(`Confermi l’elenco completo di ${dati.length} clienti previsti per ${mese}/${anno}? Controlla che nessuno manchi prima di blindare le righe.`)) return;
-    try {
-      await workflowRequest(`${workflowPeriod('cliente', mese, anno)}/elenco`, { method: 'POST', body: JSON.stringify({ ids: dati.map(r => r.idCliente) }) });
-      await caricaElaborato();
-    } catch (err) { window.alert(err.message); }
   };
 
   const toggleLock = async row => {
@@ -318,7 +309,7 @@ export default function ElaboratoClienti() {
     },
     { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idCliente) ? <span className="text-emerald-300">Mese storico</span> :
       <button className={`rounded px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`}
-        disabled={(!workflow.elencoConfermato && !row.rigaBloccata) || (row.rigaBloccata && Boolean(row.fatturaInviataAt || row.fatture?.length))}
+        disabled={row.rigaBloccata && Boolean(row.fatturaInviataAt || row.fatture?.length)}
         title={row.rigaBloccata && (row.fatturaInviataAt || row.fatture?.length) ? 'Fattura inviata o registrata: sblindatura non consentita' : undefined}
         onClick={() => toggleLock(row)}>
         {row.rigaBloccata && (row.fatturaInviataAt || row.fatture?.length) ? 'Fattura elaborata' : row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
@@ -380,7 +371,6 @@ export default function ElaboratoClienti() {
             className="p-2 bg-slate-900/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-24"
           />
 
-          {!isChiuso && dati.length > 0 && <button onClick={confirmRoster} className="rounded-lg bg-slate-700 px-3 py-2 text-sm text-white">{workflow.elencoConfermato ? `Elenco confermato (${workflow.attesi.length}) · aggiorna` : 'Conferma elenco clienti'}</button>}
           {!isChiuso ? (
             <button 
               onClick={handleChiudiMese}

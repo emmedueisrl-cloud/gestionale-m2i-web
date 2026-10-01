@@ -140,10 +140,6 @@ module.exports = {
       const chiuso = await trx('mesi_chiusi_dipendenti').where({ mese, anno }).first();
       if (chiuso) throw new Error('Mese dipendenti già chiuso: lo storico non può essere sovrascritto. Sbloccalo entro 30 giorni prima di richiuderlo.');
       const ids = datiElaborati.map(d => d.idDipendente);
-      const roster = await trx('righe_attese_elaborati').where({ tipo: 'dipendente', mese, anno }).select('soggetto_id');
-      if (roster.length && (roster.length !== ids.length || roster.some(x => !ids.includes(x.soggetto_id)))) {
-        throw new Error('L’elaborato non corrisponde all’elenco dipendenti confermato.');
-      }
       const blocchi = await trx('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno });
       const snapshotPerId = new Map(blocchi.map(b => [b.soggetto_id, JSON.parse(b.snapshot)]));
       if (blocchi.some(b => !ids.includes(b.soggetto_id))) throw new Error('La chiusura non può escludere righe già blindate.');
@@ -366,10 +362,6 @@ module.exports = {
       const chiuso = await trx('mesi_chiusi_clienti').where({ mese, anno }).first();
       if (chiuso) throw new Error('Mese clienti già chiuso: lo storico non può essere sovrascritto. Sbloccalo entro 30 giorni prima di richiuderlo.');
       const ids = datiElaborati.map(d => d.idCliente);
-      const roster = await trx('righe_attese_elaborati').where({ tipo: 'cliente', mese, anno }).select('soggetto_id');
-      if (roster.length && (roster.length !== ids.length || roster.some(x => !ids.includes(x.soggetto_id)))) {
-        throw new Error('L’elaborato non corrisponde all’elenco clienti confermato.');
-      }
       const blocchi = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno });
       const snapshotPerId = new Map(blocchi.map(b => [b.soggetto_id, JSON.parse(b.snapshot)]));
       if (blocchi.some(b => !ids.includes(b.soggetto_id))) throw new Error('La chiusura non può escludere righe già blindate.');

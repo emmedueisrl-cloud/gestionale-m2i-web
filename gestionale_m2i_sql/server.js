@@ -74,8 +74,6 @@ const handleWorkflow = action => async (req, res) => {
 const { tipo, anno, mese } = { tipo: ':tipo', anno: ':anno', mese: ':mese' };
 app.get(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/stato`, handleWorkflow(req =>
   workflowElaborati.status(req.params.tipo, req.params.mese, req.params.anno)));
-app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/elenco`, handleWorkflow(req =>
-  workflowElaborati.confirmRoster(req.params.tipo, req.params.mese, req.params.anno, req.body.ids)));
 app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/righe/:id/blinda`, handleWorkflow(req =>
   workflowElaborati.lockRow(req.params.tipo, req.params.mese, req.params.anno, req.params.id)));
 app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/righe/:id/sblocca`, handleWorkflow(req =>

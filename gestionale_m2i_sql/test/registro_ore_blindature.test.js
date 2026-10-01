@@ -142,6 +142,38 @@ test('costo definitivo solo con tutti i dipendenti coinvolti blindati', () => {
   assert.equal(calcolaCostoPersonalePerCliente(dip, [records[0], { dipendente_id: 'D1', cliente_id: 'B', ore_totali: 100 }]).get('C'), 200);
 });
 
+test('clienti: blindatura senza conferma e chiusura solo con Chiudi Mese, anche con vecchi elenchi salvati', async () => {
+  const f = await fixture();
+  const elaborati = require('../controllers/elaborati');
+  await knex('periodi_elaborati').insert({ tipo: 'cliente', mese: 12, anno: 2026, elenco_confermato_at: new Date().toISOString() });
+  await knex('righe_attese_elaborati').insert({ tipo: 'cliente', mese: 12, anno: 2026, soggetto_id: f.a });
+  assert.deepEqual(await workflow.status('cliente', 12, 2026), { bloccati: [] });
+  const locked = await workflow.lockRow('cliente', 12, 2026, f.b);
+  assert.equal(locked.meseChiuso, false);
+  assert.equal(await knex('mesi_chiusi_clienti').where({ mese: 12, anno: 2026 }).first(), undefined);
+  assert.deepEqual(await workflow.status('cliente', 12, 2026), { bloccati: [f.b] });
+  const current = await elaborati.ottieniElaboratoClienti(12, 2026);
+  await elaborati.chiudiMeseClienti(12, 2026, current.dati);
+  assert.ok(await knex('mesi_chiusi_clienti').where({ mese: 12, anno: 2026 }).first());
+  assert.equal((await knex('dettaglio_mesi_chiusi_clienti').where({ mese: 12, anno: 2026 })).length, current.dati.length);
+});
+
+test('dipendenti: blindatura senza conferma e chiusura solo con Chiudi Mese, anche con vecchi elenchi salvati', async () => {
+  const f = await fixture();
+  const elaborati = require('../controllers/elaborati');
+  await knex('periodi_elaborati').insert({ tipo: 'dipendente', mese: 12, anno: 2026, elenco_confermato_at: new Date().toISOString() });
+  await knex('righe_attese_elaborati').insert({ tipo: 'dipendente', mese: 12, anno: 2026, soggetto_id: f.id });
+  assert.deepEqual(await workflow.status('dipendente', 12, 2026), { bloccati: [] });
+  const locked = await workflow.lockRow('dipendente', 12, 2026, f.id);
+  assert.equal(locked.meseChiuso, false);
+  assert.equal(await knex('mesi_chiusi_dipendenti').where({ mese: 12, anno: 2026 }).first(), undefined);
+  assert.deepEqual(await workflow.status('dipendente', 12, 2026), { bloccati: [f.id] });
+  const current = await elaborati.ottieniElaboratoMensile(12, 2026);
+  await elaborati.chiudiMeseDipendenti(12, 2026, current.dati);
+  assert.ok(await knex('mesi_chiusi_dipendenti').where({ mese: 12, anno: 2026 }).first());
+  assert.equal((await knex('dettaglio_mesi_chiusi_dipendenti').where({ mese: 12, anno: 2026 })).length, current.dati.length);
+});
+
 test('blindatura reale usa snapshot transazionale; cliente resta fermo mentre il costo diventa definitivo', async () => {
   const f = await fixture();
   const elaborati = require('../controllers/elaborati');
@@ -151,7 +183,7 @@ test('blindatura reale usa snapshot transazionale; cliente resta fermo mentre il
   await ore.salvaPresenzeMensili({ idDipendente: f.id, mese: 11, anno: 2026,
     revisione: (await get()).revisione, righe: [f.row(f.a, 3), f.row(f.b, 2)] });
   const clients = await elaborati.ottieniElaboratoClienti(11, 2026);
-  await workflow.confirmRoster('cliente', 11, 2026, clients.dati.map(r => r.idCliente));
+  assert.ok(clients.dati.some(r => r.idCliente === f.a));
   const original = elaborati.ottieniElaboratoClienti;
   let transactional = false;
   elaborati.ottieniElaboratoClienti = async (m, y, connection) => {
@@ -168,7 +200,7 @@ test('blindatura reale usa snapshot transazionale; cliente resta fermo mentre il
   assert.equal(row.costoPersonaleDefinitivo, false);
   assert.equal(row.oreLavorate, 3);
   const employees = await elaborati.ottieniElaboratoMensile(11, 2026);
-  await workflow.confirmRoster('dipendente', 11, 2026, employees.dati.map(r => r.idDipendente));
+  assert.ok(employees.dati.some(r => r.idDipendente === f.id));
   await workflow.lockRow('dipendente', 11, 2026, f.id);
   row = (await workflow.accountingRows('cliente', 11, 2026)).find(r => r.idCliente === f.a);
   assert.equal(row.costoPersonaleDefinitivo, true);

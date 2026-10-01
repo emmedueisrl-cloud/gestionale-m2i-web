@@ -19,7 +19,7 @@ export default function ElaboratoDipendenti() {
   
   const [modalState, setModalState] = useState({ isOpen: false, type: '', title: '', message: '', primaryAction: null });
   const [note, setNote] = useState({});
-  const [workflow, setWorkflow] = useState({ elencoConfermato: false, attesi: [], bloccati: [] });
+  const [workflow, setWorkflow] = useState({ bloccati: [] });
   const [nettiBusta, setNettiBusta] = useState({});
   const [stickyTopRef, stickyTopHeight] = useElementHeight();
 
@@ -72,7 +72,6 @@ export default function ElaboratoDipendenti() {
   }, [mese, anno]);
 
   const handleChiudiMese = async () => {
-    if (dati.length > 0 && !workflow.elencoConfermato) { window.alert('Conferma prima l’elenco completo dei dipendenti previsti per questo mese.'); return; }
     const elaboratoVuoto = dati.length === 0;
     setModalState({
       isOpen: true,
@@ -155,12 +154,6 @@ export default function ElaboratoDipendenti() {
         onClick: () => setModalState(prev => ({ ...prev, isOpen: false }))
       }
     });
-  };
-
-  const confirmRoster = async () => {
-    if (!dati.length || !window.confirm(`Confermi l’elenco completo di ${dati.length} dipendenti previsti per ${mese}/${anno}? Controlla che nessuno manchi prima di blindare le righe.`)) return;
-    try { await workflowRequest(`${workflowPeriod('dipendente', mese, anno)}/elenco`, { method: 'POST', body: JSON.stringify({ ids: dati.map(r => r.idDipendente) }) }); await caricaElaborato(); }
-    catch (err) { window.alert(err.message); }
   };
 
   const toggleLock = async row => {
@@ -319,7 +312,7 @@ export default function ElaboratoDipendenti() {
       )
     },
     { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 95, sortable: false, render: row => isChiuso && !workflow.bloccati.includes(row.idDipendente) ? <span className="text-emerald-300">Mese storico</span> :
-      <button className={`rounded px-2 py-1 text-xs ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`} disabled={!workflow.elencoConfermato && !row.rigaBloccata} onClick={() => toggleLock(row)}>
+      <button className={`rounded px-2 py-1 text-xs ${row.rigaBloccata ? 'bg-amber-700' : 'bg-indigo-700'}`} onClick={() => toggleLock(row)}>
         {row.rigaBloccata ? 'Sblocca riga' : 'Blinda riga'}
       </button> },
     {
@@ -384,7 +377,6 @@ export default function ElaboratoDipendenti() {
             className="p-2 bg-slate-900/50 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-24"
           />
 
-          {!isChiuso && dati.length > 0 && <button onClick={confirmRoster} className="rounded-lg bg-slate-700 px-3 py-2 text-sm text-white">{workflow.elencoConfermato ? `Elenco confermato (${workflow.attesi.length}) · aggiorna` : 'Conferma elenco dipendenti'}</button>}
           {!isChiuso ? (
             <button 
               onClick={handleChiudiMese}

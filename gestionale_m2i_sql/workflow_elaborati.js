@@ -99,55 +99,6 @@ async function initialize() {
   }
 }
 
-async function expected(tipo, mese, anno, trx = knex) {
-  const confirmed = await trx('periodi_elaborati').where({ tipo, mese, anno }).first();
-  const rows = confirmed ? await trx('righe_attese_elaborati').where({ tipo, mese, anno }).select('soggetto_id') : [];
-  return { confirmed: Boolean(confirmed), ids: rows.map(r => r.soggetto_id) };
-}
-
-async function confirmRoster(tipo, mese, anno, ids) {
-  const p = period(tipo, mese, anno);
-  if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== 'string') || new Set(ids).size !== ids.length) {
-    throw new Error('Conferma un elenco non vuoto e senza duplicati.');
-  }
-  const current = await elaborati[p.cfg.read](p.mese, p.anno);
-  if (current.chiuso) throw new Error('Mese già chiuso.');
-  const available = new Set(current.dati.map(r => r[p.cfg.id]));
-  if (ids.length !== available.size || ids.some(id => !available.has(id))) {
-    throw new Error('L’elenco deve contenere tutte e sole le righe attualmente visibili nell’elaborato.');
-  }
-  await knex.transaction(async trx => {
-    const locked = await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id');
-    const previous = await expected(tipo, p.mese, p.anno, trx);
-    if (locked.length && previous.ids.some(id => !ids.includes(id))) throw new Error('Dopo la prima blindatura puoi aggiungere righe previste, ma non rimuoverle.');
-    if (locked.some(r => !ids.includes(r.soggetto_id))) throw new Error('Non puoi escludere una riga già blindata.');
-    await trx('righe_attese_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).del();
-    await trx('periodi_elaborati').insert({ tipo, mese: p.mese, anno: p.anno, elenco_confermato_at: new Date().toISOString() })
-      .onConflict(['tipo', 'mese', 'anno']).merge({ elenco_confermato_at: new Date().toISOString() });
-    await trx('righe_attese_elaborati').insert(ids.map(soggetto_id => ({ tipo, mese: p.mese, anno: p.anno, soggetto_id })));
-  });
-  return { confermato: true, righe: ids.length };
-}
-
-function detailSnapshot(tipo, mese, anno, row, timestamp) {
-  if (tipo === 'cliente') return {
-    mese, anno, cliente_id: row.idCliente, ragione_sociale: row.ragioneSociale,
-    valore_contrattuale: row.tariffaOraria, ore_lavorate: row.oreLavorate, base_imponibile: row.baseImponibile,
-    maggiorazioni: row.maggiorazioni, sconti: row.sconti, imponibile: row.imponibile,
-    importo_iva: row.importoIva, importo_totale: row.importoTotale,
-    nota_fissa_storica: row.notaFissa || '', nota_mensile_storica: row.notaMensile || '',
-    data_chiusura: timestamp, chiuso_da: 'LocalServer'
-  };
-  return {
-    mese, anno, dipendente_id: row.idDipendente, cognome_nome: row.cognomeNome,
-    paga_oraria_reale: row.pagaOraria, ore_lavorate: row.oreLavorate, paga_lavorato: row.pagaLavorato,
-    paga_ferie_permessi_malattia: row.pagaFPM || 0, maggiorazioni: row.maggiorazioni,
-    detrazioni: row.detrazioni, stipendio_netto: row.stipendioNetto,
-    nota_fissa_storica: row.notaFissa || '', nota_mensile_storica: row.notaMensile || '',
-    data_chiusura: timestamp, chiuso_da: 'LocalServer'
-  };
-}
-
 async function lockRow(tipo, mese, anno, subjectId) {
   const p = period(tipo, mese, anno);
   if (typeof subjectId !== 'string' || !subjectId) throw new Error('Riga non valida.');
@@ -156,26 +107,11 @@ async function lockRow(tipo, mese, anno, subjectId) {
     if (current.chiuso) throw new Error('Il mese è già chiuso.');
     const row = current.dati.find(r => r[p.cfg.id] === subjectId);
     if (!row) throw new Error('Riga non presente nell’elaborato.');
-    const now = new Date().toISOString();
-    const roster = await expected(tipo, p.mese, p.anno, trx);
-    if (!roster.confirmed || !roster.ids.includes(subjectId)) throw new Error('Conferma prima l’elenco completo delle righe previste.');
     if (await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno, soggetto_id: subjectId }).first()) {
       throw new Error('Riga già blindata.');
     }
-    await trx('righe_bloccate_elaborati').insert({ tipo, mese: p.mese, anno: p.anno, soggetto_id: subjectId, snapshot: JSON.stringify(row), bloccata_at: now });
-    const locked = await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno });
-    const allLocked = roster.ids.every(id => locked.some(r => r.soggetto_id === id));
-    if (allLocked) {
-      const currentIds = new Set(current.dati.map(r => r[p.cfg.id]));
-      if (currentIds.size !== roster.ids.length || roster.ids.some(id => !currentIds.has(id))) {
-        throw new Error('L’elenco è cambiato dopo la conferma: aggiornalo prima di chiudere il mese.');
-      }
-      await trx(p.cfg.header).insert({ mese: p.mese, anno: p.anno, stato: 'Chiuso', data_chiusura: now, chiuso_da: 'LocalServer' });
-      for (const item of locked) {
-        await trx(p.cfg.detail).insert(detailSnapshot(tipo, p.mese, p.anno, JSON.parse(item.snapshot), item.bloccata_at));
-      }
-    }
-    return { bloccata: true, meseChiuso: allLocked };
+    await trx('righe_bloccate_elaborati').insert({ tipo, mese: p.mese, anno: p.anno, soggetto_id: subjectId, snapshot: JSON.stringify(row), bloccata_at: new Date().toISOString() });
+    return { bloccata: true, meseChiuso: false };
   });
 }
 
@@ -221,9 +157,8 @@ async function lockedRows(tipo, mese, anno, connection = knex) {
 
 async function status(tipo, mese, anno) {
   const p = period(tipo, mese, anno);
-  const roster = await expected(tipo, p.mese, p.anno);
   const locked = await knex('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id');
-  return { elencoConfermato: roster.confirmed, attesi: roster.ids, bloccati: locked.map(r => r.soggetto_id) };
+  return { bloccati: locked.map(r => r.soggetto_id) };
 }
 
 async function accountingRows(tipo, mese, anno) {
@@ -330,4 +265,4 @@ async function registerPayment({ mese, anno, dipendenteId, userId, confermaStori
   return { id };
 }
 
-module.exports = { initialize, confirmRoster, lockRow, unlockRow, lockedRows, status, accountingRows, markInvoiceSent, registerInvoice, registerPayment, period };
+module.exports = { initialize, lockRow, unlockRow, lockedRows, status, accountingRows, markInvoiceSent, registerInvoice, registerPayment, period };
