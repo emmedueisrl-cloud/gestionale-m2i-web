@@ -81,17 +81,17 @@ async function elencaOperatori(includiCessati = true) {
   const [righe, clienti] = await Promise.all([
     query,
     knex('clienti')
-      .select('id', 'ragione_sociale', 'operatore')
-      .where(q => q.where('attivo', 'SI').orWhereNull('attivo').orWhere('attivo', ''))
-      .andWhere(q => q.where('cestinato', 0).orWhereNull('cestinato'))
+      .select('id', 'ragione_sociale', 'operatore', 'attivo', 'cestinato')
       .orderByRaw('ragione_sociale COLLATE NOCASE')
   ]);
   return righe.map(row => {
     const chiave = String(row.nome).trim().toLocaleLowerCase('it-IT');
-    const clientiAttivi = clienti
-      .filter(cliente => String(cliente.operatore || '').trim().toLocaleLowerCase('it-IT') === chiave)
+    const assegnati = clienti.filter(cliente => String(cliente.operatore || '').trim().toLocaleLowerCase('it-IT') === chiave);
+    const clientiAttivi = assegnati
+      .filter(cliente => cliente.attivo === 'SI' || !cliente.attivo)
+      .filter(cliente => !cliente.cestinato)
       .map(cliente => ({ id: cliente.id, ragioneSociale: cliente.ragione_sociale }));
-    return { ...row, attivo: Boolean(row.attivo), clientiAttivi };
+    return { ...row, attivo: Boolean(row.attivo), clientiAttivi, clientiAssegnati: assegnati.length };
   });
 }
 
@@ -108,6 +108,21 @@ async function creaOperatore(nome) {
     const [id] = await trx('operatori').insert({ nome: pulito, attivo: 1 });
     await trx('operatori_periodi').insert({ operatore_id: id, data_inizio: null, data_fine: null });
     return { id, nome: pulito, attivo: true, data_cessazione: null };
+  });
+}
+
+async function eliminaOperatore(id) {
+  await ensureTables();
+  const identificativo = Number(id);
+  if (!Number.isSafeInteger(identificativo) || identificativo <= 0) throw new Error('Operatore non valido.');
+  return knex.transaction(async trx => {
+    const operatore = await trx('operatori').where({ id: identificativo }).first();
+    if (!operatore) throw new Error('Operatore non trovato.');
+    const assegnato = await trx('clienti').whereRaw('TRIM(operatore) = ? COLLATE NOCASE', [operatore.nome.trim()]).first('id');
+    if (assegnato) throw new Error('Operatore assegnato a un cliente: rimuovi prima l’Outbound dalla scheda cliente.');
+    await trx('operatori_periodi').where({ operatore_id: identificativo }).del();
+    await trx('operatori').where({ id: identificativo }).del();
+    return { success: true };
   });
 }
 
@@ -162,4 +177,4 @@ async function nomiAttiviNelMese(mese, anno) {
   return new Set(righe.map(r => String(r.nome).trim().toLocaleLowerCase('it-IT')));
 }
 
-module.exports = { ensureTables, elencaOperatori, creaOperatore, validaOutbound, cessaOperatore, riattivaOperatore, nomiAttiviNelMese };
+module.exports = { ensureTables, elencaOperatori, creaOperatore, eliminaOperatore, validaOutbound, cessaOperatore, riattivaOperatore, nomiAttiviNelMese };

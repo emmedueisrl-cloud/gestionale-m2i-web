@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Plus, RefreshCw, UserCheck, UserX } from 'lucide-react';
-import { cessaOperatore, creaOperatore, elencaOperatori, riattivaOperatore } from '../../api/operatori';
+import { ChevronDown, ChevronRight, Plus, RefreshCw, Trash2, UserCheck, UserX } from 'lucide-react';
+import { cessaOperatore, creaOperatore, eliminaOperatore, elencaOperatori, riattivaOperatore } from '../../api/operatori';
 
 const oggi = () => new Date().toISOString().slice(0, 10);
 
@@ -36,6 +36,12 @@ export default function Operatori() {
     if (data) esegui(() => riattivaOperatore(operatore.id, data));
   };
 
+  const elimina = operatore => {
+    if (operatore.clientiAssegnati) return;
+    if (!window.confirm(`Eliminare definitivamente «${operatore.nome}» dalla lista degli Outbound? L'operazione non può essere annullata.`)) return;
+    esegui(() => eliminaOperatore(operatore.id));
+  };
+
   const cambiaEspansione = id => setEspansi(correnti => {
     const aggiornati = new Set(correnti);
     if (aggiornati.has(id)) aggiornati.delete(id);
@@ -56,14 +62,14 @@ export default function Operatori() {
       </form>
 
       <div className="overflow-hidden rounded-xl border border-slate-700">
-        <div className="grid grid-cols-[1fr_150px_190px] bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+        <div className="grid grid-cols-[1fr_150px_220px] bg-slate-900 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-400">
           <span>Operatore / clienti attivi</span><span>Stato</span><span className="text-right">Azioni</span>
         </div>
         {operatori.map(operatore => {
           const aperto = espansi.has(operatore.id);
           return (
             <div key={operatore.id} className="border-t border-slate-700">
-              <div className="grid grid-cols-[1fr_150px_190px] items-center px-4 py-3">
+              <div className="grid grid-cols-[1fr_150px_220px] items-center px-4 py-3">
                 <button type="button" onClick={() => cambiaEspansione(operatore.id)} className="flex items-center gap-3 text-left">
                   {aperto ? <ChevronDown className="h-4 w-4 text-indigo-400" /> : <ChevronRight className="h-4 w-4 text-indigo-400" />}
                   <span>
@@ -74,12 +80,13 @@ export default function Operatori() {
                 <span className={operatore.attivo ? 'text-emerald-400' : 'text-amber-400'}>
                   {operatore.attivo ? 'Attivo' : `Cessato${operatore.data_cessazione ? ` · ${operatore.data_cessazione}` : ''}`}
                 </span>
-                <div className="text-right">
+                <div className="flex items-center justify-end gap-1">
                   {operatore.attivo ? (
                     <button disabled={busy} onClick={() => cessa(operatore)} className="inline-flex items-center gap-2 rounded-lg border border-amber-500/40 px-3 py-2 text-sm text-amber-300 hover:bg-amber-500/10"><UserX className="h-4 w-4" />Cessa</button>
                   ) : (
                     <button disabled={busy} onClick={() => riattiva(operatore)} className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 px-3 py-2 text-sm text-emerald-300 hover:bg-emerald-500/10"><RefreshCw className="h-4 w-4" />Riattiva</button>
                   )}
+                  <button type="button" disabled={busy || Boolean(operatore.clientiAssegnati)} onClick={() => elimina(operatore)} title={operatore.clientiAssegnati ? 'Rimuovi prima questo Outbound dalle schede cliente' : `Elimina ${operatore.nome}`} aria-label={`Elimina ${operatore.nome}`} className="inline-flex items-center rounded-lg border border-rose-500/40 p-2 text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
               {aperto && (
@@ -100,7 +107,7 @@ export default function Operatori() {
         })}
         {!operatori.length && <div className="p-8 text-center text-slate-400"><UserCheck className="mx-auto mb-2 h-6 w-6" />Nessun operatore presente.</div>}
       </div>
-      <p className="text-xs text-slate-400">Un operatore cessato resta nei riepiloghi dei mesi in cui è stato attivo almeno un giorno.</p>
+      <p className="text-xs text-slate-400">Elimina rimuove definitivamente un Outbound solo se non è assegnato a nessuna scheda cliente. Cessa lo mantiene nella lista e nei riepiloghi dei mesi in cui era attivo.</p>
     </div>
   );
 }

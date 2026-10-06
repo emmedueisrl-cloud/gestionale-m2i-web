@@ -68,3 +68,17 @@ test('la cessazione vale dal mese successivo e la riattivazione riapre lo storic
   await operatori.riattivaOperatore(operatore.id, '2026-12-10');
   assert.equal((await operatori.nomiAttiviNelMese(12, 2026)).has('operatore storico'), true);
 });
+
+test('elimina un Outbound solo dopo averlo rimosso da tutte le schede cliente', async () => {
+  const operatore = (await operatori.elencaOperatori()).find(item => item.nome === 'Valore Outbound');
+  assert.equal(operatore.clientiAssegnati, 1);
+  await assert.rejects(operatori.eliminaOperatore(operatore.id), /assegnato a un cliente/);
+  await knex('clienti').where({ id: 'C1' }).update({ attivo: 'Cessato' });
+  assert.equal((await operatori.elencaOperatori()).find(item => item.id === operatore.id).clientiAssegnati, 1);
+  await assert.rejects(operatori.eliminaOperatore(operatore.id), /assegnato a un cliente/);
+  await knex('clienti').where({ id: 'C1' }).update({ operatore: '' });
+  assert.deepEqual(await operatori.eliminaOperatore(operatore.id), { success: true });
+  assert.equal((await operatori.elencaOperatori()).some(item => item.id === operatore.id), false);
+  assert.equal(await knex('operatori_periodi').where({ operatore_id: operatore.id }).count('* as totale').first().then(r => r.totale), 0);
+  assert.equal((await operatori.creaOperatore('Valore Outbound')).nome, 'Valore Outbound');
+});
