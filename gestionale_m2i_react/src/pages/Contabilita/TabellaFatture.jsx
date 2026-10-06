@@ -1,19 +1,14 @@
-import { Fragment, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, CircleAlert, FilePlus2, Send, X } from 'lucide-react';
 
 const columns = [
-  ['Cliente (ragione sociale)', '16%'],
-  ['Ore', '5%'],
-  ['Sconti/\nMaggiorazioni', '9%'],
-  ['Totale imponibile', '8%'],
-  ['Regime fiscale', '8%'],
-  ['% tassa', '5%'],
-  ['Tassa', '6%'],
-  ['Totale\nfattura', '8%'],
-  ['Costo personale', '9%'],
-  ['Residuo senza\nstipendi', '9%'],
-  ['Tariffa oraria', '7%'],
-  ['Azioni', '10%']
+  ['Cliente (ragione sociale)', '24%'],
+  ['Totale imponibile', '13%'],
+  ['Regime fiscale', '12%'],
+  ['Tassa', '10%'],
+  ['Totale\nfattura', '13%'],
+  ['Note', '20%'],
+  ['Azioni', '8%']
 ];
 
 const differenceCents = row => Math.round((Number(row.importoRealmenteFatturato) || 0) * 100) - Math.round((Number(row.importoTotale) || 0) * 100);
@@ -33,7 +28,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
       <span className="rounded-full bg-slate-100 px-3 py-1 text-[17px] font-semibold text-slate-700">{righe.length}</span>
     </div>
     <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-sm">
-      <table className="w-full min-w-[1400px] table-fixed border-collapse text-center text-[13px] text-slate-800">
+      <table className="w-full min-w-[900px] table-fixed border-collapse text-center text-[13px] text-slate-800">
         <colgroup>{columns.map(([label, width]) => <col key={label} style={{ width }} />)}</colgroup>
         <thead className="bg-slate-100 text-slate-900"><tr>
           {columns.map(([label]) => <th key={label} scope="col" className="whitespace-pre-line border-b border-r border-slate-300 px-2 py-3 align-middle font-semibold uppercase last:border-r-0">{label}</th>)}
@@ -42,40 +37,34 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
           {!righe.length && <tr><td colSpan={columns.length} className="px-4 py-6 text-center text-sm text-slate-600">{vuoto}</td></tr>}
           {righe.map((row, index) => {
             const fatture = row.fatture || [];
-            const costo = Number(row.costoPersonale) || 0;
             const totale = Number(row.importoTotale) || 0;
             const tassa = Number.isFinite(Number(row.importoTassa)) ? Number(row.importoTassa) : totale - (Number(row.imponibile) || 0);
-            const residuo = Number.isFinite(Number(row.residuoSenzaStipendi)) ? Number(row.residuoSenzaStipendi) : totale - costo;
-            const aliquota = Number(row.percentualeTassaEffettiva) || 0;
             const registered = fatture.length > 0;
             const hasDifference = registered && Math.abs(differenceCents(row)) > 20;
-            const hasNotes = Boolean(row.notaFissa || row.notaMensile || row.noteMaggiorazioni || row.noteSconti);
-            const cell = `border-r border-r-slate-200 px-2 py-1 align-middle last:border-r-0 ${hasNotes ? '' : 'border-b-2 border-b-slate-400'}`;
+            const cell = 'border-r border-r-slate-200 border-b-2 border-b-slate-400 px-2 py-2 align-middle last:border-r-0';
             const numberCell = `${cell} whitespace-nowrap text-[16px]`;
             const rowColor = elaborate
               ? (index % 2 ? 'bg-green-400' : 'bg-emerald-200')
               : (index % 2 ? 'bg-sky-200' : 'bg-white');
             const paroleNome = String(row.ragioneSociale || '').trim().split(/\s+/);
-            return <Fragment key={row.idCliente}>
-            <tr className={`${rowColor} ${hasNotes ? 'h-16' : 'h-28'}`}>
-              <td rowSpan={hasNotes ? 2 : undefined} className={`${cell} break-words border-b-2 border-b-slate-400`}>
+            return <tr key={row.idCliente} className={`${rowColor} h-24`}>
+              <td className={`${cell} break-words`}>
                 <div className="max-h-24 overflow-y-auto">
                 <div className="font-semibold text-slate-900"><span className="text-[17px]">{paroleNome.slice(0, 3).join(' ')}</span>{paroleNome.length > 3 && <> <span>{paroleNome.slice(3).join(' ')}</span></>}</div>
                 </div>
               </td>
-              <td className={numberCell}>{Number(row.oreLavorate || 0).toLocaleString('it-IT', { maximumFractionDigits: 2 })}</td>
-              <td className={numberCell}>
-                {Number(row.maggiorazioni || 0) || Number(row.sconti || 0) ? <><div>+ {euro(row.maggiorazioni)}</div><div>- {euro(row.sconti)}</div></> : '0'}
-              </td>
               <td className={numberCell}>{euro(row.imponibile)}</td>
               <td className={`${cell} break-words`}>{row.tipoTassazione || 'IVA'}</td>
-              <td className={numberCell}>{aliquota.toLocaleString('it-IT', { maximumFractionDigits: 2 })}%</td>
               <td className={numberCell}>{euro(tassa)}</td>
               <td className={`${numberCell} font-semibold`}>{euro(totale)}</td>
-              <td className={numberCell}>{euro(costo)}<span className="block text-xs font-semibold" title="Definitivo quando sono caricate tutte le buste paga dei dipendenti che hanno lavorato per il cliente">{row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}</span></td>
-              <td className={`${numberCell} font-semibold ${residuo < 0 ? 'text-red-700' : 'text-emerald-800'}`}>{euro(residuo)}<span className="block text-xs">{row.costoPersonaleDefinitivo === true ? 'Definitivo' : 'Provvisorio'}</span></td>
-              <td className={numberCell}>{euro(row.tariffaOraria)}</td>
-              <td rowSpan={hasNotes ? 2 : undefined} className={`${cell} border-b-2 border-b-slate-400`}>
+              <td className={`${cell} break-words px-3 text-left text-[12px] text-slate-800`}>
+                <div className="max-h-28 space-y-1 overflow-y-auto whitespace-pre-wrap">
+                  {row.notaFissa && <p><span className="font-semibold">Nota fissa:</span> {row.notaFissa}</p>}
+                  {row.notaMensile && <p><span className="font-semibold">Nota del mese:</span> {row.notaMensile}</p>}
+                  {!row.notaFissa && !row.notaMensile && <span className="text-slate-500">—</span>}
+                </div>
+              </td>
+              <td className={cell}>
                 <div className="flex items-center justify-center gap-2">
                   {registered ? <>
                     <span role="status" title="Fattura registrata!" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-2 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Fattura registrata!</span></span>
@@ -90,20 +79,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                   </>}
                 </div>
               </td>
-            </tr>
-            {hasNotes && <tr className={`${rowColor} h-12`}>
-              <td colSpan={columns.length - 2} className="border-b-2 border-b-slate-400 px-4 py-1 text-left align-middle font-semibold text-slate-800">
-                <div className="h-9 overflow-y-auto break-words rounded-md bg-white/35 px-3 py-1">
-                  <div className="space-y-1">
-                    {row.notaFissa && <p>Nota fissa: {row.notaFissa}</p>}
-                    {row.notaMensile && <p>Nota del mese: {row.notaMensile}</p>}
-                    {row.noteMaggiorazioni && <p>Maggiorazione: {row.noteMaggiorazioni}</p>}
-                    {row.noteSconti && <p>Sconto: {row.noteSconti}</p>}
-                  </div>
-                </div>
-              </td>
-            </tr>}
-            </Fragment>;
+            </tr>;
           })}
         </tbody>
       </table>
@@ -123,9 +99,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
           <h4 className="font-bold">Note</h4>
           {detailsRow.notaFissa && <p>Nota fissa: {detailsRow.notaFissa}</p>}
           {detailsRow.notaMensile && <p>Nota del mese: {detailsRow.notaMensile}</p>}
-          {detailsRow.noteMaggiorazioni && <p>Maggiorazione: {detailsRow.noteMaggiorazioni}</p>}
-          {detailsRow.noteSconti && <p>Sconto: {detailsRow.noteSconti}</p>}
-          {!detailsRow.notaFissa && !detailsRow.notaMensile && !detailsRow.noteMaggiorazioni && !detailsRow.noteSconti && <p>Nessuna nota.</p>}
+          {!detailsRow.notaFissa && !detailsRow.notaMensile && <p>Nessuna nota.</p>}
         </div>
         <div className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
           <h4 className="font-bold">Fatture e allegati</h4>
