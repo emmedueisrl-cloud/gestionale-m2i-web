@@ -24,18 +24,23 @@ export default function Provvigioni() {
   const [ricerca, setRicerca] = useState('');
   const [espansi, setEspansi] = useState(new Set());
   const [isLoading, setIsLoading] = useState(false);
+  const [erroreCaricamento, setErroreCaricamento] = useState('');
 
   useEffect(() => {
     let richiestaAttiva = true;
 
     async function caricaElaborato() {
       setIsLoading(true);
+      setErroreCaricamento('');
       try {
         const risposta = await calcolaProvvigioni(mese, anno);
         if (richiestaAttiva) setOperatori(risposta || []);
       } catch (errore) {
         console.error(errore);
-        if (richiestaAttiva) setOperatori([]);
+        if (richiestaAttiva) {
+          setOperatori([]);
+          setErroreCaricamento(errore.message || 'Impossibile caricare le provvigioni.');
+        }
       } finally {
         if (richiestaAttiva) setIsLoading(false);
       }
@@ -128,7 +133,12 @@ export default function Provvigioni() {
         </div>
 
         <div className="h-full overflow-auto p-4 space-y-3">
-          {!isLoading && operatoriFiltrati.length === 0 && (
+          {!isLoading && erroreCaricamento && (
+            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+              Errore nel caricamento delle provvigioni: {erroreCaricamento}
+            </div>
+          )}
+          {!isLoading && !erroreCaricamento && operatoriFiltrati.length === 0 && (
             <div className="py-16 text-center text-slate-500">
               Nessun operatore con clienti fatturati nel periodo selezionato.
             </div>

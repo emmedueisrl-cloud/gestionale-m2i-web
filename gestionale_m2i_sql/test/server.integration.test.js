@@ -212,6 +212,9 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.match((await sentUnlock.json()).error, /Fattura inviata/);
     const accounting = await fetch(`${base}/api/contabilita/cliente/2026/9`, { headers: { Cookie: cookie } });
     assert.equal(accounting.status, 200);
+    const commissions = await fetch(`${base}/api/contabilita/provvigioni/2026/9`, { headers: { Cookie: cookie } });
+    assert.equal(commissions.status, 200, `La rotta provvigioni non deve essere intercettata da /contabilita/:tipo/:anno/:mese: ${await commissions.clone().text()}`);
+    assert.deepEqual(await commissions.json(), []);
     const sentRow = (await accounting.json()).find(row => row.idCliente === 'C_TEST');
     assert.ok(sentRow?.fatturaInviataAt);
     assert.deepEqual(sentRow.fatture, []);

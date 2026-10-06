@@ -173,6 +173,14 @@ app.get('/api/contabilita/fatture/:id/allegato', async (req, res) => {
     res.download(file, `Fattura_${invoice.id}${path.extname(file)}`);
   } catch (error) { res.status(500).send(error.message); }
 });
+// La rotta specifica va registrata prima di /:tipo/:anno/:mese.
+app.get('/api/contabilita/provvigioni/:anno/:mese', async (req, res) => {
+  try {
+    const { anno, mese } = req.params;
+    workflowElaborati.period('cliente', mese, anno);
+    res.json(await api.ottieniElaboratoProvvigioni(mese, anno));
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 app.get(`/api/contabilita/${tipo}/${anno}/${mese}`, handleWorkflow(req =>
   workflowElaborati.accountingRows(req.params.tipo, req.params.mese, req.params.anno)));
 app.get(`/api/contabilita/${tipo}/${anno}/${mese}/mancanti`, handleWorkflow(req =>
@@ -570,14 +578,6 @@ app.get('/api/contabilita/pdf/provvigioni/:anno/:mese', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="Riepilogo_Provvigioni_${mese}_${anno}.pdf"`);
     res.send(await doc.getBuffer());
   } catch (error) { res.status(400).send(error.message); }
-});
-
-app.get('/api/contabilita/provvigioni/:anno/:mese', async (req, res) => {
-  try {
-    const { anno, mese } = req.params;
-    workflowElaborati.period('cliente', mese, anno);
-    res.json(await api.ottieniElaboratoProvvigioni(mese, anno));
-  } catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.get(['/api/contabilita/pdf/:tipo/:anno/:mese', '/api/contabilita/pdf/:tipo/:anno/:mese/:id'], async (req, res) => {
