@@ -24,19 +24,33 @@ async function ensureTables() {
       });
     }
 
-    const esistenti = await knex('operatori').select('nome');
-    const noti = new Set(esistenti.map(r => String(r.nome).trim().toLocaleLowerCase('it-IT')));
-    const clienti = await knex('clienti').select('operatore', 'operatore_assegnato');
-    for (const cliente of clienti) {
-      for (const valore of [cliente.operatore, cliente.operatore_assegnato]) {
-        const nome = String(valore || '').trim();
-        const chiave = nome.toLocaleLowerCase('it-IT');
-        if (!nome || noti.has(chiave)) continue;
-        const [id] = await knex('operatori').insert({ nome, attivo: 1 });
-        await knex('operatori_periodi').insert({ operatore_id: id, data_inizio: null, data_fine: null });
-        noti.add(chiave);
-      }
+    // Reset richiesto per l'avvio del nuovo metodo Outbound. La marcatura nel DB
+    // lo esegue una sola volta, anche dopo futuri deploy e riavvii.
+    if (!await knex.schema.hasTable('operatori_migrazioni')) {
+      await knex.schema.createTable('operatori_migrazioni', table => {
+        table.text('chiave').primary();
+        table.text('eseguita_at').notNullable();
+      });
     }
+    if (!await knex.schema.hasTable('operatori_assegnazioni_pre_reset')) {
+      await knex.schema.createTable('operatori_assegnazioni_pre_reset', table => {
+        table.text('cliente_id').primary();
+        table.text('outbound');
+        table.text('operatore_assegnato');
+        table.text('salvato_at').notNullable();
+      });
+    }
+    await knex.transaction(async trx => {
+      const chiave = 'reset_outbound_clienti_2026_10';
+      if (await trx('operatori_migrazioni').where({ chiave }).first()) return;
+      await trx.raw(`INSERT INTO operatori_assegnazioni_pre_reset
+        (cliente_id, outbound, operatore_assegnato, salvato_at)
+        SELECT id, operatore, operatore_assegnato, datetime('now') FROM clienti
+        WHERE TRIM(COALESCE(operatore, '')) <> ''
+           OR TRIM(COALESCE(operatore_assegnato, '')) <> ''`);
+      await trx('clienti').update({ operatore: '', operatore_assegnato: '' });
+      await trx('operatori_migrazioni').insert({ chiave, eseguita_at: new Date().toISOString() });
+    });
 
     const senzaPeriodo = await knex('operatori as o')
       .leftJoin('operatori_periodi as p', 'p.operatore_id', 'o.id')
@@ -67,7 +81,7 @@ async function elencaOperatori(includiCessati = true) {
   const [righe, clienti] = await Promise.all([
     query,
     knex('clienti')
-      .select('id', 'ragione_sociale', 'operatore', 'operatore_assegnato')
+      .select('id', 'ragione_sociale', 'operatore')
       .where(q => q.where('attivo', 'SI').orWhereNull('attivo').orWhere('attivo', ''))
       .andWhere(q => q.where('cestinato', 0).orWhereNull('cestinato'))
       .orderByRaw('ragione_sociale COLLATE NOCASE')
@@ -75,7 +89,7 @@ async function elencaOperatori(includiCessati = true) {
   return righe.map(row => {
     const chiave = String(row.nome).trim().toLocaleLowerCase('it-IT');
     const clientiAttivi = clienti
-      .filter(cliente => String(cliente.operatore || cliente.operatore_assegnato || '').trim().toLocaleLowerCase('it-IT') === chiave)
+      .filter(cliente => String(cliente.operatore || '').trim().toLocaleLowerCase('it-IT') === chiave)
       .map(cliente => ({ id: cliente.id, ragioneSociale: cliente.ragione_sociale }));
     return { ...row, attivo: Boolean(row.attivo), clientiAttivi };
   });
@@ -95,6 +109,15 @@ async function creaOperatore(nome) {
     await trx('operatori_periodi').insert({ operatore_id: id, data_inizio: null, data_fine: null });
     return { id, nome: pulito, attivo: true, data_cessazione: null };
   });
+}
+
+async function validaOutbound(nome, precedente = '') {
+  const pulito = String(nome || '').trim();
+  if (!pulito || pulito.toLocaleLowerCase('it-IT') === String(precedente || '').trim().toLocaleLowerCase('it-IT')) return pulito;
+  await ensureTables();
+  const operatore = await knex('operatori').whereRaw('nome = ? COLLATE NOCASE', [pulito]).first();
+  if (!operatore || !operatore.attivo) throw new Error('Seleziona un Outbound attivo da Impostazioni → Operatori.');
+  return operatore.nome;
 }
 
 async function cessaOperatore(id, dataCessazione) {
@@ -139,4 +162,4 @@ async function nomiAttiviNelMese(mese, anno) {
   return new Set(righe.map(r => String(r.nome).trim().toLocaleLowerCase('it-IT')));
 }
 
-module.exports = { ensureTables, elencaOperatori, creaOperatore, cessaOperatore, riattivaOperatore, nomiAttiviNelMese };
+module.exports = { ensureTables, elencaOperatori, creaOperatore, validaOutbound, cessaOperatore, riattivaOperatore, nomiAttiviNelMese };

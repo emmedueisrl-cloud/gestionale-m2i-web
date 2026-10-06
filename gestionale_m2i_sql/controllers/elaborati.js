@@ -463,28 +463,38 @@ module.exports = {
   async ottieniElaboratoProvvigioni(mese, anno) {
     const { nomiAttiviNelMese } = require('../operatori');
     const operatoriAttivi = await nomiAttiviNelMese(mese, anno);
+    const meseChiuso = await knex('mesi_chiusi_clienti').where({ mese, anno }).first();
+    const importi = new Map();
+    if (meseChiuso) {
+      const righe = await knex('dettaglio_mesi_chiusi_clienti')
+        .select('cliente_id', 'imponibile').where({ mese, anno });
+      for (const riga of righe) importi.set(riga.cliente_id, Number(riga.imponibile) || 0);
+    } else {
+      const fatture = await knex('fatture')
+        .select('cliente_id').sum('importo_imponibile as imponibile')
+        .whereRaw("strftime('%m', data_fattura) = ?", [String(mese).padStart(2, '0')])
+        .whereRaw("strftime('%Y', data_fattura) = ?", [String(anno)])
+        .groupBy('cliente_id');
+      for (const fattura of fatture) importi.set(fattura.cliente_id, Number(fattura.imponibile) || 0);
+      const righeBlindate = await knex('righe_bloccate_elaborati')
+        .select('soggetto_id', 'snapshot').where({ tipo: 'cliente', mese, anno });
+      for (const riga of righeBlindate) {
+        const snapshot = JSON.parse(riga.snapshot);
+        importi.set(riga.soggetto_id, Number(snapshot.imponibile) || 0);
+      }
+    }
     const clienti = await knex('clienti')
-      .select('id', 'ragione_sociale', 'operatore', 'operatore_assegnato')
-      .where(function() { this.where('cestinato', 0).orWhereNull('cestinato'); });
+      .select('id', 'ragione_sociale', 'operatore');
       
     const operatori = new Map();
     
     for (const c of clienti) {
-      const meseStr = String(mese).padStart(2, '0');
-      const annoStr = String(anno);
-      
-      const invInfo = await knex('fatture')
-        .sum('importo_imponibile as s')
-        .where('cliente_id', c.id)
-        .whereRaw("strftime('%m', data_fattura) = ?", [meseStr])
-        .whereRaw("strftime('%Y', data_fattura) = ?", [annoStr])
-        .first();
-      const imponibile = invInfo ? invInfo.s || 0 : 0;
+      const imponibile = importi.get(c.id) || 0;
       // La sezione provvigioni mostra esclusivamente gli operatori collegati
       // a clienti che hanno realmente fatturato nel periodo selezionato.
       if (Number(imponibile) <= 0) continue;
 
-      const operatore = String(c.operatore || c.operatore_assegnato || '').trim();
+      const operatore = String(c.operatore || '').trim();
       if (!operatore) continue;
       if (!operatoriAttivi.has(operatore.toLocaleLowerCase('it-IT'))) continue;
 

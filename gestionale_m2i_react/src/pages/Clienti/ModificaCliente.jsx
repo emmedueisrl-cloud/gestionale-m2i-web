@@ -98,7 +98,7 @@ function ModificaCliente() {
 
   const handleCaricaDati = async (id) => {
     if (!id) {
-      setDati({ id: '', ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '', cap: '', citta: '', provincia: '', pec: '', sdi: '', titolare: '', telefonoTitolare: '', referente: '', ruoloReferente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '', condizioniPagamento: '', note: '', noteFisseElaborato: '', possessoChiavi: 'NO', copie: 0, inPossessoDi: '', noteChiavi: '', operatoreAssegnato: '' });
+      setDati({ id: '', ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '', cap: '', citta: '', provincia: '', pec: '', sdi: '', titolare: '', telefonoTitolare: '', referente: '', ruoloReferente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '', condizioniPagamento: '', note: '', noteFisseElaborato: '', possessoChiavi: 'NO', copie: 0, inPossessoDi: '', noteChiavi: '', operatore: '' });
       setFotoEsistenti([]);
       setNuoveFoto([]);
       setNuovePreview([]);
@@ -161,7 +161,6 @@ function ModificaCliente() {
           inPossessoDi: datiCliente.in_possesso_di || '',
           noteChiavi: datiCliente.note_chiavi || '',
           operatore: datiCliente.operatore || '',
-          operatoreAssegnato: datiCliente.operatore_assegnato || '',
           commerciale: datiCliente.commerciale || '',
           quotazioneImporto: datiCliente.quotazione_importo || '',
           quotazioneTipo: datiCliente.quotazione_tipo || 'Mensile',
@@ -703,11 +702,6 @@ function ModificaCliente() {
                   <option value="Ri.Ba. 30gg DF">Ri.Ba. 30gg DF</option>
                   <option value="Ri.Ba. 60gg DF">Ri.Ba. 60gg DF</option>
                 </select>
-              </div>
-
-              <div className="col-span-1 md:col-span-2">
-                <label className="block text-sm font-medium text-slate-200 mb-1 text-indigo-400">Operatore Assegnato</label>
-                <OperatoreSelect name="operatoreAssegnato" value={dati.operatoreAssegnato} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" />
               </div>
 
               <div className="col-span-1 md:col-span-2">

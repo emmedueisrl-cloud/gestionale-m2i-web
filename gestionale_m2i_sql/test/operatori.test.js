@@ -14,21 +14,54 @@ before(async () => {
     await new Promise((resolve, reject) => connection.exec(fs.readFileSync(path.join(__dirname, '../schema.sql'), 'utf8'),
       error => error ? reject(error) : resolve()));
   } finally { await knex.client.releaseConnection(connection); }
-  await knex('clienti').insert({ id: 'C1', ragione_sociale: 'Cliente', partita_iva: 'P1', operatore: 'Operatore Storico' });
+  await knex('clienti').insert([
+    { id: 'C1', ragione_sociale: 'Cliente', partita_iva: 'P1', operatore: 'Valore Outbound', operatore_assegnato: 'Vecchio valore diverso' },
+    { id: 'C2', ragione_sociale: 'Cliente storico', partita_iva: 'P2', operatore: '', operatore_assegnato: 'Operatore Storico' }
+  ]);
   await operatori.ensureTables();
 });
 
 after(() => knex.destroy());
 
-test('importa gli operatori già presenti nelle schede cliente', async () => {
+test('il primo avvio azzera le assegnazioni, ne conserva una copia e non aggiunge operatori', async () => {
+  assert.deepEqual(await operatori.elencaOperatori(), []);
+  const azzerati = await knex('clienti').select('id', 'operatore', 'operatore_assegnato').orderBy('id');
+  assert.deepEqual(azzerati, [
+    { id: 'C1', operatore: '', operatore_assegnato: '' },
+    { id: 'C2', operatore: '', operatore_assegnato: '' }
+  ]);
+  const copie = await knex('operatori_assegnazioni_pre_reset').select('cliente_id', 'outbound', 'operatore_assegnato').orderBy('cliente_id');
+  assert.deepEqual(copie, [
+    { cliente_id: 'C1', outbound: 'Valore Outbound', operatore_assegnato: 'Vecchio valore diverso' },
+    { cliente_id: 'C2', outbound: '', operatore_assegnato: 'Operatore Storico' }
+  ]);
+  assert.equal(await knex('operatori_migrazioni').count('* as totale').first().then(r => r.totale), 1);
+
+  await operatori.creaOperatore('Valore Outbound');
+  await operatori.creaOperatore('Operatore Storico');
+  await knex('clienti').where({ id: 'C1' }).update({ operatore: 'Valore Outbound' });
+  await knex('clienti').where({ id: 'C2' }).update({ operatore: 'Operatore Storico' });
   const elenco = await operatori.elencaOperatori();
-  assert.deepEqual(elenco.map(item => item.nome), ['Operatore Storico']);
-  assert.deepEqual(elenco[0].clientiAttivi, [{ id: 'C1', ragioneSociale: 'Cliente' }]);
+  assert.deepEqual(elenco.map(item => item.nome), ['Operatore Storico', 'Valore Outbound']);
+  assert.deepEqual(elenco[0].clientiAttivi, [{ id: 'C2', ragioneSociale: 'Cliente storico' }]);
+  assert.deepEqual(elenco[1].clientiAttivi, [{ id: 'C1', ragioneSociale: 'Cliente' }]);
+  delete require.cache[require.resolve('../operatori')];
+  await require('../operatori').ensureTables();
+  assert.equal((await knex('clienti').where({ id: 'C1' }).first()).operatore, 'Valore Outbound');
+  assert.equal(await knex('operatori_migrazioni').count('* as totale').first().then(r => r.totale), 1);
+});
+
+test('si possono assegnare soltanto gli operatori creati nelle impostazioni', async () => {
+  await assert.rejects(operatori.validaOutbound('Nome non registrato'), /Seleziona un Outbound attivo/);
+  assert.equal(await operatori.validaOutbound('valore outbound'), 'Valore Outbound');
+  // Un valore storico già assegnato resta modificabile nella scheda cliente.
+  assert.equal(await operatori.validaOutbound('Nome storico', 'Nome storico'), 'Nome storico');
 });
 
 test('la cessazione vale dal mese successivo e la riattivazione riapre lo storico', async () => {
-  const [operatore] = await operatori.elencaOperatori();
+  const operatore = (await operatori.elencaOperatori()).find(item => item.nome === 'Operatore Storico');
   await operatori.cessaOperatore(operatore.id, '2026-10-05');
+  await assert.rejects(operatori.validaOutbound('Operatore Storico'), /Seleziona un Outbound attivo/);
   assert.equal((await operatori.nomiAttiviNelMese(10, 2026)).has('operatore storico'), true);
   assert.equal((await operatori.nomiAttiviNelMese(11, 2026)).has('operatore storico'), false);
 

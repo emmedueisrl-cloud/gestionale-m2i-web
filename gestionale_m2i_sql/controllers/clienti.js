@@ -1,6 +1,7 @@
 const { ownerFolder } = require('../upload_paths');
 const { deleteAttachment } = require('../attachment_delete');
 const { knex, generaIDIncrementale, getVal } = require('../db');
+const { validaOutbound } = require('../operatori');
 const fs = require('fs');
 const path = require('path');
 
@@ -267,6 +268,7 @@ module.exports = {
     if (!isBozza && !partitaIva) {
       throw new Error("La Partita IVA è obbligatoria (a meno di non salvare in Bozza).");
     }
+    const outbound = await validaOutbound(getVal(dati, "operatore"));
 
     const id = await generaIDIncrementale("clienti", "C");
     try {
@@ -311,8 +313,8 @@ module.exports = {
         copie: parseInt(getVal(dati, "copie"), 10) || 0,
         in_possesso_di: getVal(dati, "possessoChiavi") === "SI" ? (getVal(dati, "inPossessoDi") || "") : "",
         note_chiavi: getVal(dati, "noteChiavi") || "",
-        operatore: getVal(dati, "operatore") || "",
-        operatore_assegnato: getVal(dati, "operatoreAssegnato") || "",
+        operatore: outbound,
+        operatore_assegnato: "",
         commerciale: getVal(dati, "commerciale") || "",
         quotazione_importo: getVal(dati, "quotazioneImporto") ? parseFloat(getVal(dati, "quotazioneImporto")) : null,
         quotazione_tipo: getVal(dati, "quotazioneTipo") || "Mensile",
@@ -370,7 +372,8 @@ module.exports = {
     
     // Check current state, to not overwrite 'NO' with 'SI' unless we specifically handle it.
     // Wait, let's just make sure that if it was 'Bozza' and now isBozza is false, we set it to 'SI'.
-    const currentState = await knex('clienti').where('id', id).select('attivo').first();
+    const currentState = await knex('clienti').where('id', id).select('attivo', 'operatore').first();
+    const outbound = await validaOutbound(getVal(dati, "operatore"), currentState?.operatore);
     let newStato = currentState ? currentState.attivo : 'SI';
     if (isBozza) {
       newStato = 'Bozza';
@@ -419,8 +422,8 @@ module.exports = {
           copie: parseInt(getVal(dati, "copie"), 10) || 0,
           in_possesso_di: getVal(dati, "possessoChiavi") === "SI" ? (getVal(dati, "inPossessoDi") || "") : "",
           note_chiavi: getVal(dati, "noteChiavi") || "",
-          operatore: getVal(dati, "operatore") || "",
-          operatore_assegnato: getVal(dati, "operatoreAssegnato") || "",
+          operatore: outbound,
+          operatore_assegnato: "",
           commerciale: getVal(dati, "commerciale") || "",
           quotazione_importo: getVal(dati, "quotazioneImporto") ? parseFloat(getVal(dati, "quotazioneImporto")) : null,
           quotazione_tipo: getVal(dati, "quotazioneTipo") || "Mensile",

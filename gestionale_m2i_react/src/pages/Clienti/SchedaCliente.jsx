@@ -148,7 +148,7 @@ export default function SchedaCliente() {
         <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-5 flex items-center gap-4">
           <div className="p-3 bg-indigo-500/20 rounded-xl text-indigo-400 border border-indigo-500/30"><User className="w-6 h-6"/></div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Operatore Assegnato</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Outbound Assegnato</p>
             <p className="font-bold text-slate-100 text-lg uppercase tracking-wide">{data.operatore || 'NON ASSEGNATO'}</p>
           </div>
         </div>
