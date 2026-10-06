@@ -18,6 +18,7 @@ const Chiavi = lazy(() => import('./pages/Dipendenti/Chiavi'));
 // Fase 3
 const RegistroOre = lazy(() => import('./pages/Ore/RegistroOre'));
 const AgendaCaposquadra = lazy(() => import('./pages/Ore/AgendaCaposquadra'));
+const AgendaCaposquadraPubblica = lazy(() => import('./pages/Ore/AgendaCaposquadraPubblica'));
 const ProspettoSettimanale = lazy(() => import('./pages/Ore/ProspettoSettimanale'));
 const ElaboratoDipendenti = lazy(() => import('./pages/Elaborati/ElaboratoDipendenti'));
 const ElaboratoClienti = lazy(() => import('./pages/Elaborati/ElaboratoClienti'));
@@ -60,6 +61,7 @@ function App() {
     <Suspense fallback={<div className="min-h-screen bg-slate-900 text-slate-200 flex items-center justify-center">Caricamento...</div>}>
     <Routes>
       <Route path="/" element={<LoginPage />} />
+      <Route path="/agenda/:token" element={<AgendaCaposquadraPubblica />} />
       <Route path="/contabilita" element={
         <ProtectedRoute allowedRoles={['admin', 'user', 'contabilita']}>
           <AppShell area="contabilita" />

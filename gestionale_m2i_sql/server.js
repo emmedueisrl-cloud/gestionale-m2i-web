@@ -9,6 +9,7 @@ const { ownerFolder, finalizeUpload } = require('./upload_paths');
 const excelGenerator = require('./excel_generator');
 const { knex } = require('./db');
 const { createAuth } = require('./auth');
+const { createPublicAgenda, validMonday } = require('./public_agenda');
 const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./email_attachment_link');
 const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
@@ -46,6 +47,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
+  if (req.path.startsWith('/agenda/')) res.setHeader('Referrer-Policy', 'no-referrer');
   next();
 });
 
@@ -54,8 +56,22 @@ const reactDistPath = path.join(__dirname, '../gestionale_m2i_react/dist');
 app.use(express.static(reactDistPath));
 const baseUploadPath = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'uploads') : path.join(__dirname, 'uploads');
 const auth = createAuth(knex);
+const publicAgenda = createPublicAgenda(knex);
 app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', auth.router);
+app.get('/api/public/agenda/:token', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if (!validMonday(req.query.week)) return res.status(400).json({ error: 'Settimana non valida.' });
+  try {
+    const data = await publicAgenda.getWeek(req.params.token, req.query.week);
+    if (!data) return res.status(404).json({ error: 'Link non valido.' });
+    res.json(data);
+  } catch (error) {
+    console.error('[AGENDA PUBBLICA]', error);
+    res.status(500).json({ error: 'Agenda temporaneamente non disponibile.' });
+  }
+});
 app.use('/api', auth.requireAuth);
 // L'account amministrativo non accede alle altre API, neppure digitando URL diretti.
 app.use('/api', (req, res, next) => {
@@ -63,6 +79,14 @@ app.use('/api', (req, res, next) => {
     return res.status(403).json({ error: 'Accesso limitato alla sezione amministrativa.' });
   }
   next();
+});
+app.get('/api/agenda-public-link', async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ token: await publicAgenda.getToken() });
+  } catch (error) {
+    res.status(500).json({ error: 'Link non disponibile.' });
+  }
 });
 app.use('/uploads', auth.requireAuth, (req, res, next) => {
   if (req.authUser.role === 'contabilita') return res.status(403).send('Accesso non consentito.');
@@ -1010,6 +1034,7 @@ app.use((req, res, next) => {
 
 Promise.resolve().then(async () => {
   await auth.initialize();
+  await publicAgenda.initialize();
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
   await workflowElaborati.initialize();

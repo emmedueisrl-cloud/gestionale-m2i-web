@@ -98,6 +98,25 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.ok(cookie);
     assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200);
 
+    assert.equal((await fetch(`${base}/api/agenda-public-link`)).status, 401);
+    const linkResponse = await fetch(`${base}/api/agenda-public-link`, { headers: { Cookie: cookie } });
+    assert.equal(linkResponse.status, 200);
+    const { token: agendaToken } = await linkResponse.json();
+    assert.match(agendaToken, /^[0-9a-f]{64}$/);
+    await new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(path.join(temporaryDir, 'gestionale.db'));
+      db.exec("UPDATE dipendenti SET is_caposquadra = 1 WHERE id = 'D0001'; INSERT INTO dipendenti (id, cognome, nome, codice_fiscale, data_assunzione, is_caposquadra) VALUES ('D0002', 'Rossi', 'Anna', 'TEST000000000002', '2026-01-01', 1), ('D0003', 'Verdi', 'Luca', 'TEST000000000003', '2026-01-01', 0); INSERT INTO agenda_caposquadra (dipendente_id, data, ora_inizio, ora_fine, note, colore) VALUES ('D0001', '2026-10-05', '08:00', '12:00', 'Sopralluogo', '#4f46e5'), ('D0002', '2026-10-06', '09:00', '11:00', 'Squadra B', '#10b981'), ('D0003', '2026-10-05', '10:00', '12:00', 'Non caposquadra', '#4f46e5'), ('D0001', '2026-10-12', '08:00', '10:00', 'Altra settimana', '#4f46e5');", error => db.close(() => error ? reject(error) : resolve()));
+    });
+    const publicAgenda = await fetch(`${base}/api/public/agenda/${agendaToken}?week=2026-10-05`);
+    assert.equal(publicAgenda.status, 200);
+    const publicData = await publicAgenda.json();
+    assert.deepEqual(publicData.capisquadra, [{ id: 'D0001', nome: 'Prova Test' }, { id: 'D0002', nome: 'Rossi Anna' }]);
+    assert.equal(publicData.impegni.length, 2);
+    assert.equal(publicData.impegni[0].note, 'Sopralluogo');
+    assert.equal((await fetch(`${base}/api/public/agenda/${'0'.repeat(64)}?week=2026-10-05`)).status, 404);
+    assert.equal((await fetch(`${base}/api/public/agenda/${agendaToken}?week=2026-10-06`)).status, 400);
+    assert.equal((await fetch(`${base}/api/public/agenda/${agendaToken}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+
     const employeeId = await new Promise((resolve, reject) => {
       const db = new sqlite3.Database(path.join(temporaryDir, 'gestionale.db'), sqlite3.OPEN_READONLY);
       db.get('SELECT id FROM dipendenti LIMIT 1', (error, row) => {

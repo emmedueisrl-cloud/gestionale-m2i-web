@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Trash2, Loader2, Clock, Shield, Download, Eraser } from 'lucide-react';
+import { Calendar, Plus, Trash2, Loader2, Clock, Shield, Download, Eraser, Link2, Copy } from 'lucide-react';
 import { recuperaElencoDipendenti, impostaCaposquadra } from '../../api/dipendenti';
 import { recuperaElencoClienti } from '../../api/clienti';
 import { recuperaDatiAgenda, salvaImpegnoAgenda, eliminaImpegnoAgenda, importaProgrammaFissoAgenda, svuotaSettimanaAgenda } from '../../api/ore';
@@ -12,6 +12,8 @@ export default function AgendaCaposquadra() {
   const [isGestioneCapisquadraOpen, setIsGestioneCapisquadraOpen] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [publicToken, setPublicToken] = useState('');
+  const [linkMessage, setLinkMessage] = useState('');
   
   const [idDipendente, setIdDipendente] = useState('');
   // Gestione data: lunedì della settimana in visualizzazione
@@ -27,6 +29,10 @@ export default function AgendaCaposquadra() {
   const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL || ''}/api/agenda-public-link`, { credentials: 'same-origin' })
+      .then(response => response.ok ? response.json() : Promise.reject(new Error('Link non disponibile')))
+      .then(result => setPublicToken(result.token))
+      .catch(() => setLinkMessage('Link pubblico non disponibile.'));
     // Imposta dataInizioSettimana al lunedì della settimana corrente
     const today = new Date();
     const day = today.getDay();
@@ -167,6 +173,16 @@ export default function AgendaCaposquadra() {
   };
 
   const capisquadra = dipendenti.filter(d => d.is_caposquadra === 1);
+  const publicUrl = publicToken ? `${window.location.origin}/agenda/${publicToken}` : '';
+
+  const copiaLink = async () => {
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setLinkMessage('Link copiato. Chi lo possiede può visualizzare gli impegni.');
+    } catch {
+      setLinkMessage('Copia il link dal campo qui sotto.');
+    }
+  };
 
   return (
     <div className="p-6 w-full mx-auto h-[calc(100vh-100px)] flex flex-col">
@@ -201,6 +217,15 @@ export default function AgendaCaposquadra() {
             <Shield className="w-5 h-5" />
           </button>
         </div>
+      </div>
+
+      <div className="mb-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 sm:p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-indigo-100"><Link2 className="h-4 w-4" /> Agenda pubblica per i caposquadra <span className="font-normal text-slate-400">· sola lettura</span></div>
+          <button type="button" onClick={copiaLink} disabled={!publicUrl} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"><Copy className="h-4 w-4" /> Copia link</button>
+        </div>
+        {publicUrl && <input aria-label="Link agenda pubblica" readOnly onFocus={event => event.target.select()} value={publicUrl} className="mt-3 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-xs text-slate-300" />}
+        {linkMessage && <p role="status" className="mt-2 text-xs text-slate-300">{linkMessage}</p>}
       </div>
 
       <div className="flex-1 bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden flex flex-col relative">
