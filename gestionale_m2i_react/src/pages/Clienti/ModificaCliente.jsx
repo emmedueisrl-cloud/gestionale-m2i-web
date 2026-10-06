@@ -74,6 +74,7 @@ function ModificaCliente() {
     inPossessoDi: '',
     noteChiavi: '',
     operatore: '',
+    dataInizioAttivita: '',
     commerciale: '',
     quotazioneImporto: '',
     quotazioneTipo: 'Mensile',
@@ -98,7 +99,7 @@ function ModificaCliente() {
 
   const handleCaricaDati = async (id) => {
     if (!id) {
-      setDati({ id: '', ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '', cap: '', citta: '', provincia: '', pec: '', sdi: '', titolare: '', telefonoTitolare: '', referente: '', ruoloReferente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '', condizioniPagamento: '', note: '', noteFisseElaborato: '', possessoChiavi: 'NO', copie: 0, inPossessoDi: '', noteChiavi: '', operatore: '' });
+      setDati({ id: '', ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '', cap: '', citta: '', provincia: '', pec: '', sdi: '', titolare: '', telefonoTitolare: '', referente: '', ruoloReferente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '', condizioniPagamento: '', note: '', noteFisseElaborato: '', possessoChiavi: 'NO', copie: 0, inPossessoDi: '', noteChiavi: '', operatore: '', dataInizioAttivita: '' });
       setFotoEsistenti([]);
       setNuoveFoto([]);
       setNuovePreview([]);
@@ -161,6 +162,7 @@ function ModificaCliente() {
           inPossessoDi: datiCliente.in_possesso_di || '',
           noteChiavi: datiCliente.note_chiavi || '',
           operatore: datiCliente.operatore || '',
+          dataInizioAttivita: datiCliente.data_inizio_attivita || '',
           commerciale: datiCliente.commerciale || '',
           quotazioneImporto: datiCliente.quotazione_importo || '',
           quotazioneTipo: datiCliente.quotazione_tipo || 'Mensile',
@@ -458,6 +460,11 @@ function ModificaCliente() {
               <label className="block text-sm font-medium text-slate-200 mb-1 text-emerald-400">Commerciale</label>
               <input type="text" name="commerciale" value={dati.commerciale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-emerald-500/30 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-100" placeholder="Digita a mano..." />
             </div>
+          </div>
+          <div className="mb-6 max-w-sm">
+            <label htmlFor="dataInizioAttivita" className="block text-sm font-medium text-slate-200 mb-1">Data inizio attività</label>
+            <input id="dataInizioAttivita" type="date" name="dataInizioAttivita" value={dati.dataInizioAttivita || ''} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-slate-600 rounded-lg text-slate-100" />
+            <p className="mt-1 text-xs text-slate-400">I clienti storici senza decorrenza restano invariati finché non scegli una data. Non puoi escludere un mese già blindato.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

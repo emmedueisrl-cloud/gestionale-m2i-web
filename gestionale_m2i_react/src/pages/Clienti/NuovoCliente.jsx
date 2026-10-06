@@ -7,6 +7,12 @@ import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
 import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 
+const dataOdiernaItaliana = () => {
+  const parti = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const valore = tipo => parti.find(parte => parte.type === tipo).value;
+  return `${valore('year')}-${valore('month')}-${valore('day')}`;
+};
+
 export default function NuovoCliente() {
   const navigate = useNavigate();
   const [isSaving, setIsSaving] = useState(false);
@@ -60,6 +66,7 @@ export default function NuovoCliente() {
     inPossessoDi: '',
     noteChiavi: '',
     operatore: '',
+    dataInizioAttivita: dataOdiernaItaliana(),
     commerciale: '',
     quotazioneImporto: '',
     quotazioneTipo: 'Mensile',
@@ -167,6 +174,10 @@ export default function NuovoCliente() {
   };
 
   const handleSalva = async (isBozza = false) => {
+    if (!dati.dataInizioAttivita) {
+      setModalState({ isOpen: true, type: 'warning', message: 'Inserisci la data di inizio attività.' });
+      return;
+    }
     if (!dati.ragioneSociale) {
       setModalState({ isOpen: true, type: 'warning', message: 'Il campo Ragione Sociale è obbligatorio.' });
       document.getElementById('ragioneSociale')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -249,7 +260,7 @@ export default function NuovoCliente() {
         ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '',
         cap: '', citta: '', provincia: '', pec: '', sdi: '',
         titolare: '', telefonoTitolare: '', referente: '', ruoloReferente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '',
-        condizioniPagamento: 'Bonifico 30gg DF', note: '', noteFisseElaborato: '', operatore: ''
+        condizioniPagamento: 'Bonifico 30gg DF', note: '', noteFisseElaborato: '', operatore: '', dataInizioAttivita: dataOdiernaItaliana()
       });
       setFotoServizio([]);
       setPreviewUrls([]);
@@ -299,6 +310,11 @@ export default function NuovoCliente() {
               <label className="block text-sm font-medium text-slate-200 mb-1 text-emerald-400">Commerciale</label>
               <input type="text" name="commerciale" value={dati.commerciale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-emerald-500/30 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none text-slate-100" placeholder="Digita a mano..." />
             </div>
+          </div>
+          <div className="mb-6 max-w-sm">
+            <label htmlFor="dataInizioAttivita" className="block text-sm font-medium text-slate-200 mb-1">Data inizio attività</label>
+            <input id="dataInizioAttivita" type="date" name="dataInizioAttivita" value={dati.dataInizioAttivita} onChange={handleChange} required className="w-full p-2.5 bg-slate-900/80 border border-slate-600 rounded-lg text-slate-100" />
+            <p className="mt-1 text-xs text-slate-400">Da questa data il cliente compare negli elaborati mensili. Modificala se l’attività è iniziata prima.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>

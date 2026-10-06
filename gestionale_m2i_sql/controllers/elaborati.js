@@ -262,6 +262,7 @@ module.exports = {
     const primoGiorno = `${anno}-${String(mese).padStart(2, '0')}-01`;
     const ultimoGiorno = `${anno}-${String(mese).padStart(2, '0')}-${String(new Date(anno, mese, 0).getDate()).padStart(2, '0')}`;
     const cli = candidati.filter(c => {
+      if (c.attivo === 'Bozza') return false;
       const intervalli = periodiPerCliente.get(c.id);
       if (intervalli?.length) return intervalli.some(p => (!p.data_inizio || p.data_inizio <= ultimoGiorno) && (!p.data_fine || p.data_fine >= primoGiorno));
       // Compatibilità per clienti creati dopo l'avvio o cessazioni storiche senza periodo migrato.

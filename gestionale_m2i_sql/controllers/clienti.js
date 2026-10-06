@@ -21,6 +21,15 @@ function dataOdiernaItaliana() {
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
+function validaDataInizio(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+      Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ||
+      new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) {
+    throw new Error('Inserisci una data di inizio attività valida (AAAA-MM-GG).');
+  }
+  return value;
+}
+
 async function meseBlindatoCliente(trx, id) {
   const riga = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', soggetto_id: id }).first();
   if (riga) return riga;
@@ -111,6 +120,8 @@ module.exports = {
       }
     }
     if (cliente) {
+      const primoPeriodo = await knex('clienti_periodi_attivita').where({ cliente_id: id }).orderBy('id').first();
+      cliente.data_inizio_attivita = primoPeriodo?.data_inizio || '';
       const assegnazioni = await knex('chiavi_assegnazioni')
         .leftJoin('dipendenti', 'chiavi_assegnazioni.dipendente_id', 'dipendenti.id')
         .where('chiavi_assegnazioni.cliente_id', id)
@@ -269,10 +280,13 @@ module.exports = {
       throw new Error("La Partita IVA è obbligatoria (a meno di non salvare in Bozza).");
     }
     const outbound = await validaOutbound(getVal(dati, "operatore"));
+    const inizioRichiesto = getVal(dati, 'dataInizioAttivita');
+    const dataInizioAttivita = validaDataInizio(inizioRichiesto == null ? dataOdiernaItaliana() : inizioRichiesto);
 
     const id = await generaIDIncrementale("clienti", "C");
     try {
-      await knex('clienti').insert({
+      await knex.transaction(async trx => {
+        await trx('clienti').insert({
         id,
         ragione_sociale: ragioneSociale,
         nome_attivita: getVal(dati, "nomeAttivita") || "",
@@ -321,6 +335,8 @@ module.exports = {
         tipo_tassazione: getVal(dati, "tipoTassazione") || "IVA",
         percentuale_tassazione: getVal(dati, "percentualeTassazione") !== '' && getVal(dati, "percentualeTassazione") !== undefined && getVal(dati, "percentualeTassazione") !== null ? parseFloat(getVal(dati, "percentualeTassazione")) : null,
         tassazione_altro: getVal(dati, "tassazioneAltro") || ""
+        });
+        await trx('clienti_periodi_attivita').insert({ cliente_id: id, data_inizio: dataInizioAttivita, data_fine: null });
       });
     } catch (e) {
       if (e.message && e.message.includes('UNIQUE constraint failed: clienti.partita_iva')) {
@@ -372,9 +388,12 @@ module.exports = {
     
     // Check current state, to not overwrite 'NO' with 'SI' unless we specifically handle it.
     // Wait, let's just make sure that if it was 'Bozza' and now isBozza is false, we set it to 'SI'.
-    const currentState = await knex('clienti').where('id', id).select('attivo', 'operatore').first();
+    const currentState = await knex('clienti').where('id', id).select('attivo', 'operatore', 'data_cessazione').first();
+    if (!currentState) throw new Error('Cliente non trovato.');
     const outbound = await validaOutbound(getVal(dati, "operatore"), currentState?.operatore);
-    let newStato = currentState ? currentState.attivo : 'SI';
+    const inizioRichiesto = getVal(dati, 'dataInizioAttivita');
+    const dataInizioAttivita = inizioRichiesto ? validaDataInizio(inizioRichiesto) : null;
+    let newStato = currentState.attivo;
     if (isBozza) {
       newStato = 'Bozza';
     } else if (newStato === 'Bozza') {
@@ -382,7 +401,30 @@ module.exports = {
     }
 
     try {
-      await knex('clienti')
+      await knex.transaction(async trx => {
+        if (inizioRichiesto === '') {
+          const primoPeriodo = await trx('clienti_periodi_attivita').where({ cliente_id: id }).orderBy('id').first();
+          if (primoPeriodo?.data_inizio) throw new Error('La data di inizio attività non può essere svuotata.');
+        }
+        if (dataInizioAttivita) {
+          const primoPeriodo = await trx('clienti_periodi_attivita').where({ cliente_id: id }).orderBy('id').first();
+          if (primoPeriodo?.data_fine && dataInizioAttivita > primoPeriodo.data_fine) {
+            throw new Error('La data di inizio non può essere successiva alla cessazione del primo periodo.');
+          }
+          const primaRigaBlindata = await trx('righe_bloccate_elaborati')
+            .where({ tipo: 'cliente', soggetto_id: id }).orderBy('anno').orderBy('mese').first();
+          const primoMeseChiuso = await trx('dettaglio_mesi_chiusi_clienti')
+            .where({ cliente_id: id }).orderBy('anno').orderBy('mese').first();
+          for (const riga of [primaRigaBlindata, primoMeseChiuso]) {
+            if (riga && dataInizioAttivita.slice(0, 7) > `${riga.anno}-${String(riga.mese).padStart(2, '0')}`) {
+              throw new Error('La data di inizio non può escludere un mese già blindato per questo cliente.');
+            }
+          }
+          if (primoPeriodo) await trx('clienti_periodi_attivita').where({ id: primoPeriodo.id }).update({ data_inizio: dataInizioAttivita });
+          else await trx('clienti_periodi_attivita').insert({ cliente_id: id, data_inizio: dataInizioAttivita,
+            data_fine: currentState.attivo === 'Cessato' ? currentState.data_cessazione : null });
+        }
+        await trx('clienti')
         .where('id', id)
         .update({
           ragione_sociale: ragioneSociale,
@@ -431,6 +473,7 @@ module.exports = {
           percentuale_tassazione: getVal(dati, "percentualeTassazione") !== '' && getVal(dati, "percentualeTassazione") !== undefined && getVal(dati, "percentualeTassazione") !== null ? parseFloat(getVal(dati, "percentualeTassazione")) : null,
           tassazione_altro: getVal(dati, "tassazioneAltro") || ""
         });
+      });
     } catch (e) {
       if (e.message && e.message.includes('UNIQUE constraint failed: clienti.partita_iva')) {
         throw new Error(`Esiste già un cliente con la Partita IVA ${partitaIva}.`);

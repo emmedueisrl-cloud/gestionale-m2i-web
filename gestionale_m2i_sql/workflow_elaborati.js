@@ -101,6 +101,34 @@ async function initialize() {
       t.unique(['dipendente_id', 'mese', 'anno']);
     });
   }
+  // Ripara le anagrafiche create con il flusso nuovo a ottobre 2026 prima
+  // che la creazione registrasse una decorrenza. Non tocca i clienti storici
+  // né chi ha già attività o fatture nei mesi precedenti.
+  const senzaDecorrenza = await knex('clienti as c')
+    .join('clienti_periodi_attivita as p', 'p.cliente_id', 'c.id')
+    .select('c.id', 'c.data_creazione', 'p.id as periodo_id')
+    .whereNull('p.data_inizio').whereNull('p.data_fine')
+    .where('c.attivo', 'SI').where('c.creato_da', 'LocalServer')
+    .where('c.data_creazione', '>=', '2026-10-01');
+  for (const cliente of senzaDecorrenza) {
+    const dataInizio = String(cliente.data_creazione || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataInizio)) continue;
+    const meseInizio = dataInizio.slice(0, 7);
+    const hasOlderPeriod = async (table, idColumn, tipo) => {
+      const query = knex(table).where({ [idColumn]: cliente.id })
+        .whereRaw("printf('%04d-%02d', anno, mese) < ?", [meseInizio]);
+      if (tipo) query.where({ tipo });
+      return query.first();
+    };
+    if (await hasOlderPeriod('registro_ore', 'cliente_id') ||
+        await hasOlderPeriod('regolazioni_clienti', 'cliente_id') ||
+        await hasOlderPeriod('righe_bloccate_elaborati', 'soggetto_id', 'cliente') ||
+        await hasOlderPeriod('dettaglio_mesi_chiusi_clienti', 'cliente_id') ||
+        await hasOlderPeriod('fatture_aruba_elaborati', 'cliente_id') ||
+        await knex('fatture').where({ cliente_id: cliente.id }).where('data_fattura', '<', dataInizio).first()) continue;
+    await knex('clienti_periodi_attivita').where({ id: cliente.periodo_id }).whereNull('data_inizio')
+      .update({ data_inizio: dataInizio });
+  }
   const frozen = (alias, tipo, id) => `${alias}.${id} IS NOT NULL AND (EXISTS (SELECT 1 FROM righe_bloccate_elaborati b
     WHERE b.tipo='${tipo}' AND b.mese=${alias}.mese AND b.anno=${alias}.anno AND b.soggetto_id=${alias}.${id})
     OR EXISTS (SELECT 1 FROM ${kinds[tipo].header} h WHERE h.mese=${alias}.mese AND h.anno=${alias}.anno))`;

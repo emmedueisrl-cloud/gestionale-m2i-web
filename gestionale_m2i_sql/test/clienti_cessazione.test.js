@@ -6,7 +6,7 @@ const knex = require('knex')({ client: 'sqlite3', connection: { filename: ':memo
 
 // Database isolato: non caricare il database locale o di produzione.
 const dbPath = require.resolve('../db');
-require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { knex, getVal: (obj, key) => obj?.[key] } };
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { knex, getVal: (obj, key) => obj?.[key], generaIDIncrementale: async () => 'C_NEW' } };
 const clienti = require('../controllers/clienti');
 const elaborati = require('../controllers/elaborati');
 const workflow = require('../workflow_elaborati');
@@ -124,4 +124,40 @@ test('non riattiva retroattivamente in un mese chiuso senza il cliente', async (
   await clienti.riattivaCliente('C_GAP', '2026-09-01');
   assert.equal(await visible('C_GAP', 8), false);
   assert.equal(await visible('C_GAP', 9), true);
+});
+
+test('un nuovo cliente decorre dalla data scelta e può essere retrodatato finché non è blindato', async () => {
+  const id = await clienti.salvaCliente({ ragioneSociale: 'Cliente nuovo', partitaIva: 'TEST-NEW', dataInizioAttivita: '2026-10-06' });
+  assert.equal(id, 'C_NEW');
+  assert.equal((await knex('clienti_periodi_attivita').where({ cliente_id: id }).first()).data_inizio, '2026-10-06');
+  assert.equal(await visible(id, 9), false);
+  assert.equal(await visible(id, 10), true);
+  await clienti.aggiornaDatiCliente({ id, ragioneSociale: 'Cliente nuovo', partitaIva: 'TEST-NEW', dataInizioAttivita: '2026-09-15' });
+  assert.equal(await visible(id, 9), true);
+  await workflow.lockRow('cliente', 9, 2026, id);
+  await assert.rejects(() => clienti.aggiornaDatiCliente({ id, ragioneSociale: 'Cliente nuovo', partitaIva: 'TEST-NEW', dataInizioAttivita: '2026-10-01' }), /mese già blindato/);
+  assert.equal((await knex('clienti_periodi_attivita').where({ cliente_id: id }).first()).data_inizio, '2026-09-15');
+});
+
+test('al riavvio ripara solo i clienti recenti privi di attività precedente', async () => {
+  await knex('clienti').insert([
+    { id: 'C_RECENTE', ragione_sociale: 'Aggiunto a ottobre', partita_iva: 'TEST-RECENTE', creato_da: 'LocalServer', data_creazione: '2026-10-06 10:00:00' },
+    { id: 'C_STORICO_OTTOBRE', ragione_sociale: 'Storico con settembre blindato', partita_iva: 'TEST-STORICO-OTTOBRE', creato_da: 'LocalServer', data_creazione: '2026-10-06 10:00:00' }
+  ]);
+  await knex('clienti_periodi_attivita').insert([
+    { cliente_id: 'C_RECENTE', data_inizio: null, data_fine: null },
+    { cliente_id: 'C_STORICO_OTTOBRE', data_inizio: null, data_fine: null }
+  ]);
+  await knex('righe_bloccate_elaborati').insert({ tipo: 'cliente', mese: 9, anno: 2026, soggetto_id: 'C_STORICO_OTTOBRE', snapshot: '{}', bloccata_at: '2026-09-30T12:00:00Z' });
+  await workflow.initialize();
+  assert.equal((await knex('clienti_periodi_attivita').where({ cliente_id: 'C_RECENTE' }).first()).data_inizio, '2026-10-06');
+  assert.equal((await knex('clienti_periodi_attivita').where({ cliente_id: 'C_STORICO_OTTOBRE' }).first()).data_inizio, null);
+  assert.equal(await visible('C_RECENTE', 9), false);
+  assert.equal(await visible('C_RECENTE', 10), true);
+});
+
+test('una bozza con data di inizio non entra ancora negli elaborati', async () => {
+  await knex('clienti').insert({ id: 'C_BOZZA', ragione_sociale: 'Bozza', partita_iva: 'TEST-BOZZA', attivo: 'Bozza' });
+  await knex('clienti_periodi_attivita').insert({ cliente_id: 'C_BOZZA', data_inizio: '2026-10-06', data_fine: null });
+  assert.equal(await visible('C_BOZZA', 10), false);
 });
