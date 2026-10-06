@@ -25,7 +25,8 @@ before(async () => {
     { id: 'C_DATE', ragione_sociale: 'Con data', partita_iva: 'TEST-DATE' },
     { id: 'C_LOCK', ragione_sociale: 'Blindato', partita_iva: 'TEST-LOCK' },
     { id: 'C_TRASH', ragione_sociale: 'Cestinabile', partita_iva: 'TEST-TRASH' },
-    { id: 'C_HISTORY', ragione_sociale: 'Storico', partita_iva: 'TEST-HISTORY' }
+    { id: 'C_HISTORY', ragione_sociale: 'Storico', partita_iva: 'TEST-HISTORY' },
+    { id: 'C_CORRECT', ragione_sociale: 'Correzione', partita_iva: 'TEST-CORRECT' }
   ]);
 });
 after(() => knex.destroy());
@@ -67,18 +68,29 @@ test('la migrazione conserva il periodo di un cliente già cessato', async () =>
   assert.equal(await visible('C_LEGACY', 9), true);
 });
 
-test('cliente blindato non va nel cestino e non può essere cessato prima del mese blindato', async () => {
+test('cliente blindato può essere cessato dal primo giorno dell’ultimo mese blindato', async () => {
   await workflow.lockRow('cliente', 8, 2026, 'C_LOCK');
   await assert.rejects(() => clienti.eliminaCliente('C_LOCK'), /mese blindato/);
   assert.equal((await knex('clienti').where({ id: 'C_LOCK' }).first()).cestinato, 0);
-  await assert.rejects(() => clienti.cessaCliente('C_LOCK', '2026-07-15'), /precede un mese già blindato/);
+  await assert.rejects(() => clienti.cessaCliente('C_LOCK', '2026-07-31'), /primo giorno dell’ultimo mese blindato/);
   await clienti.cessaCliente('C_LOCK', '2026-08-15');
   assert.equal(await visible('C_LOCK', 8), true);
   assert.equal(await visible('C_LOCK', 9), false);
-  await clienti.riattivaCliente('C_LOCK', '2026-09-01');
+  await clienti.riattivaCliente('C_LOCK', '2026-09-15');
   assert.equal(await visible('C_LOCK', 8), true);
   assert.equal(await visible('C_LOCK', 9), true);
   assert.ok(await knex('righe_bloccate_elaborati').where({ tipo: 'cliente', soggetto_id: 'C_LOCK', mese: 8, anno: 2026 }).first());
+});
+
+test('una riattivazione errata può essere corretta ripristinando una cessazione precedente', async () => {
+  await clienti.cessaCliente('C_CORRECT', '2026-07-15');
+  await clienti.riattivaCliente('C_CORRECT', '2026-10-06');
+  await clienti.cessaCliente('C_CORRECT', '2026-07-15');
+  assert.deepEqual((await knex('clienti_periodi_attivita').where({ cliente_id: 'C_CORRECT' }).orderBy('id'))
+    .map(({ data_inizio, data_fine }) => [data_inizio, data_fine]), [[null, '2026-07-15']]);
+  assert.equal(await visible('C_CORRECT', 7), true);
+  assert.equal(await visible('C_CORRECT', 8), false);
+  assert.equal(await visible('C_CORRECT', 10), false);
 });
 
 test('eliminazione senza mesi blindati conserva il cliente, lo cessa e lo nasconde dagli elaborati aperti', async () => {

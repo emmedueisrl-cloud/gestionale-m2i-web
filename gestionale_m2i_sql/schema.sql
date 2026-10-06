@@ -342,6 +342,25 @@ CREATE TABLE log_attivita (
     eseguito_da TEXT
 );
 
+CREATE TABLE autodiagnosi_errori (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fingerprint TEXT NOT NULL UNIQUE,
+    area TEXT NOT NULL,
+    operazione TEXT NOT NULL,
+    messaggio TEXT NOT NULL,
+    spiegazione TEXT NOT NULL,
+    causa TEXT NOT NULL,
+    soluzione TEXT NOT NULL,
+    gravita TEXT NOT NULL DEFAULT 'errore',
+    stato TEXT NOT NULL DEFAULT 'nuovo',
+    occorrenze INTEGER NOT NULL DEFAULT 1,
+    prima_occorrenza TEXT NOT NULL,
+    ultima_occorrenza TEXT NOT NULL,
+    ultimo_contesto TEXT,
+    risolto_at TEXT,
+    aggiornato_da TEXT
+);
+
 CREATE TABLE regolazioni_stipendi (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     mese INTEGER NOT NULL,

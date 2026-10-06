@@ -63,3 +63,4 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/valori_contabilita_clienti.js
 !/gestionale_m2i_sql/workflow_elaborati.js
 !/gestionale_m2i_sql/registro_ore_state.js
+!/gestionale_m2i_sql/autodiagnosi.js

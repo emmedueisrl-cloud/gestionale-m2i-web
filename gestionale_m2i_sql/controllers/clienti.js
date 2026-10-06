@@ -27,15 +27,23 @@ async function meseBlindatoCliente(trx, id) {
 }
 
 async function chiudiPeriodoAttivo(trx, cliente, data) {
-  const aperto = await trx('clienti_periodi_attivita').where({ cliente_id: cliente.id }).whereNull('data_fine').first();
-  if (aperto) {
-    if (aperto.data_inizio && data < aperto.data_inizio) {
-      throw new Error('La cessazione non può precedere la data dell’ultima riattivazione.');
-    }
-    await trx('clienti_periodi_attivita').where({ id: aperto.id }).update({ data_fine: data });
+  const periodi = await trx('clienti_periodi_attivita').where({ cliente_id: cliente.id }).orderBy('id');
+  const aperto = periodi.find(periodo => !periodo.data_fine);
+  const valoriFine = { data_fine: data };
+  if (aperto && (!aperto.data_inizio || data >= aperto.data_inizio)) {
+    await trx('clienti_periodi_attivita').where({ id: aperto.id }).update(valoriFine);
+  } else if (aperto) {
+    // Correzione di una riattivazione inserita per errore: elimina i periodi successivi
+    // e riporta la cessazione sul periodo che comprende la data scelta.
+    const destinazione = [...periodi]
+      .filter(periodo => periodo.id !== aperto.id && (!periodo.data_inizio || periodo.data_inizio <= data))
+      .pop();
+    if (!destinazione) throw new Error('La cessazione precede il primo periodo di attività registrato.');
+    await trx('clienti_periodi_attivita').where({ cliente_id: cliente.id }).andWhere('id', '>', destinazione.id).del();
+    await trx('clienti_periodi_attivita').where({ id: destinazione.id }).update(valoriFine);
   } else if (cliente.attivo === 'SI' && !await trx('clienti_periodi_attivita').where({ cliente_id: cliente.id }).first()) {
     // Cliente creato dopo l'avvio: il primo periodo non ha una data iniziale storica affidabile.
-    await trx('clienti_periodi_attivita').insert({ cliente_id: cliente.id, data_inizio: null, data_fine: data });
+    await trx('clienti_periodi_attivita').insert({ cliente_id: cliente.id, data_inizio: null, ...valoriFine });
   } else if (cliente.attivo === 'SI') {
     throw new Error('Storico attività incoerente: manca il periodo attivo.');
   }
@@ -191,9 +199,10 @@ module.exports = {
       if (cliente.attivo !== 'SI') throw new Error('Solo un cliente attivo può essere cessato.');
       const bloccate = await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', soggetto_id: id }).select('mese', 'anno');
       const storiche = await trx('dettaglio_mesi_chiusi_clienti').where({ cliente_id: id }).select('mese', 'anno');
-      const meseFine = data.slice(0, 7);
-      if ([...bloccate, ...storiche].some(r => `${r.anno}-${String(r.mese).padStart(2, '0')}` > meseFine)) {
-        throw new Error('La data di cessazione precede un mese già blindato per questo cliente.');
+      const primoGiorno = r => `${r.anno}-${String(r.mese).padStart(2, '0')}-01`;
+      const inizioUltimoMeseBlindato = [...bloccate, ...storiche].map(primoGiorno).sort().pop();
+      if (inizioUltimoMeseBlindato && data < inizioUltimoMeseBlindato) {
+        throw new Error(`La cessazione non può precedere il primo giorno dell’ultimo mese blindato (${inizioUltimoMeseBlindato.split('-').reverse().join('/')}).`);
       }
       await chiudiPeriodoAttivo(trx, cliente, data);
       await trx('clienti').where({ id }).update({ attivo: 'Cessato', data_cessazione: data });

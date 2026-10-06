@@ -51,6 +51,7 @@ const ImpostazioniLayout = lazy(() => import('./pages/Impostazioni/ImpostazioniL
 const LogSistema = lazy(() => import('./pages/Impostazioni/LogSistema'));
 const BackupSistema = lazy(() => import('./pages/Impostazioni/BackupSistema'));
 const Utenti = lazy(() => import('./pages/Impostazioni/Utenti'));
+const Autodiagnosi = lazy(() => import('./pages/Impostazioni/Autodiagnosi'));
 const ContabilitaElaborati = lazy(() => import('./pages/Contabilita/ContabilitaElaborati'));
 
 function App() {
@@ -121,6 +122,7 @@ function App() {
           <Route index element={<Navigate to="utenti" replace />} />
           <Route path="email" element={<EmailConfig />} />
           <Route path="log" element={<LogSistema />} />
+          <Route path="autodiagnosi" element={<Autodiagnosi />} />
           <Route path="backup" element={<BackupSistema />} />
           <Route path="utenti" element={<Utenti />} />
         </Route>

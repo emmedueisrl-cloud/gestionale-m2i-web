@@ -157,7 +157,7 @@ export default function ClientiPage() {
                       title: 'Conferma Cessazione',
                       content: (
                         <div className="space-y-3 text-left">
-                          <p>Indica la data di cessazione di {row.ragione_sociale}. Il cliente comparirà nell’elaborato fino al mese indicato, ma non nei mesi successivi.</p>
+                          <p>Indica la data di cessazione di {row.ragione_sociale}. Puoi scegliere una data precedente a oggi, ma non precedente al primo giorno dell’ultimo mese blindato.</p>
                           <label className="block font-semibold text-slate-200" htmlFor="data-cessazione-cliente">Data di cessazione</label>
                           <input id="data-cessazione-cliente" ref={dataCessazioneRef} type="date" required
                             defaultValue={new Date().toLocaleDateString('sv-SE')}

@@ -13,6 +13,7 @@ const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./emai
 const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
 const { ensureIndexes } = require('./db_indexes');
+const autodiagnosi = require('./autodiagnosi');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -67,10 +68,46 @@ app.use('/uploads', auth.requireAuth, (req, res, next) => {
   next();
 }, express.static(baseUploadPath));
 
-const handleWorkflow = action => async (req, res) => {
+autodiagnosi.ensureTable().catch(error => console.error('[AUTODIAGNOSI] Inizializzazione non riuscita:', error.message));
+
+const errorContext = (req, operazione) => ({
+  area: req.path.includes('/contabilita') ? 'Contabilità' : undefined,
+  operazione,
+  metodo: req.method,
+  percorso: req.path,
+  utente: req.authUser?.username || req.authUser?.email || req.authUser?.id
+});
+
+const handleWorkflow = (action, operationName) => async (req, res) => {
   try { res.json(await action(req)); }
-  catch (error) { res.status(400).json({ error: error.message }); }
+  catch (error) {
+    await autodiagnosi.recordError(error, errorContext(req, operationName || `${req.method} ${req.path}`));
+    res.status(400).json({ error: error.message });
+  }
 };
+
+const requireAdmin = (req, res, next) => {
+  if (req.authUser?.role !== 'admin') return res.status(403).json({ error: 'Permesso amministratore richiesto.' });
+  next();
+};
+
+app.get('/api/autodiagnosi', requireAdmin, async (req, res) => {
+  try {
+    res.json(await autodiagnosi.listErrors(req.query));
+  } catch (error) {
+    await autodiagnosi.recordError(error, errorContext(req, 'Consultazione autodiagnosi'));
+    res.status(500).json({ error: 'Impossibile caricare l’autodiagnosi.' });
+  }
+});
+
+app.patch('/api/autodiagnosi/:id/stato', requireAdmin, async (req, res) => {
+  try {
+    res.json(await autodiagnosi.updateStatus(req.params.id, req.body.stato, req.authUser?.id));
+  } catch (error) {
+    await autodiagnosi.recordError(error, errorContext(req, 'Aggiornamento stato autodiagnosi'));
+    res.status(400).json({ error: error.message });
+  }
+});
 const { tipo, anno, mese } = { tipo: ':tipo', anno: ':anno', mese: ':mese' };
 app.get(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/stato`, handleWorkflow(req =>
   workflowElaborati.status(req.params.tipo, req.params.mese, req.params.anno)));
@@ -478,6 +515,7 @@ app.post('/api/run', async (req, res) => {
 
   } catch (error) {
     console.error(`[ERROR] Errore nell'esecuzione di ${functionName}:`, error.message);
+    await autodiagnosi.recordError(error, errorContext(req, functionName || 'Chiamata API'));
     return res.json({ success: false, error: error.message });
   }
 });
@@ -978,13 +1016,15 @@ app.post('/api/ai/ask', async (req, res) => {
 
 app.use(async (error, req, res, next) => {
   if (req.payrollTempDir) await cleanupPayrollUpload(req);
+  await autodiagnosi.recordError(error, errorContext(req, `${req.method} ${req.path}`));
   if (error instanceof multer.MulterError) {
     return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ success: false, error: error.message });
   }
   if (error.code === 'UNSUPPORTED_FILE_TYPE') {
     return res.status(415).json({ success: false, error: error.message });
   }
-  next(error);
+  console.error('[ERRORE NON GESTITO]', error);
+  return res.status(500).json({ success: false, error: 'Errore interno del gestionale. Il dettaglio è stato registrato in Autodiagnosi.' });
 });
 
 
