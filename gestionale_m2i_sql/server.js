@@ -14,6 +14,7 @@ const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
 const { ensureIndexes } = require('./db_indexes');
 const autodiagnosi = require('./autodiagnosi');
+const operatori = require('./operatori');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -69,6 +70,7 @@ app.use('/uploads', auth.requireAuth, (req, res, next) => {
 }, express.static(baseUploadPath));
 
 autodiagnosi.ensureTable().catch(error => console.error('[AUTODIAGNOSI] Inizializzazione non riuscita:', error.message));
+operatori.ensureTables().catch(error => console.error('[OPERATORI] Inizializzazione non riuscita:', error.message));
 
 const errorContext = (req, operazione) => ({
   area: req.path.includes('/contabilita') ? 'Contabilità' : undefined,
@@ -526,6 +528,7 @@ app.post('/api/run', async (req, res) => {
 const pdfGenerator = require('./pdf_generator');
 const { buildReportContabilitaClientiPDF } = require('./report_contabilita_clienti_pdf');
 const { buildReportContabilitaDipendentiPDF } = require('./report_contabilita_dipendenti_pdf');
+const { buildReportProvvigioniOperatoriPDF } = require('./report_provvigioni_operatori_pdf');
 
 app.get('/api/contabilita/pdf/report-clienti/:anno/:mese', async (req, res) => {
   try {
@@ -555,6 +558,26 @@ app.get('/api/contabilita/pdf/report-dipendenti/:anno/:mese', async (req, res) =
     res.setHeader('Content-Disposition', `attachment; filename="Report_Stipendi_Dipendenti_${mese}_${anno}.pdf"`);
     res.send(await doc.getBuffer());
   } catch (error) { res.status(400).send(error.message); }
+});
+
+app.get('/api/contabilita/pdf/provvigioni/:anno/:mese', async (req, res) => {
+  try {
+    const { anno, mese } = req.params;
+    workflowElaborati.period('cliente', mese, anno);
+    const operatori = await api.ottieniElaboratoProvvigioni(mese, anno);
+    const doc = buildReportProvvigioniOperatoriPDF(operatori, mese, anno);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Riepilogo_Provvigioni_${mese}_${anno}.pdf"`);
+    res.send(await doc.getBuffer());
+  } catch (error) { res.status(400).send(error.message); }
+});
+
+app.get('/api/contabilita/provvigioni/:anno/:mese', async (req, res) => {
+  try {
+    const { anno, mese } = req.params;
+    workflowElaborati.period('cliente', mese, anno);
+    res.json(await api.ottieniElaboratoProvvigioni(mese, anno));
+  } catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 app.get(['/api/contabilita/pdf/:tipo/:anno/:mese', '/api/contabilita/pdf/:tipo/:anno/:mese/:id'], async (req, res) => {

@@ -1,4 +1,5 @@
 import { apiCall } from './client';
+import { workflowRequest } from './workflowElaborati';
 
 // === FATTURE ===
 
@@ -91,7 +92,7 @@ export async function registraPagamento(datiPagamento) {
 // === PROVVIGIONI ===
 
 export async function calcolaProvvigioni(mese, anno) {
-  return await apiCall('ottieniElaboratoProvvigioni', [mese, anno]);
+  return await workflowRequest(`contabilita/provvigioni/${anno}/${mese}`);
 }
 
 export async function anteprimaFattureXml(files, mese, anno) {

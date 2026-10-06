@@ -12,6 +12,7 @@ const bustePaga  = require('./controllers/buste_paga');
 const elaborati  = require('./controllers/elaborati');
 const utils      = require('./controllers/utils');
 const azienda    = require('./controllers/azienda');
+const operatori  = require('./operatori');
 
 const api = {
   ...dashboard,
@@ -23,7 +24,8 @@ const api = {
   ...bustePaga,
   ...elaborati,
   ...utils,
-  ...azienda
+  ...azienda,
+  ...operatori
 };
 
 // Mappa alias dinamici delle funzioni estratti dal client HTML (mantenuti per compatibilità)

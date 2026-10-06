@@ -461,11 +461,13 @@ module.exports = {
   // PROVVIGIONI
   // ==========================================
   async ottieniElaboratoProvvigioni(mese, anno) {
+    const { nomiAttiviNelMese } = require('../operatori');
+    const operatoriAttivi = await nomiAttiviNelMese(mese, anno);
     const clienti = await knex('clienti')
-      .select('id', 'ragione_sociale', 'referente')
-      .where('attivo', 'SI');
+      .select('id', 'ragione_sociale', 'operatore', 'operatore_assegnato')
+      .where(function() { this.where('cestinato', 0).orWhereNull('cestinato'); });
       
-    const rows = [];
+    const operatori = new Map();
     
     for (const c of clienti) {
       const meseStr = String(mese).padStart(2, '0');
@@ -478,45 +480,41 @@ module.exports = {
         .whereRaw("strftime('%Y', data_fattura) = ?", [annoStr])
         .first();
       const imponibile = invInfo ? invInfo.s || 0 : 0;
+      // La sezione provvigioni mostra esclusivamente gli operatori collegati
+      // a clienti che hanno realmente fatturato nel periodo selezionato.
+      if (Number(imponibile) <= 0) continue;
 
-      const hourInfo = await knex('registro_ore')
-        .sum('costo_totale as c')
-        .where({ cliente_id: c.id, mese, anno })
-        .first();
-      const costo = hourInfo ? hourInfo.c || 0 : 0;
-      const utile = imponibile - costo;
+      const operatore = String(c.operatore || c.operatore_assegnato || '').trim();
+      if (!operatore) continue;
+      if (!operatoriAttivi.has(operatore.toLocaleLowerCase('it-IT'))) continue;
 
-      const reg = await knex('regolazioni_provvigioni')
-        .sum('regolazione_comm as rc')
-        .sum('regolazione_oper as ro')
-        .where({ cliente_id: c.id, mese, anno })
-        .first();
-      const regComm = reg ? reg.rc || 0 : 0;
-      const regOper = reg ? reg.ro || 0 : 0;
+      // La provvigione è una quota fissa determinata dal fatturato imponibile
+      // complessivo del singolo cliente nel mese, quindi al netto dell'IVA.
+      const fatturatoImponibile = Number(imponibile);
+      const provOper = fatturatoImponibile <= 100
+        ? 5
+        : fatturatoImponibile <= 200
+          ? 10
+          : 20;
 
-      const percComm = 10.0;
-      const percOper = 1.0;
-
-      const provComm = (utile * percComm / 100) + regComm;
-      const provOper = (utile * percOper / 100) + regOper;
-
-      rows.push({
-        idCliente: c.id,
+      const chiaveOperatore = operatore.toLocaleLowerCase('it-IT');
+      if (!operatori.has(chiaveOperatore)) {
+        operatori.set(chiaveOperatore, { operatore, fatturatoTotale: 0, provvigioneTotale: 0, clienti: [] });
+      }
+      const gruppo = operatori.get(chiaveOperatore);
+      gruppo.fatturatoTotale += Number(imponibile);
+      gruppo.provvigioneTotale += Number(provOper);
+      gruppo.clienti.push({
+        cliente_id: c.id,
         ragioneSociale: c.ragione_sociale.toUpperCase(),
-        imponibile: imponibile,
-        costoDipendenti: costo,
-        utile: utile,
-        commerciale: c.referente || "Senza Agente",
-        percComm: percComm,
-        regolazioneComm: regComm,
-        provvigioneComm: provComm,
-        operatore: "Gestore",
-        percOper: percOper,
-        regolazioneOper: regOper,
-        provvigioneOper: provOper
+        fatturato: Number(imponibile),
+        provvigione: Number(provOper)
       });
     }
-    return rows;
+    return [...operatori.values()]
+      .map(gruppo => ({ ...gruppo,
+        clienti: gruppo.clienti.sort((a, b) => a.ragioneSociale.localeCompare(b.ragioneSociale, 'it')) }))
+      .sort((a, b) => a.operatore.localeCompare(b.operatore, 'it'));
   },
 
   async calendarioClienteOre(mese, anno, idCliente) {

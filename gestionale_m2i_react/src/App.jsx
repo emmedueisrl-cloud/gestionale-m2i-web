@@ -52,6 +52,7 @@ const LogSistema = lazy(() => import('./pages/Impostazioni/LogSistema'));
 const BackupSistema = lazy(() => import('./pages/Impostazioni/BackupSistema'));
 const Utenti = lazy(() => import('./pages/Impostazioni/Utenti'));
 const Autodiagnosi = lazy(() => import('./pages/Impostazioni/Autodiagnosi'));
+const Operatori = lazy(() => import('./pages/Impostazioni/Operatori'));
 const ContabilitaElaborati = lazy(() => import('./pages/Contabilita/ContabilitaElaborati'));
 
 function App() {
@@ -67,6 +68,7 @@ function App() {
         <Route index element={<Navigate to="clienti" replace />} />
         <Route path="clienti" element={<ContabilitaElaborati tipo="cliente" />} />
         <Route path="dipendenti" element={<ContabilitaElaborati tipo="dipendente" />} />
+        <Route path="provvigioni" element={<Provvigioni />} />
       </Route>
       <Route path="/admin" element={
         <ProtectedRoute>
@@ -104,7 +106,7 @@ function App() {
         <Route path="clienti/regolazioni" element={<ScontiMaggiorazioniClienti />} />
         <Route path="fatture" element={<Fatture />} />
         <Route path="pagamenti" element={<Pagamenti />} />
-        <Route path="provvigioni" element={<Provvigioni />} />
+        <Route path="provvigioni" element={<Navigate to="/contabilita/provvigioni" replace />} />
         <Route path="preventivi" element={<Preventivi />} />
 
         {/* Gestione Documentale (Fase 5) */}
@@ -123,6 +125,7 @@ function App() {
           <Route path="email" element={<EmailConfig />} />
           <Route path="log" element={<LogSistema />} />
           <Route path="autodiagnosi" element={<Autodiagnosi />} />
+          <Route path="operatori" element={<Operatori />} />
           <Route path="backup" element={<BackupSistema />} />
           <Route path="utenti" element={<Utenti />} />
         </Route>

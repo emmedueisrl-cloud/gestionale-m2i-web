@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { salvaNuovoCliente, uploadFileCliente } from '../../api/clienti';
 import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
+import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 
 export default function NuovoCliente() {
   const navigate = useNavigate();
@@ -293,7 +294,7 @@ export default function NuovoCliente() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 text-indigo-400">Outbound</label>
-              <input type="text" name="operatore" value={dati.operatore} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" placeholder="Digita a mano..." />
+              <OperatoreSelect name="operatore" value={dati.operatore} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 text-emerald-400">Commerciale</label>
@@ -548,7 +549,7 @@ export default function NuovoCliente() {
             
             <div className="col-span-1 md:col-span-2">
               <label className="block text-sm font-medium text-slate-200 mb-1 text-indigo-400">Operatore Assegnato</label>
-              <input type="text" name="operatoreAssegnato" value={dati.operatoreAssegnato} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" placeholder="Digita a mano..." />
+              <OperatoreSelect name="operatoreAssegnato" value={dati.operatoreAssegnato} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-indigo-500/30 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-100" />
             </div>
             
             <div className="col-span-1 md:col-span-2">

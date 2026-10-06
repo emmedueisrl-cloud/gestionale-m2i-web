@@ -8,7 +8,8 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
   const menu = area === 'contabilita' ? [
     { type: 'header', label: 'Elaborati pronti' },
     { type: 'item', label: '🧾 Fatturazione', path: '/contabilita/clienti' },
-    { type: 'item', label: '💶 Stipendi', path: '/contabilita/dipendenti' }
+    { type: 'item', label: '💶 Stipendi', path: '/contabilita/dipendenti' },
+    { type: 'item', label: '💰 Provvigioni', path: '/contabilita/provvigioni' }
   ] : [
     { type: 'item', label: '🏠 Dashboard', path: '/admin/dashboard' },
     
@@ -33,9 +34,6 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
     { type: 'header', label: '📂 Gestione Documentale' },
     { type: 'item', label: '🏢 Dati e Documenti m2i', path: '/admin/azienda' },
     { type: 'item', label: '📄 Moduli Aziendali', path: '/admin/dipendenti/moduli' },
-    
-    { type: 'header', label: '📈 Gestione Provvigioni' },
-    { type: 'item', label: '💰 Provvigioni', path: '/admin/provvigioni' },
     
     { type: 'header', label: '🤖 Ai & Servizi Esterni' },
     { type: 'item', label: '📧 Posta Elettronica', path: '/admin/posta' },
