@@ -58,22 +58,27 @@ function createReceiptsService(knex) {
   }
 
   async function list() {
-    const pendingRegistrations = await knex.schema.hasTable('fatture_aruba_elaborati')
-      ? await knex('fatture_aruba_elaborati as f').leftJoin('clienti as c', 'f.cliente_id', 'c.id')
-        .whereNull('f.fattura_id').select('f.id', 'f.numero_fattura', 'f.data_fattura', 'f.importo_totale', 'c.ragione_sociale')
-        .orderBy('f.data_fattura', 'desc') : [];
-    const [invoices, receipts] = await Promise.all([
-      knex('fatture as f').leftJoin('clienti as c', 'f.cliente_id', 'c.id')
-        .select('f.id', 'f.cliente_id', 'c.ragione_sociale', 'f.numero_fattura', 'f.data_fattura', 'f.data_scadenza',
-          'f.data_pagamento', 'f.importo_totale', 'f.importo_pagato', 'f.stato_pagamento')
-        .select(knex.raw(`EXISTS (
-          SELECT 1 FROM fatture_aruba_elaborati a
-          WHERE a.fattura_id = f.id OR (
-            a.cliente_id = f.cliente_id AND TRIM(a.numero_fattura) = TRIM(f.numero_fattura)
-            AND a.data_fattura = f.data_fattura
-          )
-        ) AS registrata`))
-        .orderBy('f.data_fattura', 'desc').orderBy('f.numero_fattura', 'desc'),
+    // Solo le registrazioni della sezione Fatturazione appartengono a questo flusso.
+    // La tabella generale fatture contiene anche importazioni storiche non elaborate qui.
+    const [registrations, sentInvoices, receipts] = await Promise.all([
+      knex('fatture_aruba_elaborati as a')
+        .leftJoin('clienti as c', 'a.cliente_id', 'c.id')
+        .leftJoin('fatture as f', 'a.fattura_id', 'f.id')
+        .select('a.id as registrazione_id', 'a.fattura_id', 'a.cliente_id', 'c.ragione_sociale',
+          'a.mese', 'a.anno', 'a.numero_fattura', 'a.data_fattura', 'a.importo_totale', 'f.data_scadenza',
+          'f.data_pagamento', 'f.importo_pagato', 'f.stato_pagamento')
+        .orderBy('a.data_fattura', 'desc').orderBy('a.numero_fattura', 'desc'),
+      knex('fatture_inviate_elaborati as s')
+        .leftJoin('clienti as c', 's.cliente_id', 'c.id')
+        .leftJoin('righe_bloccate_elaborati as b', function () {
+          this.on('b.tipo', knex.raw('?', ['cliente'])).andOn('b.mese', 's.mese')
+            .andOn('b.anno', 's.anno').andOn('b.soggetto_id', 's.cliente_id');
+        })
+        .leftJoin('dettaglio_mesi_chiusi_clienti as d', function () {
+          this.on('d.mese', 's.mese').andOn('d.anno', 's.anno').andOn('d.cliente_id', 's.cliente_id');
+        })
+        .select('s.cliente_id', 's.mese', 's.anno', 's.inviata_at', 'c.ragione_sociale',
+          'b.snapshot', 'd.importo_totale as importo_storico'),
       knex('incassi_fatture').select('id', 'fattura_id', 'data_incasso', 'importo_cent', 'nota', 'origine',
         'registrato_at', 'annullato_at', 'motivo_annullamento').orderBy('registrato_at', 'desc')
     ]);
@@ -88,25 +93,47 @@ function createReceiptsService(knex) {
       });
     }
     const today = todayInItaly();
-    const rows = invoices.map(invoice => {
-      const history = byInvoice.get(String(invoice.id)) || [];
+    const rows = registrations.map(invoice => {
+      const linked = Boolean(invoice.fattura_id);
+      const history = linked ? byInvoice.get(String(invoice.fattura_id)) || [] : [];
       const paid = money(invoice.importo_pagato);
       const total = money(invoice.importo_totale);
       const activeLedgerCents = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + cents(row.importo), 0);
       return {
-        id: invoice.id, clienteId: invoice.cliente_id, cliente: invoice.ragione_sociale || 'Cliente non disponibile',
-        numero: invoice.numero_fattura, registrata: Boolean(invoice.registrata),
+        id: linked ? invoice.fattura_id : `aruba:${invoice.registrazione_id}`,
+        clienteId: invoice.cliente_id, cliente: invoice.ragione_sociale || 'Cliente non disponibile',
+        numero: invoice.numero_fattura, registrata: true, gestibile: linked,
+        periodo: `${invoice.anno}-${String(invoice.mese).padStart(2, '0')}`,
         dataFattura: invoice.data_fattura, scadenza: invoice.data_scadenza,
         totale: total, incassato: paid, residuo: Math.max(0, (cents(total) - cents(paid)) / 100),
         stato: statusFor(invoice, today),
-        incongruenza: activeLedgerCents !== cents(paid) || cents(paid) > cents(total) || cents(paid) < 0 ||
-          (invoice.stato_pagamento === 'Pagata' && cents(paid) < cents(total)),
+        incongruenza: linked && (activeLedgerCents !== cents(paid) || cents(paid) > cents(total) || cents(paid) < 0 ||
+          (invoice.stato_pagamento === 'Pagata' && cents(paid) < cents(total))),
         storico: history
       };
     });
+    const registeredPeriods = new Set(registrations.map(row => `${row.cliente_id}:${row.anno}:${row.mese}`));
+    for (const sent of sentInvoices) {
+      if (registeredPeriods.has(`${sent.cliente_id}:${sent.anno}:${sent.mese}`)) continue;
+      let snapshot = null;
+      try { snapshot = sent.snapshot ? JSON.parse(sent.snapshot) : null; } catch { /* Storico senza snapshot leggibile. */ }
+      const rawTotal = snapshot?.importoTotale ?? sent.importo_storico;
+      const validTotal = rawTotal !== null && rawTotal !== undefined && Number.isFinite(Number(rawTotal));
+      const total = validTotal ? money(rawTotal) : 0;
+      rows.push({
+        id: `inviata:${sent.cliente_id}:${sent.anno}:${sent.mese}`,
+        clienteId: sent.cliente_id, cliente: sent.ragione_sociale || 'Cliente non disponibile',
+        numero: '', registrata: false, gestibile: false,
+        periodo: `${sent.anno}-${String(sent.mese).padStart(2, '0')}`,
+        dataFattura: null, scadenza: null,
+        totale: total, incassato: 0, residuo: total,
+        stato: validTotal ? 'Da incassare' : 'Importo da verificare',
+        incongruenza: !validTotal, storico: []
+      });
+    }
     const sum = selector => rows.reduce((total, row) => total + cents(selector(row)), 0) / 100;
-    return { fatture: rows, fattureDaRiconciliare: pendingRegistrations.map(row => ({
-      id: row.id, numero: row.numero_fattura, dataFattura: row.data_fattura,
+    return { fatture: rows, fattureDaRiconciliare: registrations.filter(row => !row.fattura_id).map(row => ({
+      id: row.registrazione_id, numero: row.numero_fattura, dataFattura: row.data_fattura,
       totale: money(row.importo_totale), cliente: row.ragione_sociale || 'Cliente non disponibile'
     })), riepilogo: {
       fatturato: sum(row => row.totale), incassato: sum(row => row.incassato),

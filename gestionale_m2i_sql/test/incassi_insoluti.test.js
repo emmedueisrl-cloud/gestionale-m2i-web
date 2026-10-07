@@ -14,7 +14,17 @@ test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async
   });
   await db.schema.createTable('fatture_aruba_elaborati', table => {
     table.increments('id'); table.text('fattura_id'); table.text('cliente_id');
+    table.integer('mese'); table.integer('anno');
     table.text('numero_fattura'); table.text('data_fattura'); table.float('importo_totale');
+  });
+  await db.schema.createTable('fatture_inviate_elaborati', table => {
+    table.text('cliente_id'); table.integer('mese'); table.integer('anno'); table.text('inviata_at');
+  });
+  await db.schema.createTable('righe_bloccate_elaborati', table => {
+    table.text('tipo'); table.integer('mese'); table.integer('anno'); table.text('soggetto_id'); table.text('snapshot');
+  });
+  await db.schema.createTable('dettaglio_mesi_chiusi_clienti', table => {
+    table.text('cliente_id'); table.integer('mese'); table.integer('anno'); table.float('importo_totale');
   });
   await db.schema.createTable('log_attivita', table => {
     table.increments('id'); table.text('categoria'); table.text('icona'); table.text('colore');
@@ -28,15 +38,19 @@ test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async
     { id: 'F2', cliente_id: 'C1', numero_fattura: '2', data_fattura: '2026-10-01',
       importo_totale: 100, importo_pagato: 0, stato_pagamento: 'Da Pagare' }
   ]);
-  await db('fatture_aruba_elaborati').insert({ fattura_id: null, cliente_id: 'C1',
-    numero_fattura: '2', data_fattura: '2026-10-01', importo_totale: 100 });
+  await db('fatture_aruba_elaborati').insert([
+    { fattura_id: 'F1', cliente_id: 'C1', mese: 9, anno: 2026,
+      numero_fattura: '1', data_fattura: '2026-09-01', importo_totale: 120 },
+    { fattura_id: 'F2', cliente_id: 'C1', mese: 10, anno: 2026,
+      numero_fattura: '2', data_fattura: '2026-10-01', importo_totale: 100 }
+  ]);
   const service = createReceiptsService(db);
   await service.initialize();
   await service.initialize();
   let dashboard = await service.list();
   assert.equal(dashboard.riepilogo.daIncassare, 200);
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').stato, 'Insoluta');
-  assert.equal(dashboard.fatture.find(row => row.id === 'F1').registrata, false);
+  assert.equal(dashboard.fatture.find(row => row.id === 'F1').registrata, true);
   assert.equal(dashboard.fatture.find(row => row.id === 'F2').registrata, true);
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').storico.length, 1);
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').storico[0].origine, 'storico');
@@ -61,4 +75,59 @@ test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async
   assert.equal((await service.list()).fatture.find(row => row.id === 'F1').stato, 'Parziale');
   await service.setDueDate({ fatturaId: 'F1', date: null });
   assert.equal((await service.list()).fatture.find(row => row.id === 'F1').scadenza, null);
+});
+
+test('incassi mostra solo le fatture elaborate, anche senza importazione generale', async t => {
+  const db = knexFactory({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+  t.after(() => db.destroy());
+  await db.schema.createTable('clienti', table => {
+    table.text('id').primary(); table.text('ragione_sociale');
+  });
+  await db.schema.createTable('fatture', table => {
+    table.text('id').primary(); table.text('cliente_id'); table.text('numero_fattura');
+    table.text('data_fattura'); table.text('data_scadenza'); table.text('data_pagamento');
+    table.float('importo_totale'); table.float('importo_pagato'); table.text('stato_pagamento');
+  });
+  await db.schema.createTable('fatture_aruba_elaborati', table => {
+    table.increments('id'); table.text('fattura_id'); table.text('cliente_id');
+    table.integer('mese'); table.integer('anno'); table.text('numero_fattura');
+    table.text('data_fattura'); table.float('importo_totale');
+  });
+  await db.schema.createTable('fatture_inviate_elaborati', table => {
+    table.text('cliente_id'); table.integer('mese'); table.integer('anno'); table.text('inviata_at');
+  });
+  await db.schema.createTable('righe_bloccate_elaborati', table => {
+    table.text('tipo'); table.integer('mese'); table.integer('anno'); table.text('soggetto_id'); table.text('snapshot');
+  });
+  await db.schema.createTable('dettaglio_mesi_chiusi_clienti', table => {
+    table.text('cliente_id'); table.integer('mese'); table.integer('anno'); table.float('importo_totale');
+  });
+  await db.schema.createTable('log_attivita', table => {
+    table.increments('id'); table.text('categoria'); table.text('icona');
+    table.text('colore'); table.text('descrizione'); table.text('eseguito_da');
+  });
+  await db('clienti').insert([
+    { id: 'OLD', ragione_sociale: 'Importazione storica' },
+    { id: 'SEP', ragione_sociale: 'Fattura settembre' },
+    { id: 'SENT', ragione_sociale: 'Solo inviata' }
+  ]);
+  await db('fatture').insert({ id: 'OLD1', cliente_id: 'OLD', numero_fattura: '486/26',
+    data_fattura: '2026-08-03', importo_totale: 27940.26, importo_pagato: 0, stato_pagamento: 'Insoluto' });
+  await db('fatture_aruba_elaborati').insert({ cliente_id: 'SEP', mese: 9, anno: 2026,
+    numero_fattura: '12/26', data_fattura: '2026-09-29', importo_totale: 936 });
+  await db('fatture_inviate_elaborati').insert([
+    { cliente_id: 'SEP', mese: 9, anno: 2026, inviata_at: '2026-09-29T10:00:00Z' },
+    { cliente_id: 'SENT', mese: 10, anno: 2026, inviata_at: '2026-10-01T10:00:00Z' }
+  ]);
+  await db('righe_bloccate_elaborati').insert({ tipo: 'cliente', soggetto_id: 'SENT',
+    mese: 10, anno: 2026, snapshot: JSON.stringify({ importoTotale: 150 }) });
+  const service = createReceiptsService(db);
+  await service.initialize();
+  const result = await service.list();
+  assert.equal(result.fatture.length, 2);
+  assert.equal(result.fatture.find(row => row.clienteId === 'OLD'), undefined);
+  assert.deepEqual(result.fatture.map(row => [row.periodo, row.totale]), [['2026-09', 936], ['2026-10', 150]]);
+  assert.equal(result.riepilogo.daIncassare, 1086);
+  assert.equal(result.fatture[0].gestibile, false);
+  assert.equal(result.fatture[1].registrata, false);
 });
