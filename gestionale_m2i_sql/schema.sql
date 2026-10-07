@@ -555,9 +555,26 @@ CREATE TABLE fatture_aruba_elaborati (
   numero_fattura TEXT NOT NULL, data_fattura TEXT NOT NULL,
   importo_totale REAL NOT NULL, allegato_path TEXT,
   registrata_at TEXT NOT NULL, registrata_da INTEGER,
+  data_scadenza TEXT,
   fattura_id TEXT UNIQUE REFERENCES fatture(id) ON DELETE SET NULL,
   UNIQUE (cliente_id, numero_fattura, data_fattura)
 );
+
+CREATE TABLE incassi_fatture_aruba (
+  id TEXT PRIMARY KEY,
+  registrazione_id INTEGER NOT NULL REFERENCES fatture_aruba_elaborati(id) ON DELETE RESTRICT,
+  data_incasso TEXT NOT NULL,
+  importo_cent INTEGER NOT NULL,
+  nota TEXT,
+  origine TEXT NOT NULL DEFAULT 'manuale',
+  registrato_at TEXT NOT NULL,
+  registrato_da TEXT,
+  annullato_at TEXT,
+  annullato_da TEXT,
+  motivo_annullamento TEXT,
+  idempotency_key TEXT UNIQUE
+);
+CREATE INDEX idx_incassi_fatture_aruba_data ON incassi_fatture_aruba(registrazione_id, data_incasso);
 
 CREATE TABLE fatture_inviate_elaborati (
   cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT,

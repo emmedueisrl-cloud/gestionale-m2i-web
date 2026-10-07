@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { transferArubaReceipts } = require('./fatture_reconciliation');
 
 const cents = value => Math.round(Number(value || 0) * 100);
 const money = value => cents(value) / 100;
@@ -14,6 +15,14 @@ const todayInItaly = () => {
   const get = type => parts.find(part => part.type === type).value;
   return `${get('year')}-${get('month')}-${get('day')}`;
 };
+const dateInItaly = timestamp => {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(date);
+  const get = type => parts.find(part => part.type === type).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
+};
 const statusFor = (invoice, today) => {
   const remaining = Math.max(0, cents(invoice.importo_totale) - cents(invoice.importo_pagato));
   if (!remaining) return 'Incassata';
@@ -22,9 +31,30 @@ const statusFor = (invoice, today) => {
   } else if (invoice.stato_pagamento === 'Insoluto') return 'Insoluta';
   return cents(invoice.importo_pagato) > 0 ? 'Parziale' : 'Da incassare';
 };
+const arubaId = value => /^aruba:([1-9]\d*)$/.exec(String(value || ''))?.[1] || null;
 
 function createReceiptsService(knex) {
   async function initialize() {
+    if (!await knex.schema.hasColumn('fatture_aruba_elaborati', 'data_scadenza')) {
+      await knex.raw('ALTER TABLE fatture_aruba_elaborati ADD COLUMN data_scadenza TEXT');
+    }
+    if (!await knex.schema.hasTable('incassi_fatture_aruba')) {
+      await knex.schema.createTable('incassi_fatture_aruba', table => {
+        table.text('id').primary();
+        table.integer('registrazione_id').notNullable().references('id').inTable('fatture_aruba_elaborati').onDelete('RESTRICT');
+        table.text('data_incasso').notNullable();
+        table.integer('importo_cent').notNullable();
+        table.text('nota');
+        table.text('origine').notNullable().defaultTo('manuale');
+        table.text('registrato_at').notNullable();
+        table.text('registrato_da');
+        table.text('annullato_at');
+        table.text('annullato_da');
+        table.text('motivo_annullamento');
+        table.text('idempotency_key').unique();
+        table.index(['registrazione_id', 'data_incasso']);
+      });
+    }
     if (!await knex.schema.hasTable('incassi_fatture')) {
       await knex.schema.createTable('incassi_fatture', table => {
         table.text('id').primary();
@@ -55,17 +85,26 @@ function createReceiptsService(knex) {
         registrato_at: new Date().toISOString()
       });
     }
+    const linked = await knex('fatture_aruba_elaborati').whereNotNull('fattura_id').select('id', 'fattura_id');
+    for (const registration of linked) {
+      if (!await knex('incassi_fatture_aruba').where({ registrazione_id: registration.id }).first()) continue;
+      await knex.transaction(async trx => {
+        const official = await trx('fatture').where({ id: registration.fattura_id }).first();
+        if (official) await transferArubaReceipts(trx, registration, official);
+      });
+    }
   }
 
   async function list() {
     // Solo le registrazioni della sezione Fatturazione appartengono a questo flusso.
     // La tabella generale fatture contiene anche importazioni storiche non elaborate qui.
-    const [registrations, sentInvoices, receipts] = await Promise.all([
+    const [registrations, sentInvoices, receipts, arubaReceipts] = await Promise.all([
       knex('fatture_aruba_elaborati as a')
         .leftJoin('clienti as c', 'a.cliente_id', 'c.id')
         .leftJoin('fatture as f', 'a.fattura_id', 'f.id')
         .select('a.id as registrazione_id', 'a.fattura_id', 'a.cliente_id', 'c.ragione_sociale',
-          'a.mese', 'a.anno', 'a.numero_fattura', 'a.data_fattura', 'a.importo_totale', 'f.data_scadenza',
+          'a.mese', 'a.anno', 'a.numero_fattura', 'a.data_fattura', 'a.importo_totale',
+          'a.data_scadenza as scadenza_aruba', 'f.data_scadenza',
           'f.data_pagamento', 'f.importo_pagato', 'f.stato_pagamento')
         .orderBy('a.data_fattura', 'desc').orderBy('a.numero_fattura', 'desc'),
       knex('fatture_inviate_elaborati as s')
@@ -80,7 +119,9 @@ function createReceiptsService(knex) {
         .select('s.cliente_id', 's.mese', 's.anno', 's.inviata_at', 'c.ragione_sociale',
           'b.snapshot', 'd.importo_totale as importo_storico'),
       knex('incassi_fatture').select('id', 'fattura_id', 'data_incasso', 'importo_cent', 'nota', 'origine',
-        'registrato_at', 'annullato_at', 'motivo_annullamento').orderBy('registrato_at', 'desc')
+        'registrato_at', 'annullato_at', 'motivo_annullamento').orderBy('registrato_at', 'desc'),
+      knex('incassi_fatture_aruba').select('id', 'registrazione_id', 'data_incasso', 'importo_cent',
+        'nota', 'origine', 'registrato_at', 'annullato_at', 'motivo_annullamento').orderBy('registrato_at', 'desc')
     ]);
     const byInvoice = new Map();
     for (const receipt of receipts) {
@@ -92,23 +133,38 @@ function createReceiptsService(knex) {
         annullatoAt: receipt.annullato_at, motivoAnnullamento: receipt.motivo_annullamento
       });
     }
+    const byRegistration = new Map();
+    for (const receipt of arubaReceipts) {
+      const key = String(receipt.registrazione_id);
+      if (!byRegistration.has(key)) byRegistration.set(key, []);
+      byRegistration.get(key).push({
+        id: receipt.id, data: receipt.data_incasso, importo: receipt.importo_cent / 100,
+        nota: receipt.nota || '', origine: receipt.origine, registratoAt: receipt.registrato_at,
+        annullatoAt: receipt.annullato_at, motivoAnnullamento: receipt.motivo_annullamento
+      });
+    }
     const today = todayInItaly();
     const rows = registrations.map(invoice => {
       const linked = Boolean(invoice.fattura_id);
-      const history = linked ? byInvoice.get(String(invoice.fattura_id)) || [] : [];
-      const paid = money(invoice.importo_pagato);
+      const pendingHistory = byRegistration.get(String(invoice.registrazione_id)) || [];
+      const awaitingTransfer = linked && pendingHistory.length > 0;
+      const history = linked && !awaitingTransfer ? byInvoice.get(String(invoice.fattura_id)) || [] : pendingHistory;
+      const paid = linked && !awaitingTransfer ? money(invoice.importo_pagato)
+        : history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + row.importo, 0);
       const total = money(invoice.importo_totale);
       const activeLedgerCents = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + cents(row.importo), 0);
+      const scadenza = linked && !awaitingTransfer ? invoice.data_scadenza : invoice.scadenza_aruba;
       return {
-        id: linked ? invoice.fattura_id : `aruba:${invoice.registrazione_id}`,
+        id: linked && !awaitingTransfer ? invoice.fattura_id : `aruba:${invoice.registrazione_id}`,
         clienteId: invoice.cliente_id, cliente: invoice.ragione_sociale || 'Cliente non disponibile',
-        numero: invoice.numero_fattura, registrata: true, gestibile: linked,
+        numero: invoice.numero_fattura, registrata: true, gestibile: !awaitingTransfer,
+        sincronizzazioneDaVerificare: awaitingTransfer,
         periodo: `${invoice.anno}-${String(invoice.mese).padStart(2, '0')}`,
-        dataFattura: invoice.data_fattura, scadenza: invoice.data_scadenza,
+        dataFattura: invoice.data_fattura, scadenza,
         totale: total, incassato: paid, residuo: Math.max(0, (cents(total) - cents(paid)) / 100),
-        stato: statusFor(invoice, today),
-        incongruenza: linked && (activeLedgerCents !== cents(paid) || cents(paid) > cents(total) || cents(paid) < 0 ||
-          (invoice.stato_pagamento === 'Pagata' && cents(paid) < cents(total))),
+        stato: statusFor({ ...invoice, importo_pagato: paid, data_scadenza: scadenza }, today),
+        incongruenza: awaitingTransfer || cents(paid) > cents(total) || (linked && (activeLedgerCents !== cents(paid) || cents(paid) < 0 ||
+          (invoice.stato_pagamento === 'Pagata' && cents(paid) < cents(total)))),
         storico: history
       };
     });
@@ -125,7 +181,7 @@ function createReceiptsService(knex) {
         clienteId: sent.cliente_id, cliente: sent.ragione_sociale || 'Cliente non disponibile',
         numero: '', registrata: false, gestibile: false,
         periodo: `${sent.anno}-${String(sent.mese).padStart(2, '0')}`,
-        dataFattura: null, scadenza: null,
+        dataFattura: dateInItaly(sent.inviata_at), scadenza: null,
         totale: total, incassato: 0, residuo: total,
         stato: validTotal ? 'Da incassare' : 'Importo da verificare',
         incongruenza: !validTotal, storico: []
@@ -149,6 +205,40 @@ function createReceiptsService(knex) {
     }
     if (typeof nota !== 'undefined' && (typeof nota !== 'string' || nota.length > 2000)) throw new Error('La nota supera il limite di 2000 caratteri.');
     if (idempotencyKey && (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9-]{8,64}$/.test(idempotencyKey))) throw new Error('Identificativo richiesta non valido.');
+    const registrationId = arubaId(fatturaId);
+    if (registrationId) return knex.transaction(async trx => {
+      const registration = await trx('fatture_aruba_elaborati').where({ id: registrationId }).first();
+      if (!registration) throw new Error('Fattura elaborata non trovata.');
+      if (idempotencyKey) {
+        const existing = await trx('incassi_fatture_aruba').where({ idempotency_key: idempotencyKey }).first();
+        if (existing) {
+          if (String(existing.registrazione_id) !== String(registrationId)) throw new Error('Richiesta già usata per un’altra fattura.');
+          return { id: existing.id, alreadyRegistered: true };
+        }
+        const transferred = await trx('incassi_fatture').where({ idempotency_key: idempotencyKey }).first();
+        if (transferred) {
+          if (String(transferred.fattura_id) !== String(registration.fattura_id)) throw new Error('Richiesta già usata per un’altra fattura.');
+          return { id: transferred.id, alreadyRegistered: true };
+        }
+      }
+      if (registration.fattura_id) throw new Error('La fattura è stata collegata all’archivio. Aggiorna la pagina e riprova.');
+      const recorded = await trx('incassi_fatture_aruba').where({ registrazione_id: registrationId });
+      const paid = recorded.filter(row => !row.annullato_at).reduce((sum, row) => sum + Number(row.importo_cent), 0);
+      const remaining = cents(registration.importo_totale) - paid;
+      const amount = cents(raw);
+      if (remaining <= 0) throw new Error('La fattura risulta già interamente incassata.');
+      if (amount > remaining) throw new Error(`Importo superiore al residuo di ${(remaining / 100).toFixed(2)} €.`);
+      const id = crypto.randomUUID();
+      await trx('incassi_fatture_aruba').insert({
+        id, registrazione_id: registrationId, data_incasso: data, importo_cent: amount,
+        nota: (nota || '').trim(), origine: 'manuale', registrato_at: new Date().toISOString(),
+        registrato_da: userId || null, idempotency_key: idempotencyKey || null
+      });
+      await trx('log_attivita').insert({ categoria: 'Incassi', icona: '💶', colore: '#059669',
+        descrizione: `Registrato incasso di ${(amount / 100).toFixed(2)} € per fattura ${registration.numero_fattura}.`,
+        eseguito_da: String(userId || 'LocalServer') });
+      return { id, incassato: (paid + amount) / 100, residuo: (remaining - amount) / 100 };
+    });
     return knex.transaction(async trx => {
       if (idempotencyKey) {
         const existing = await trx('incassi_fatture').where({ idempotency_key: idempotencyKey }).first();
@@ -197,7 +287,21 @@ function createReceiptsService(knex) {
     if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 1000) throw new Error('Indica il motivo dell’annullamento.');
     return knex.transaction(async trx => {
       const receipt = await trx('incassi_fatture').where({ id: receiptId }).first();
-      if (!receipt) throw new Error('Incasso non trovato.');
+      if (!receipt) {
+        const arubaReceipt = await trx('incassi_fatture_aruba').where({ id: receiptId }).first();
+        if (!arubaReceipt) throw new Error('Incasso non trovato.');
+        if (arubaReceipt.annullato_at) throw new Error('Incasso già annullato.');
+        const registration = await trx('fatture_aruba_elaborati').where({ id: arubaReceipt.registrazione_id }).first();
+        if (!registration || registration.fattura_id) throw new Error('La fattura è stata collegata all’archivio. Aggiorna la pagina e riprova.');
+        await trx('incassi_fatture_aruba').where({ id: receiptId }).update({
+          annullato_at: new Date().toISOString(), annullato_da: userId || null,
+          motivo_annullamento: reason.trim()
+        });
+        await trx('log_attivita').insert({ categoria: 'Incassi', icona: '↩️', colore: '#dc2626',
+          descrizione: `Annullato incasso ${receiptId} della fattura ${registration.numero_fattura}. Motivo: ${reason.trim()}`,
+          eseguito_da: String(userId || 'LocalServer') });
+        return { success: true };
+      }
       if (receipt.annullato_at) throw new Error('Incasso già annullato.');
       if (receipt.origine === 'storico') throw new Error('Il totale storico non può essere annullato come singola rata.');
       const invoice = await trx('fatture').where({ id: receipt.fattura_id }).first();
@@ -228,6 +332,17 @@ function createReceiptsService(knex) {
   async function setDueDate({ fatturaId, date, userId }) {
     if (date !== null && date !== '' && !validDate(date)) throw new Error('Data di scadenza non valida.');
     return knex.transaction(async trx => {
+      const registrationId = arubaId(fatturaId);
+      if (registrationId) {
+        const registration = await trx('fatture_aruba_elaborati').where({ id: registrationId }).first();
+        if (!registration) throw new Error('Fattura elaborata non trovata.');
+        if (registration.fattura_id) throw new Error('La fattura è stata collegata all’archivio. Aggiorna la pagina e riprova.');
+        await trx('fatture_aruba_elaborati').where({ id: registrationId }).update({ data_scadenza: date || null });
+        await trx('log_attivita').insert({ categoria: 'Incassi', icona: '📅', colore: '#4f46e5',
+          descrizione: `Aggiornata scadenza della fattura ${registration.numero_fattura}: ${date || 'rimossa'}.`,
+          eseguito_da: String(userId || 'LocalServer') });
+        return { success: true };
+      }
       const invoice = await trx('fatture').where({ id: fatturaId }).first();
       if (!invoice) throw new Error('Fattura non trovata.');
       const updates = { data_scadenza: date || null };

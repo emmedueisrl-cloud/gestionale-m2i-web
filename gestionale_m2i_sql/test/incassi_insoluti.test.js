@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const knexFactory = require('knex');
 const { createReceiptsService, todayInItaly } = require('../incassi_insoluti');
+const { reconcileOfficial } = require('../fatture_reconciliation');
 
 test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async t => {
   const db = knexFactory({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
@@ -116,8 +117,8 @@ test('incassi mostra solo le fatture elaborate, anche senza importazione general
   await db('fatture_aruba_elaborati').insert({ cliente_id: 'SEP', mese: 9, anno: 2026,
     numero_fattura: '12/26', data_fattura: '2026-09-29', importo_totale: 936 });
   await db('fatture_inviate_elaborati').insert([
-    { cliente_id: 'SEP', mese: 9, anno: 2026, inviata_at: '2026-09-29T10:00:00Z' },
-    { cliente_id: 'SENT', mese: 10, anno: 2026, inviata_at: '2026-10-01T10:00:00Z' }
+    { cliente_id: 'SEP', mese: 9, anno: 2026, inviata_at: '2026-10-01T10:00:00Z' },
+    { cliente_id: 'SENT', mese: 10, anno: 2026, inviata_at: '2026-09-30T22:30:00Z' }
   ]);
   await db('righe_bloccate_elaborati').insert({ tipo: 'cliente', soggetto_id: 'SENT',
     mese: 10, anno: 2026, snapshot: JSON.stringify({ importoTotale: 150 }) });
@@ -127,7 +128,47 @@ test('incassi mostra solo le fatture elaborate, anche senza importazione general
   assert.equal(result.fatture.length, 2);
   assert.equal(result.fatture.find(row => row.clienteId === 'OLD'), undefined);
   assert.deepEqual(result.fatture.map(row => [row.periodo, row.totale]), [['2026-09', 936], ['2026-10', 150]]);
+  assert.equal(result.fatture[0].dataFattura, '2026-09-29');
+  assert.equal(result.fatture[1].dataFattura, '2026-10-01');
   assert.equal(result.riepilogo.daIncassare, 1086);
-  assert.equal(result.fatture[0].gestibile, false);
+  assert.equal(result.fatture[0].gestibile, true);
   assert.equal(result.fatture[1].registrata, false);
+  const registrationId = result.fatture[0].id;
+  const paymentDate = todayInItaly();
+  const payment = await service.register({ fatturaId: registrationId, data: paymentDate,
+    importo: '300.00', idempotencyKey: 'aruba-payment-1' });
+  assert.equal(payment.residuo, 636);
+  assert.equal((await service.register({ fatturaId: registrationId, data: paymentDate,
+    importo: '300.00', idempotencyKey: 'aruba-payment-1' })).alreadyRegistered, true);
+  await assert.rejects(service.register({ fatturaId: registrationId, data: paymentDate,
+    importo: '700.00' }), /superiore al residuo/);
+  const reversed = await service.register({ fatturaId: registrationId, data: paymentDate, importo: '50.00' });
+  await service.cancel({ receiptId: reversed.id, reason: 'Acconto duplicato' });
+  await service.setDueDate({ fatturaId: registrationId, date: '2099-01-01' });
+  const withPayment = (await service.list()).fatture.find(row => row.clienteId === 'SEP');
+  assert.equal(withPayment.incassato, 300);
+  assert.equal(withPayment.stato, 'Parziale');
+  assert.equal(withPayment.scadenza, '2099-01-01');
+  const conflicting = { id: 'CONFLICT', cliente_id: 'SEP', numero_fattura: '12/26',
+    data_fattura: '2026-09-29', importo_totale: 936, importo_pagato: 100, stato_pagamento: 'Parzialmente Pagata' };
+  await db('fatture').insert(conflicting);
+  assert.equal((await db.transaction(trx => reconcileOfficial(trx, conflicting))).stato, 'da_verificare');
+  assert.equal((await db('fatture_aruba_elaborati').where({ cliente_id: 'SEP' }).first()).fattura_id, null);
+  assert.equal((await db('incassi_fatture_aruba').where({ id: payment.id }).count('* as count').first()).count, 1);
+  await db('fatture').where({ id: 'CONFLICT' }).del();
+  const official = { id: 'SEP1', cliente_id: 'SEP', numero_fattura: '12/26',
+    data_fattura: '2026-09-29', importo_totale: 936, importo_pagato: 0, stato_pagamento: 'Da Pagare' };
+  await db('fatture').insert(official);
+  assert.equal((await db.transaction(trx => reconcileOfficial(trx, official))).stato, 'riconciliata');
+  assert.equal((await db('fatture').where({ id: 'SEP1' }).first()).importo_pagato, 300);
+  assert.equal((await db('incassi_fatture_aruba').count('* as count').first()).count, 0);
+  const linked = (await service.list()).fatture.find(row => row.clienteId === 'SEP');
+  assert.equal(linked.id, 'SEP1');
+  assert.equal(linked.incassato, 300);
+  assert.equal(linked.storico.find(row => row.id === payment.id).importo, 300);
+  assert.equal(linked.storico.find(row => row.id === reversed.id).motivoAnnullamento, 'Acconto duplicato');
+  assert.equal((await service.register({ fatturaId: registrationId, data: paymentDate,
+    importo: '300.00', idempotencyKey: 'aruba-payment-1' })).alreadyRegistered, true);
+  await service.cancel({ receiptId: payment.id, reason: 'Incasso inserito per errore' });
+  assert.equal((await service.list()).fatture.find(row => row.clienteId === 'SEP').incassato, 0);
 });
