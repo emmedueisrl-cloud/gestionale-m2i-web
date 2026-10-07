@@ -6,7 +6,7 @@ import Sidebar from './Sidebar';
 import SaveConfirmation from './SaveConfirmation';
 import MarketingNotifications from './MarketingNotifications';
 
-const AppShell = ({ area }) => {
+const AppShell = ({ area, currentUser }) => {
   const isAccounting = area === 'contabilita';
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
@@ -30,7 +30,12 @@ const AppShell = ({ area }) => {
               <Menu className="w-5 h-5" />
             </button>
             
-            {!location.pathname.includes('/dashboard') && location.pathname !== '/admin' && (
+            {isAccounting ? currentUser?.role !== 'contabilita' && (
+              <button type="button" onClick={() => navigate('/admin/dashboard')}
+                className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-800 shadow-sm hover:bg-indigo-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">
+                Torna a gestionale
+              </button>
+            ) : !location.pathname.includes('/dashboard') && location.pathname !== '/admin' && (
               <button 
                 onClick={() => {
                   if (onBackClick) {
@@ -39,7 +44,7 @@ const AppShell = ({ area }) => {
                     navigate(-1);
                   }
                 }}
-                className={`${isAccounting ? 'p-1 bg-white text-slate-700 hover:bg-slate-100 border-slate-200' : 'p-1.5 bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border-slate-700'} rounded-lg transition-colors border shadow-sm`}
+                className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 shadow-sm transition-colors hover:bg-slate-700 hover:text-white"
                 title="Torna Indietro"
               >
                 <ArrowLeft className="w-5 h-5" />

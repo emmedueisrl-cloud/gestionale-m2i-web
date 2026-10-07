@@ -101,6 +101,20 @@ async function initialize() {
       t.unique(['dipendente_id', 'mese', 'anno']);
     });
   }
+  if (!await knex.schema.hasTable('cc_elaborati_dipendenti')) {
+    await knex.schema.createTable('cc_elaborati_dipendenti', t => {
+      t.string('dipendente_id').notNullable().references('id').inTable('dipendenti').onDelete('RESTRICT');
+      t.integer('mese').notNullable(); t.integer('anno').notNullable();
+      t.integer('importo_cent').notNullable(); t.text('modificato_at').notNullable();
+      t.primary(['dipendente_id', 'mese', 'anno']);
+    });
+  }
+  if (!await knex.schema.hasTable('pagamenti_ufficio_paghe')) {
+    await knex.schema.createTable('pagamenti_ufficio_paghe', t => {
+      t.string('busta_id').primary().references('id').inTable('buste_paga').onDelete('CASCADE');
+      t.text('pagato_at').notNullable(); t.integer('registrato_da');
+    });
+  }
   // Ripara le anagrafiche create con il flusso nuovo a ottobre 2026 prima
   // che la creazione registrasse una decorrenza. Non tocca i clienti storici
   // né chi ha già attività o fatture nei mesi precedenti.
@@ -257,6 +271,12 @@ async function accountingRows(tipo, mese, anno) {
       });
     }
     const payments = await trx('pagamenti_elaborati_dipendenti').where({ mese: p.mese, anno: p.anno });
+    const ccRows = await trx('cc_elaborati_dipendenti').where({ mese: p.mese, anno: p.anno });
+    const ccByEmployee = new Map(ccRows.map(item => [String(item.dipendente_id), item.importo_cent / 100]));
+    const consultantNotes = await trx('note_elaborati').where({ tipo: 'consulente', mese: p.mese, anno: p.anno });
+    const noteByEmployee = new Map(consultantNotes.map(note => [String(note.soggetto_id), note.testo || '']));
+    const employeeStatuses = rows.length ? await trx('dipendenti').select('id', 'stato').whereIn('id', rows.map(row => row.idDipendente)) : [];
+    const trialEmployees = new Set(employeeStatuses.filter(employee => String(employee.stato || '').trim().toLowerCase() === 'in prova').map(employee => String(employee.id)));
     const payrollRows = await trx('buste_paga')
       .select('dipendente_id', 'importo_netto', 'allegato_busta_paga')
       .where({ mese: String(p.mese), anno: String(p.anno) })
@@ -264,15 +284,79 @@ async function accountingRows(tipo, mese, anno) {
     const payrollByEmployee = new Map(payrollRows.map(item => [String(item.dipendente_id), item]));
     return rows.map(row => {
       const payment = payments.find(x => x.dipendente_id === row.idDipendente);
-      const payroll = payrollByEmployee.get(String(row.idDipendente));
+      const inProva = trialEmployees.has(String(row.idDipendente));
+      const payroll = inProva ? null : payrollByEmployee.get(String(row.idDipendente));
       return {
         ...row,
         storicoPreesistente: Boolean(header && !frozenIds.has(row.idDipendente)),
         nettoBusta: payroll ? Number(payroll.importo_netto) : null,
         allegatoBustaPaga: payroll?.allegato_busta_paga || null,
+        notaConsulente: noteByEmployee.get(String(row.idDipendente)) || '',
+        cc: ccByEmployee.get(String(row.idDipendente)) ?? null,
+        inProva,
         pagamento: payment ? { pagatoAt: payment.pagato_at, importo: Number(payment.importo_netto) } : null
       };
     });
+  });
+}
+
+async function saveConsultantNote({ mese, anno, dipendenteId, testo }) {
+  const p = period('dipendente', mese, anno);
+  if (typeof testo !== 'string' || testo.length > 5000) throw new Error('La nota deve contenere al massimo 5000 caratteri.');
+  const id = String(dipendenteId || '');
+  if (!(await lockedRows('dipendente', p.mese, p.anno)).some(row => String(row.idDipendente) === id)) {
+    throw new Error('Dipendente non presente tra gli elaborati blindati del mese.');
+  }
+  const employee = await knex('dipendenti').select('stato').where({ id }).first();
+  if (String(employee?.stato || '').trim().toLowerCase() === 'in prova') {
+    throw new Error('Dipendente in prova: le note per consulente non sono disponibili.');
+  }
+  const nota = testo.trim();
+  await knex('note_elaborati').insert({ tipo: 'consulente', soggetto_id: id, mese: p.mese, anno: p.anno, testo: nota, data_modifica: new Date().toISOString() })
+    .onConflict(['tipo', 'soggetto_id', 'mese', 'anno']).merge(['testo', 'data_modifica']);
+  return { notaConsulente: nota };
+}
+
+async function saveOfficePayrollNote({ mese, anno, dipendenteId, testo }) {
+  const p = period('dipendente', mese, anno);
+  if (typeof testo !== 'string' || testo.length > 5000) throw new Error('La nota deve contenere al massimo 5000 caratteri.');
+  const id = String(dipendenteId || '');
+  const payroll = await knex('buste_paga').where({ dipendente_id: id, mese: String(p.mese), anno: String(p.anno) }).first();
+  if (!payroll) throw new Error('Busta paga non presente per questo dipendente e mese.');
+  const nota = testo.trim();
+  await knex('note_elaborati').insert({ tipo: 'ufficio_paghe', soggetto_id: id, mese: p.mese, anno: p.anno, testo: nota, data_modifica: new Date().toISOString() })
+    .onConflict(['tipo', 'soggetto_id', 'mese', 'anno']).merge(['testo', 'data_modifica']);
+  return { notaUfficioPaghe: nota };
+}
+
+async function saveCcAmount({ mese, anno, dipendenteId, importo }) {
+  const p = period('dipendente', mese, anno);
+  const id = String(dipendenteId || '');
+  if (!(await lockedRows('dipendente', p.mese, p.anno)).some(row => String(row.idDipendente) === id)) {
+    throw new Error('Dipendente non presente tra gli elaborati blindati del mese.');
+  }
+  const value = String(importo ?? '').trim();
+  if (!value) {
+    await knex('cc_elaborati_dipendenti').where({ dipendente_id: id, mese: p.mese, anno: p.anno }).del();
+    return { cc: null };
+  }
+  if (!/^-?\d{1,9}(?:[.,]\d{1,2})?$/.test(value)) throw new Error('Inserisci un importo in euro con massimo due decimali.');
+  const cents = Math.round(Number(value.replace(',', '.')) * 100);
+  if (!Number.isSafeInteger(cents)) throw new Error('Importo CC non valido.');
+  await knex('cc_elaborati_dipendenti').insert({ dipendente_id: id, mese: p.mese, anno: p.anno, importo_cent: cents, modificato_at: new Date().toISOString() })
+    .onConflict(['dipendente_id', 'mese', 'anno']).merge(['importo_cent', 'modificato_at']);
+  return { cc: cents / 100 };
+}
+
+async function markOfficePayrollPaid({ bustaId, userId }) {
+  const id = String(bustaId || '');
+  if (!id) throw new Error('Busta paga non valida.');
+  return knex.transaction(async trx => {
+    if (!await trx('buste_paga').where({ id }).first()) throw new Error('Busta paga non trovata.');
+    await trx('pagamenti_ufficio_paghe').insert({ busta_id: id, pagato_at: new Date().toISOString(), registrato_da: userId })
+      .onConflict('busta_id').ignore();
+    const row = await trx('pagamenti_ufficio_paghe').where({ busta_id: id }).first();
+    return { pagatoAt: row.pagato_at };
   });
 }
 
@@ -351,4 +435,4 @@ async function registerPayment({ mese, anno, dipendenteId, userId, confermaStori
   return { id };
 }
 
-module.exports = { initialize, lockRow, unlockRow, lockedRows, status, missingCount, accountingRows, markInvoiceSent, registerInvoice, registerPayment, period };
+module.exports = { initialize, lockRow, unlockRow, lockedRows, status, missingCount, accountingRows, saveConsultantNote, saveOfficePayrollNote, saveCcAmount, markOfficePayrollPaid, markInvoiceSent, registerInvoice, registerPayment, period };

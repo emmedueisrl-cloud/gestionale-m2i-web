@@ -9,7 +9,8 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
     { type: 'header', label: 'Elaborati pronti' },
     { type: 'item', label: '🧾 Fatturazione', path: '/contabilita/clienti' },
     { type: 'item', label: '💶 Stipendi', path: '/contabilita/dipendenti' },
-    { type: 'item', label: '💰 Provvigioni', path: '/contabilita/provvigioni' }
+    { type: 'item', label: '💰 Provvigioni', path: '/contabilita/provvigioni' },
+    { type: 'item', label: '💵 Incassi e Insoluti', path: '/contabilita/incassi-insoluti' }
   ] : [
     { type: 'item', label: '🏠 Dashboard', path: '/admin/dashboard' },
     
@@ -20,7 +21,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
     { type: 'item', label: '📅 Agenda Caposquadra', path: '/admin/ore/agenda' },
     { type: 'item', label: '🗓️ Prospetto Settimanale', path: '/admin/ore/prospetto' },
     { type: 'item', label: '💰 Maggiorazioni/Detrazioni', path: '/admin/dipendenti/regolazioni' },
-    { type: 'item', label: '📄 Carica Busta Paga', path: '/admin/bustepaga' },
+    { type: 'item', label: '📄 Buste Paga', path: '/admin/bustepaga' },
     
     { type: 'header', label: '🏢 Gestione Clienti' },
     { type: 'item', label: '📋 Database Clienti', path: '/admin/clienti/lista' },

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { cloneElement, isValidElement } from 'react';
 
 const ProtectedRoute = ({ children, allowedRoles = ['admin', 'user'] }) => {
   const [currentUser, setCurrentUser] = useState(undefined);
@@ -23,7 +24,7 @@ const ProtectedRoute = ({ children, allowedRoles = ['admin', 'user'] }) => {
     return <Navigate to={currentUser.role === 'contabilita' ? '/contabilita/clienti' : '/admin/dashboard'} replace />;
   }
 
-  return children;
+  return isValidElement(children) ? cloneElement(children, { currentUser }) : children;
 };
 
 export default ProtectedRoute;

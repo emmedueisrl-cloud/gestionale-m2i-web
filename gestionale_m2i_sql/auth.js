@@ -208,6 +208,23 @@ function createAuth(knex) {
     }
   });
 
+  router.delete('/users/:id', requireAuth, requireAdmin, async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'ID non valido.' });
+      if (id === req.authUser.id) return res.status(400).json({ error: 'Non puoi eliminare il tuo account.' });
+      const deleted = await knex.transaction(async trx => {
+        const account = await trx('auth_users').where({ id }).first();
+        if (!account) return false;
+        await trx('auth_sessions').where({ user_id: id }).del();
+        await trx('auth_users').where({ id }).del();
+        return true;
+      });
+      if (!deleted) return res.status(404).json({ error: 'Account non trovato.' });
+      res.status(204).end();
+    } catch (error) { next(error); }
+  });
+
   router.patch('/users/:id/active', requireAuth, requireAdmin, async (req, res, next) => {
     try {
       const id = Number(req.params.id);

@@ -28,7 +28,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [detailsRow]);
 
-  return <section className="space-y-10 pt-10">
+  return <section className="space-y-10 pt-4">
     <div className="flex items-center gap-4 border-b border-slate-200 pb-2">
       <h2 className="text-2xl font-semibold text-slate-900">{titolo}</h2>
       <span className="rounded-full bg-slate-100 px-3 py-1 text-[17px] font-semibold text-slate-700">{righe.length}</span>

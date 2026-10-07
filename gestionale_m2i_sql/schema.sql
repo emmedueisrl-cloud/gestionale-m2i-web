@@ -127,6 +127,22 @@ CREATE TABLE fatture (
     creato_da TEXT
 );
 
+CREATE TABLE incassi_fatture (
+    id TEXT PRIMARY KEY,
+    fattura_id TEXT NOT NULL REFERENCES fatture(id) ON DELETE RESTRICT,
+    data_incasso TEXT,
+    importo_cent INTEGER NOT NULL,
+    nota TEXT,
+    origine TEXT NOT NULL DEFAULT 'manuale',
+    registrato_at TEXT NOT NULL,
+    registrato_da TEXT,
+    annullato_at TEXT,
+    annullato_da TEXT,
+    motivo_annullamento TEXT,
+    idempotency_key TEXT UNIQUE
+);
+CREATE INDEX idx_incassi_fatture_data ON incassi_fatture(fattura_id, data_incasso);
+
 CREATE TABLE buste_paga (
     id TEXT PRIMARY KEY,
     dipendente_id TEXT REFERENCES dipendenti(id) ON DELETE RESTRICT,
@@ -498,6 +514,21 @@ CREATE TABLE note_elaborati (
   testo TEXT DEFAULT '',
   data_modifica TEXT DEFAULT (datetime('now')),
   UNIQUE(tipo, soggetto_id, mese, anno)
+);
+
+CREATE TABLE cc_elaborati_dipendenti (
+  dipendente_id TEXT NOT NULL REFERENCES dipendenti(id) ON DELETE RESTRICT,
+  mese INTEGER NOT NULL,
+  anno INTEGER NOT NULL,
+  importo_cent INTEGER NOT NULL,
+  modificato_at TEXT NOT NULL,
+  PRIMARY KEY (dipendente_id, mese, anno)
+);
+
+CREATE TABLE pagamenti_ufficio_paghe (
+  busta_id TEXT PRIMARY KEY REFERENCES buste_paga(id) ON DELETE CASCADE,
+  pagato_at TEXT NOT NULL,
+  registrato_da INTEGER
 );
 
 CREATE TABLE periodi_elaborati (

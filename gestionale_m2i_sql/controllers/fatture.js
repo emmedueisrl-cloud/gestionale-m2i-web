@@ -1,4 +1,6 @@
 const { knex, generaIDIncrementale, getVal } = require('../db');
+const { createReceiptsService } = require('../incassi_insoluti');
+const receipts = createReceiptsService(knex);
 
 module.exports = {
   async salvaFattura(dati) {
@@ -111,35 +113,8 @@ module.exports = {
   },
 
   async registraIncassoServer(idFattura, dataPagamento, importoIncassato) {
-    const importo = Number(importoIncassato);
-    if (!Number.isFinite(importo) || importo <= 0) throw new Error('Importo incassato non valido');
-    return knex.transaction(async trx => {
-    const fatt = await trx('fatture').select('importo_totale', 'importo_pagato').where('id', idFattura).first();
-    if (!fatt) throw new Error("Fattura non trovata.");
-    
-    const importoPagatoFinale = Math.round(((fatt.importo_pagato || 0) + importo) * 100) / 100;
-    const totale = Math.round(Number(fatt.importo_totale) * 100) / 100;
-    if (importoPagatoFinale > totale) {
-      const residuo = Math.max(0, Math.round((totale - Number(fatt.importo_pagato || 0)) * 100) / 100);
-      throw new Error(`Incasso superiore al residuo della fattura (€ ${residuo.toFixed(2)}). Correggi l'importo o annulla l'operazione.`);
-    }
-    const stato = importoPagatoFinale >= fatt.importo_totale ? "Pagata" : "Parzialmente Pagata";
-    
-    await trx('fatture')
-      .where('id', idFattura)
-      .update({
-        importo_pagato: importoPagatoFinale,
-        data_pagamento: dataPagamento,
-        stato_pagamento: stato
-      });
-      
-    await trx('log_attivita').insert({
-      categoria: "Fatture", icona: "💶", colore: "#10b981",
-      descrizione: `Registrato incasso di €${importoIncassato} per fattura ${idFattura}. Stato: ${stato}`, eseguito_da: "LocalServer"
-    });
-
+    await receipts.register({ fatturaId: idFattura, data: dataPagamento, importo: importoIncassato });
     return true;
-    });
   },
 
   async segnalaInsolutoServer(idFattura) {

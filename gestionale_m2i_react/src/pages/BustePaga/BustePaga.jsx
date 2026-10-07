@@ -1,19 +1,30 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { attachmentUrl } from '../../utils/attachmentUrl';
 import { FileText, UploadCloud, CheckCircle2, AlertCircle, Download, RefreshCw, Save, Trash2, Mail, X } from 'lucide-react';
 import FileUploader from '../../components/ui/FileUploader';
 import ModernModal from '../../components/ui/ModernModal';
 
-import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { recuperaTuttiIDipendenti } from '../../api/dipendenti';
 
 const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
+function periodoBusteAllApertura() {
+  const data = new Date();
+  if (data.getDate() <= 10) data.setMonth(data.getMonth() - 1);
+  return { mese: data.getMonth() + 1, anno: data.getFullYear() };
+}
+
 export default function BustePaga() {
-  const [mese, setMese] = useState(new Date().getMonth() + 1);
-  const [anno, setAnno] = useState(new Date().getFullYear());
+  const [periodoIniziale] = useState(periodoBusteAllApertura);
+  const [mese, setMese] = useState(periodoIniziale.mese);
+  const [anno, setAnno] = useState(periodoIniziale.anno);
   
-  const [activeTab, setActiveTab] = useState('upload'); // upload, list
+  const [showUpload, setShowUpload] = useState(false);
+  const [targetDipendente, setTargetDipendente] = useState(null);
+  const uploadPanelRef = useRef(null);
+  const listRef = useRef(null);
+  const loadSequence = useRef(0);
+  const [uploadMessage, setUploadMessage] = useState('');
 
   const mesi = [
     { val: 1, label: 'Gennaio' }, { val: 2, label: 'Febbraio' }, { val: 3, label: 'Marzo' },
@@ -26,12 +37,14 @@ export default function BustePaga() {
   const [files, setFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [previewData, setPreviewData] = useState([]);
-  const [dbDipendenti, setDbDipendenti] = useState([]);
-  const [statoUpload, setStatoUpload] = useState('idle'); // idle, preview, done
+  const [isLoadingDipendenti, setIsLoadingDipendenti] = useState(true);
+  const [dipendentiError, setDipendentiError] = useState('');
+  const [statoUpload, setStatoUpload] = useState('idle'); // idle, preview
 
   // List state
   const [busteCaricate, setBusteCaricate] = useState([]);
   const [isLoadingBuste, setIsLoadingBuste] = useState(false);
+  const [busteError, setBusteError] = useState('');
 
   // Selection & Email state
   const [selectedBusteIds, setSelectedBusteIds] = useState(new Set());
@@ -43,42 +56,62 @@ export default function BustePaga() {
   const [emailManualInput, setEmailManualInput] = useState({});
   const [sendResultModal, setSendResultModal] = useState(null);
   const [allDipendentiMap, setAllDipendentiMap] = useState({});
+  const [deletePrompt, setDeletePrompt] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const caricaBusteMese = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setIsLoadingBuste(true);
+    setBusteError('');
     try {
       const res = await fetch(`${API_URL}/buste-paga/mese?mese=${mese}&anno=${anno}`);
       const data = await res.json();
-      if (data.success) {
-        setBusteCaricate(data.buste);
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || 'Impossibile caricare le buste paga del mese.');
+      if (sequence === loadSequence.current) setBusteCaricate(data.buste);
     } catch (e) {
-      console.error(e);
+      if (sequence === loadSequence.current) { setBusteCaricate([]); setBusteError(e.message); }
     }
-    setIsLoadingBuste(false);
+    if (sequence === loadSequence.current) setIsLoadingBuste(false);
   }, [mese, anno]);
 
-  useEffect(() => {
-    // Carica dipendenti per la tendina
-    recuperaElencoDipendenti()
-      .then(data => setDbDipendenti(data || []))
-      .catch(err => console.error(err));
-    // Carica mappa dipendenti con email
-    recuperaTuttiIDipendenti()
-      .then(data => {
-        const map = {};
-        (data || []).forEach(d => { map[d.id] = d; });
-        setAllDipendentiMap(map);
-      })
-      .catch(err => console.error(err));
+  const caricaDipendenti = useCallback(async () => {
+    setIsLoadingDipendenti(true);
+    setDipendentiError('');
+    try {
+      const data = await recuperaTuttiIDipendenti();
+      setAllDipendentiMap(Object.fromEntries((data || []).map(d => [d.id, d])));
+    } catch (err) { setDipendentiError(err.message || 'Impossibile caricare i dipendenti.'); }
+    finally { setIsLoadingDipendenti(false); }
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'list') {
-      caricaBusteMese();
-    }
+    caricaDipendenti();
+  }, [caricaDipendenti]);
+
+  useEffect(() => {
+    setUploadMessage('');
+    caricaBusteMese();
     setSelectedBusteIds(new Set());
-  }, [activeTab, caricaBusteMese]);
+  }, [caricaBusteMese]);
+
+  const apriCaricamento = (dipendente = null) => {
+    setUploadMessage('');
+    setTargetDipendente(dipendente);
+    setFiles([]);
+    setPreviewData([]);
+    setStatoUpload('idle');
+    setShowUpload(true);
+    window.requestAnimationFrame(() => uploadPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+
+  const chiudiCaricamento = () => {
+    if (isUploading) return;
+    setShowUpload(false);
+    setTargetDipendente(null);
+    setFiles([]);
+    setPreviewData([]);
+    setStatoUpload('idle');
+  };
 
   // Selection helpers
   const toggleSelectBusta = (id) => {
@@ -256,9 +289,14 @@ export default function BustePaga() {
       });
       const data = await res.json();
       if (data.success) {
-        setStatoUpload('done');
+        setStatoUpload('idle');
         setFiles([]);
-        setTimeout(() => setStatoUpload('idle'), 3000);
+        setPreviewData([]);
+        await caricaBusteMese();
+        setShowUpload(false);
+        setTargetDipendente(null);
+        setUploadMessage('Buste paga salvate. Le trovi nel mese selezionato.');
+        window.requestAnimationFrame(() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       } else {
         setAlertModal({
           isOpen: true,
@@ -275,66 +313,25 @@ export default function BustePaga() {
     setIsUploading(false);
   };
 
-  const eliminaBusta = async (id) => {
-    if (!window.confirm('Eliminare questa busta dall’elenco? Una copia di recupero verrà conservata sul server.')) return;
-    
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/buste-paga/${id}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (data.success) {
-        caricaBusteMese(); // ricarica la lista
-      } else {
-        setAlertModal({
-          isOpen: true,
-          type: 'error',
-          title: 'Errore',
-          content: 'Errore durante l\'eliminazione: ' + data.error,
-          primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      setAlertModal({
-        isOpen: true,
-        type: 'error',
-        title: 'Attenzione',
-        content: 'Errore di connessione',
-        primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
-      });
-    }
-  };
+  const eliminaBusta = busta => setDeletePrompt({ id: busta.id, nome: `${busta.cognome} ${busta.nome}`, inviate: busta.email_inviata ? 1 : 0, totale: 1 });
 
-  const eliminaTutteMese = async () => {
-    if (!window.confirm(`Sei assolutamente sicuro di voler eliminare TUTTE le buste paga caricate per ${mesi.find(m => m.val === mese).label} ${anno}? L'operazione non è reversibile.`)) return;
-    
+  const eliminaTutteMese = () => setDeletePrompt({ tutte: true, totale: busteCaricate.length, inviate: busteCaricate.filter(b => b.email_inviata).length });
+
+  const confermaEliminazione = async () => {
+    if (!deletePrompt) return;
+    setIsDeleting(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/buste-paga/mese/${anno}/${mese}`, {
-        method: 'DELETE'
-      });
+      const url = deletePrompt.tutte ? `${API_URL}/buste-paga/mese/${anno}/${mese}` : `${API_URL}/buste-paga/${deletePrompt.id}`;
+      const res = await fetch(url, { method: 'DELETE' });
       const data = await res.json();
-      if (data.success) {
-        caricaBusteMese();
-      } else {
-        setAlertModal({
-          isOpen: true,
-          type: 'error',
-          title: 'Errore',
-          content: 'Errore durante l\'eliminazione: ' + data.error,
-          primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
-        });
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || 'Eliminazione non riuscita.');
+      setDeletePrompt(null);
+      setSelectedBusteIds(new Set());
+      await caricaBusteMese();
     } catch (err) {
-      console.error(err);
-      setAlertModal({
-        isOpen: true,
-        type: 'error',
-        title: 'Attenzione',
-        content: 'Errore di connessione',
-        primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
-      });
-    }
+      setDeletePrompt(null);
+      setAlertModal({ isOpen: true, type: 'error', title: 'Errore durante l’eliminazione', content: err.message });
+    } finally { setIsDeleting(false); }
   };
 
   const updatePreviewRow = (idx, field, value) => {
@@ -355,7 +352,23 @@ export default function BustePaga() {
   };
 
 
-  const totaleNetti = busteCaricate.reduce((acc, curr) => acc + (curr.importo_netto || 0), 0);
+  const totaleNetti = busteCaricate.reduce((acc, curr) => acc + Number(curr.importo_netto || 0), 0);
+  const inizioMese = `${anno}-${String(mese).padStart(2, '0')}-01`;
+  const fineMeseDate = new Date(Date.UTC(anno, mese, 0));
+  const fineMese = Number.isNaN(fineMeseDate.getTime()) ? inizioMese : fineMeseDate.toISOString().slice(0, 10);
+  const dipendentiDelMese = Object.values(allDipendentiMap).filter(d => {
+    const assunzione = d.dataAssunzione?.slice(0, 10);
+    const cessazione = d.dataCessazione?.slice(0, 10);
+    return (!assunzione || assunzione <= fineMese) && (!cessazione || cessazione >= inizioMese);
+  });
+  const idsVisibili = new Set(dipendentiDelMese.map(d => d.id));
+  const righeMese = [
+    ...dipendentiDelMese.flatMap(d => {
+      const buste = busteCaricate.filter(b => b.dipendente_id === d.id);
+      return buste.length ? buste.map(b => ({ dipendente: d, busta: b })) : [{ dipendente: d, busta: null }];
+    }),
+    ...busteCaricate.filter(b => !idsVisibili.has(b.dipendente_id)).map(b => ({ dipendente: allDipendentiMap[b.dipendente_id] || { id: b.dipendente_id, cognome: b.cognome, nome: b.nome, codiceFiscale: b.codice_fiscale }, busta: b }))
+  ].sort((a, b) => `${a.dipendente.cognome} ${a.dipendente.nome}`.localeCompare(`${b.dipendente.cognome} ${b.dipendente.nome}`, 'it'));
 
   return (
     <div className="p-6 max-w-6xl mx-auto flex flex-col gap-6">
@@ -364,24 +377,9 @@ export default function BustePaga() {
           <FileText className="w-6 h-6 text-indigo-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-slate-50">Gestione Buste Paga</h1>
+          <h1 className="text-2xl font-bold text-slate-50">Buste Paga</h1>
           <p className="text-slate-400 text-sm">Carica e consulta le buste paga mensili dei dipendenti</p>
         </div>
-      </div>
-
-      <div className="flex gap-4 border-b border-slate-700">
-        <button 
-          onClick={() => setActiveTab('upload')}
-          className={`pb-3 px-4 text-sm font-bold transition-colors ${activeTab === 'upload' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}
-        >
-          Carica Buste Paga
-        </button>
-        <button 
-          onClick={() => setActiveTab('list')}
-          className={`pb-3 px-4 text-sm font-bold transition-colors ${activeTab === 'list' ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}
-        >
-          Riepilogo Mese
-        </button>
       </div>
 
       <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-6 md:p-8 space-y-6">
@@ -392,6 +390,7 @@ export default function BustePaga() {
             <select 
               value={mese} 
               onChange={(e) => setMese(Number(e.target.value))}
+              disabled={statoUpload === 'preview' || isUploading}
               className="w-full p-2.5 bg-slate-800 border border-slate-600 rounded-lg text-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
             >
               {mesi.map(m => <option key={m.val} value={m.val}>{m.label}</option>)}
@@ -401,15 +400,19 @@ export default function BustePaga() {
             <label className="block text-sm font-medium text-slate-300 mb-1">Anno</label>
             <input 
               type="number" 
+              min="1900"
+              max="2100"
               value={anno} 
               onChange={(e) => setAnno(Number(e.target.value))}
+              disabled={statoUpload === 'preview' || isUploading}
               className="w-full p-2.5 bg-slate-800 border border-slate-600 rounded-lg text-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none"
             />
           </div>
         </div>
 
-        {activeTab === 'upload' && (
-          <div className="space-y-4">
+        {showUpload && (
+          <div ref={uploadPanelRef} className="space-y-4 rounded-xl border border-indigo-500/30 bg-slate-900/40 p-5 scroll-mt-6">
+            <div className="flex items-center justify-between gap-3"><div><h3 className="text-lg font-bold text-slate-100">Carica buste paga</h3><p className="text-sm text-slate-400">{targetDipendente ? `Per ${targetDipendente.nomeCompleto || `${targetDipendente.cognome} ${targetDipendente.nome}`}` : 'Per uno o più dipendenti'} · {mesi.find(m => m.val === mese)?.label} {anno}</p></div><button type="button" onClick={chiudiCaricamento} disabled={isUploading} className="rounded-lg p-2 text-slate-300 hover:bg-slate-700 disabled:opacity-50" aria-label="Chiudi caricamento"><X size={20} /></button></div>
             {statoUpload === 'idle' && (
               <>
                 <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
@@ -418,10 +421,10 @@ export default function BustePaga() {
                 
                 <div className="p-6 bg-slate-800 border border-dashed border-slate-600 rounded-xl">
                   <FileUploader 
-                    multiple={true}
+                    multiple={!targetDipendente}
                     accept=".pdf"
                     askRename={false}
-                    file={files}
+                    file={targetDipendente ? files[0] || null : files}
                     onFileSelect={handleFileSelect} 
                     label={`Trascina qui le buste paga (PDF) di ${mesi.find(m => m.val === mese).label} ${anno}`}
                   />
@@ -486,7 +489,7 @@ export default function BustePaga() {
                               className={`w-full p-2 bg-slate-900 border rounded outline-none ${!row.dipendenteId ? 'border-red-500 text-red-400' : 'border-slate-600 text-slate-200'}`}
                             >
                               <option value="">-- Seleziona Dipendente --</option>
-                              {dbDipendenti.map(d => (
+                              {Object.values(allDipendentiMap).map(d => (
                                 <option key={d.id} value={d.id}>{d.nomeCompleto} ({d.codiceFiscale || 'No CF'})</option>
                               ))}
                             </select>
@@ -503,7 +506,7 @@ export default function BustePaga() {
                           </td>
                           <td className="px-4 py-3 text-xs">
                             {row.extractedCF && row.dipendenteId && (() => {
-                              const dip = dbDipendenti.find(d => d.id === row.dipendenteId);
+                              const dip = allDipendentiMap[row.dipendenteId];
                               if (dip && dip.codiceFiscale && dip.codiceFiscale.toUpperCase() === row.extractedCF.toUpperCase()) {
                                 return (
                                   <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
@@ -542,7 +545,7 @@ export default function BustePaga() {
                 <div className="flex gap-4 pt-4">
                   <button
                     onClick={handleConferma}
-                    disabled={isUploading || !previewData.length || previewData.some(r => !r.dipendenteId || r.extractedNetto === '' || r.extractedNetto == null || !Number.isFinite(Number(r.extractedNetto)))}
+                    disabled={isUploading || !previewData.length || previewData.some(r => !r.dipendenteId || r.extractedNetto === '' || r.extractedNetto == null || !Number.isFinite(Number(r.extractedNetto))) || Boolean(targetDipendente && (previewData.length !== 1 || previewData[0].dipendenteId !== targetDipendente.id))}
                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-lg disabled:opacity-50 flex justify-center items-center gap-2"
                   >
                     {isUploading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
@@ -552,30 +555,22 @@ export default function BustePaga() {
                 {previewData.some(r => !r.dipendenteId || r.extractedNetto === '' || r.extractedNetto == null) && (
                   <p className="text-red-400 text-sm text-center">Assegna un dipendente e verifica il netto di tutti i file prima di salvare. Controlla anche mese e anno selezionati.</p>
                 )}
+                {targetDipendente && (previewData.length !== 1 || previewData[0]?.dipendenteId !== targetDipendente.id) && <p className="text-amber-300 text-sm text-center">Per questa riga puoi salvare solo la busta di {targetDipendente.nomeCompleto || `${targetDipendente.cognome} ${targetDipendente.nome}`}. Verifica l’associazione prima di salvare.</p>}
               </div>
             )}
 
-            {statoUpload === 'done' && (
-              <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-3 text-emerald-400">
-                <CheckCircle2 className="w-6 h-6 shrink-0" />
-                <div>
-                  <p className="font-bold text-lg">Buste Paga caricate e archiviate!</p>
-                  <p className="text-sm opacity-90">Tutti i cedolini sono stati associati correttamente ai dipendenti.</p>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {activeTab === 'list' && (
-          <div className="space-y-4">
-            <div className="flex justify-between items-end mb-6">
+        <div ref={listRef} className="space-y-4 scroll-mt-6">
+            {uploadMessage && <p role="status" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm font-semibold text-emerald-300">{uploadMessage}</p>}
+            <div className="flex flex-wrap justify-between items-end gap-4 mb-6">
               <div>
                 <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
                   Buste Paga di {mesi.find(m => m.val === mese).label} {anno}
                 </h3>
                 <div className="flex items-center gap-4 mt-1">
-                  <p className="text-slate-400 text-sm">Totale dipendenti pagati: {busteCaricate.length}</p>
+                  <p className="text-slate-400 text-sm">{busteCaricate.length} caricate · {righeMese.filter(r => !r.busta).length} non caricate</p>
                   {busteCaricate.length > 0 && (
                     <button
                       onClick={eliminaTutteMese}
@@ -588,7 +583,8 @@ export default function BustePaga() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                {!isLoadingBuste && !busteError && busteCaricate.length === 0 && <button type="button" onClick={() => apriCaricamento()} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 font-bold text-white hover:bg-indigo-500"><UploadCloud size={18} /> Carica</button>}
                 {selectedBusteIds.size > 0 && (
                   <button
                     onClick={handleInviaPerEmail}
@@ -606,11 +602,11 @@ export default function BustePaga() {
               </div>
             </div>
 
-            {isLoadingBuste ? (
+            {busteError || dipendentiError ? <div role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-5 text-sm text-red-300">{busteError || dipendentiError}<button type="button" onClick={() => { caricaBusteMese(); caricaDipendenti(); }} className="ml-3 font-semibold underline">Riprova</button></div> : isLoadingBuste || isLoadingDipendenti ? (
               <div className="text-center py-12 text-slate-400"><RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 opacity-50" /> Caricamento...</div>
-            ) : busteCaricate.length === 0 ? (
+            ) : righeMese.length === 0 ? (
               <div className="text-center py-12 text-slate-400 bg-slate-900/50 rounded-xl border border-slate-700 border-dashed">
-                Nessuna busta paga archiviata per questo mese.
+                Nessun dipendente per questo mese.
               </div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-700">
@@ -628,41 +624,44 @@ export default function BustePaga() {
                       </th>
                       <th className="px-4 py-3">Dipendente</th>
                       <th className="px-4 py-3">C.F.</th>
+                      <th className="px-4 py-3 text-center">Stato</th>
                       <th className="px-4 py-3 text-right">Netto Busta</th>
                       <th className="px-4 py-3 text-center">Email</th>
-                      <th className="px-4 py-3 text-center w-32">Azioni</th>
+                      <th className="px-4 py-3 text-center">Azioni</th>
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-slate-700/50 bg-slate-800">
-                    {busteCaricate.map(b => (
-                      <tr key={b.id} className={`transition-colors ${selectedBusteIds.has(b.id) ? 'bg-indigo-500/10' : 'hover:bg-slate-700/30'}`}>
+                    {righeMese.map(({ dipendente: d, busta: b }) => (
+                      <tr key={b?.id || `mancante-${d.id}`} className={`transition-colors ${b && selectedBusteIds.has(b.id) ? 'bg-indigo-500/10' : 'hover:bg-slate-700/30'}`}>
                         <td className="px-4 py-3">
                           <input 
                             type="checkbox"
-                            checked={selectedBusteIds.has(b.id)}
-                            onChange={() => toggleSelectBusta(b.id)}
-                            className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 cursor-pointer"
+                            checked={Boolean(b && selectedBusteIds.has(b.id))}
+                            disabled={!b}
+                            onChange={() => b && toggleSelectBusta(b.id)}
+                            className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-indigo-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
                             style={{ accentColor: '#818cf8' }}
                           />
                         </td>
-                        <td className="px-4 py-3 font-medium text-slate-200">{b.cognome} {b.nome}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{b.codice_fiscale}</td>
-                        <td className="px-4 py-3 text-right font-bold text-emerald-400">€ {(b.importo_netto || 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 font-medium text-slate-200">{d.cognome} {d.nome}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{d.codiceFiscale || b?.codice_fiscale || '—'}</td>
+                        <td className="px-4 py-3 text-center">{b ? <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-bold text-emerald-300">Caricata</span> : <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-bold text-amber-300">Non caricata</span>}</td>
+                        <td className="px-4 py-3 text-right font-bold text-emerald-400">{b ? `€ ${Number(b.importo_netto || 0).toFixed(2)}` : '—'}</td>
                         <td className="px-4 py-3 text-center">
-                          {b.email_inviata ? (
+                          {b?.email_inviata ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/15 text-emerald-400 rounded-full text-xs font-bold" title={`Inviata il ${b.data_invio_email || ''}`}>
                               <Mail className="w-3.5 h-3.5" /> Inviata
                             </span>
-                          ) : (
+                          ) : b ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-700/50 text-slate-500 rounded-full text-xs font-medium">
                               — Non inviata
                             </span>
-                          )}
+                          ) : <span className="text-slate-500">—</span>}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-2">
-                            {b.allegato_busta_paga ? (
+                            {b?.allegato_busta_paga ? (
                               <a 
                                 href={attachmentUrl(b.allegato_busta_paga)}
                                 target="_blank" 
@@ -672,16 +671,15 @@ export default function BustePaga() {
                               >
                                 <Download className="w-4 h-4" />
                               </a>
-                            ) : (
-                              <span className="text-slate-500 text-xs inline-flex p-2">-</span>
-                            )}
-                            <button
-                              onClick={() => eliminaBusta(b.id)}
+                            ) : null}
+                            {!b && <button type="button" onClick={() => apriCaricamento(d)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-500/15 px-2 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25"><UploadCloud size={15} /> Carica</button>}
+                            {b && <button
+                              onClick={() => eliminaBusta(b)}
                               className="inline-flex p-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors"
                               title="Elimina Busta Paga"
                             >
                               <Trash2 className="w-4 h-4" />
-                            </button>
+                            </button>}
                           </div>
                         </td>
                       </tr>
@@ -692,7 +690,6 @@ export default function BustePaga() {
               </div>
             )}
           </div>
-        )}
 
       </div>
 
@@ -759,6 +756,20 @@ export default function BustePaga() {
         content={alertModal.content}
         primaryAction={alertModal.primaryAction}
         onClose={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      <ModernModal
+        isOpen={Boolean(deletePrompt)}
+        type={deletePrompt?.inviate ? 'warning' : 'info'}
+        title={deletePrompt?.tutte ? 'Eliminare le buste del mese?' : 'Eliminare la busta paga?'}
+        content={deletePrompt?.inviate
+          ? deletePrompt.tutte
+            ? `${deletePrompt.inviate} buste di questo mese sono già state inviate. Se le elimini e le carichi di nuovo, la spunta «Inviata» verrà tolta e dovrai inviarle nuovamente. Una copia di recupero sarà conservata sul server.`
+            : `La busta di ${deletePrompt.nome} è già stata inviata. Se la elimini e la carichi di nuovo, la spunta «Inviata» verrà tolta e dovrai inviarla nuovamente. Una copia di recupero sarà conservata sul server.`
+          : deletePrompt?.tutte ? `Eliminare tutte le ${deletePrompt.totale} buste di ${mesi.find(m => m.val === mese)?.label} ${anno}? Una copia di recupero sarà conservata sul server.` : `Eliminare la busta di ${deletePrompt?.nome}? Una copia di recupero sarà conservata sul server.`}
+        primaryAction={{ label: isDeleting ? 'Eliminazione...' : 'Elimina', variant: 'danger', disabled: isDeleting, onClick: confermaEliminazione }}
+        secondaryAction={{ label: 'Annulla', disabled: isDeleting, onClick: () => setDeletePrompt(null) }}
+        onClose={() => { if (!isDeleting) setDeletePrompt(null); }}
       />
 
       {/* MODAL: Risultato invio */}

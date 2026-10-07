@@ -56,6 +56,7 @@ const Utenti = lazy(() => import('./pages/Impostazioni/Utenti'));
 const Autodiagnosi = lazy(() => import('./pages/Impostazioni/Autodiagnosi'));
 const Operatori = lazy(() => import('./pages/Impostazioni/Operatori'));
 const ContabilitaElaborati = lazy(() => import('./pages/Contabilita/ContabilitaElaborati'));
+const IncassiInsoluti = lazy(() => import('./pages/Contabilita/IncassiInsoluti'));
 
 function App() {
   return (
@@ -73,6 +74,7 @@ function App() {
         <Route path="clienti" element={<ContabilitaElaborati tipo="cliente" />} />
         <Route path="dipendenti" element={<ContabilitaElaborati tipo="dipendente" />} />
         <Route path="provvigioni" element={<Provvigioni />} />
+        <Route path="incassi-insoluti" element={<IncassiInsoluti />} />
       </Route>
       <Route path="/admin" element={
         <ProtectedRoute>

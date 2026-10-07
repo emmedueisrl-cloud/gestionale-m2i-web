@@ -21,6 +21,11 @@ async function createFixtureDatabase(filePath, schemaPath) {
       error => error ? reject(error) : resolve()
     ));
     await new Promise((resolve, reject) => db.run(
+      'INSERT INTO righe_bloccate_elaborati (tipo, mese, anno, soggetto_id, snapshot, bloccata_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ['dipendente', 4, 2026, 'D0001', JSON.stringify({ idDipendente: 'D0001', cognomeNome: 'Prova Test', stipendioNetto: 100 }), new Date().toISOString()],
+      error => error ? reject(error) : resolve()
+    ));
+    await new Promise((resolve, reject) => db.run(
       'INSERT INTO preventivi (numero_preventivo, data_preventivo, ragione_sociale_prospect) VALUES (?, ?, ?)',
       ['LEGACY-001', '2026-01-01', 'Cliente storico'],
       error => error ? reject(error) : resolve()
@@ -107,6 +112,22 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const cookie = login.headers.get('set-cookie')?.split(';')[0];
     assert.ok(cookie);
     assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200);
+    const consultantNoteUrl = `${base}/api/contabilita/dipendenti/2026/4/D0001/nota-consulente`;
+    assert.equal((await fetch(consultantNoteUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ testo: 'Verificare la busta' }) })).status, 401);
+    const savedConsultantNote = await fetch(consultantNoteUrl, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ testo: 'Verificare la busta' })
+    });
+    assert.equal(savedConsultantNote.status, 200);
+    assert.equal((await savedConsultantNote.json()).notaConsulente, 'Verificare la busta');
+    const consultantRows = await fetch(`${base}/api/contabilita/dipendente/2026/4`, { headers: { Cookie: cookie } }).then(response => response.json());
+    assert.equal(consultantRows.find(row => row.idDipendente === 'D0001')?.notaConsulente, 'Verificare la busta');
+    const recipientUrl = `${base}/api/contabilita/consulente/email`;
+    assert.equal((await fetch(recipientUrl, { headers: { Cookie: cookie } }).then(response => response.json())).email, '');
+    assert.equal((await fetch(recipientUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ email: 'simone@example.com' }) })).status, 200);
+    assert.equal((await fetch(recipientUrl, { headers: { Cookie: cookie } }).then(response => response.json())).email, 'simone@example.com');
+    const consultantPdf = await fetch(`${base}/api/contabilita/consulente/pdf/2026/4`, { headers: { Cookie: cookie } });
+    assert.equal(consultantPdf.status, 200);
+    assert.equal(Buffer.from(await consultantPdf.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
     const schedeStoriche = await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
     assert.equal(schedeStoriche.length, 2);
     assert.equal(schedeStoriche.find(item => item.nominativo === 'Referente storico')?.attivita, 'Uffici');
@@ -849,6 +870,40 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(operatorLogin.status, 200);
     const operatorCookie = operatorLogin.headers.get('set-cookie')?.split(';')[0];
     assert.ok(operatorCookie);
+    const accountingPassword = crypto.randomBytes(24).toString('hex');
+    assert.equal((await fetch(`${base}/api/auth/users`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ email: 'accounting@example.invalid', password: accountingPassword, role: 'contabilita' }) })).status, 201);
+    const accountingLogin = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'accounting@example.invalid', password: accountingPassword }) });
+    assert.equal(accountingLogin.status, 200);
+    const accountingCookie = accountingLogin.headers.get('set-cookie')?.split(';')[0];
+    const receipts = await fetch(`${base}/api/contabilita/incassi-insoluti`, { headers: { Cookie: accountingCookie } });
+    assert.equal(receipts.status, 200);
+    assert.ok(Array.isArray((await receipts.json()).fatture));
+    assert.equal((await fetch(`${base}/api/contabilita/dipendenti/anagrafica`, { headers: { Cookie: accountingCookie } })).status, 200);
+    assert.equal((await fetch(`${base}/api/buste-paga/mese?mese=4&anno=2026`, { headers: { Cookie: accountingCookie } })).status, 200);
+    assert.equal((await fetch(`${base}/api/buste-paga/nessuna`, { method: 'DELETE', headers: { Cookie: accountingCookie } })).status, 404);
+    assert.equal((await fetch(`${base}/api/buste-paga/mese/2026/4`, { method: 'DELETE', headers: { Cookie: accountingCookie } })).status, 403);
+    assert.equal((await fetch(`${base}/api/contabilita/consulente/pdf/2026/4`, { headers: { Cookie: accountingCookie } })).status, 200);
+    for (const [tipo, count] of [['cliente', 2], ['dipendente', 3]]) {
+      for (let section = 0; section < count; section++) {
+        const prefix = `${base}/api/contabilita/tabella/${tipo}/${section}/2026/4`;
+        const pdf = await fetch(`${prefix}.pdf`, { headers: { Cookie: accountingCookie } });
+        assert.equal(pdf.status, 200, `${tipo} ${section}: ${await pdf.clone().text()}`);
+        assert.equal(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString(), '%PDF');
+        const xlsx = await fetch(`${prefix}.xlsx`, { headers: { Cookie: accountingCookie } });
+        assert.equal(xlsx.status, 200, `${tipo} ${section}: ${await xlsx.clone().text()}`);
+        assert.match(xlsx.headers.get('content-type'), /spreadsheetml/);
+        const ExcelJS = require('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(Buffer.from(await xlsx.arrayBuffer()));
+        const sheet = workbook.worksheets[0];
+        assert.equal(sheet.getCell('A1').value, 'Aprile 2026');
+        assert.ok(sheet.getColumn(1).width > 20);
+        const headers = sheet.getRow(2).values.slice(1);
+        assert.ok(!headers.includes('Azioni'));
+        if (tipo === 'dipendente' && section === 2) assert.equal(headers.at(-1), 'Stato');
+      }
+    }
+    assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: accountingCookie } })).status, 403);
     assert.equal((await fetch(`${base}/api/backup-db`, { headers: { Cookie: operatorCookie } })).status, 403);
     assert.equal((await fetch(`${base}/api/backup-excel`, { headers: { Cookie: operatorCookie } })).status, 403);
     assert.equal((await fetch(`${base}/api/health`, { headers: { Cookie: operatorCookie } })).status, 403);
@@ -858,6 +913,14 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
       method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: operatorCookie },
       body: JSON.stringify({ functionName: 'svuotaLogSistema', args: [] })
     })).status, 403);
+
+    const adminId = (await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } }).then(response => response.json())).id;
+    assert.equal((await fetch(`${base}/api/auth/users/${adminId}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 400);
+    const operatorId = (await fetch(`${base}/api/auth/users`, { headers: { Cookie: cookie } }).then(response => response.json())).find(user => user.email === 'operator@example.invalid').id;
+    assert.equal((await fetch(`${base}/api/auth/users/${operatorId}`, { method: 'DELETE', headers: { Cookie: operatorCookie } })).status, 403);
+    assert.equal((await fetch(`${base}/api/auth/users/${operatorId}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 204);
+    assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: operatorCookie } })).status, 401);
+    assert.equal((await fetch(`${base}/api/auth/users`, { headers: { Cookie: cookie } }).then(response => response.json())).some(user => user.id === operatorId), false);
 
     const crossOrigin = await fetch(`${base}/api/auth/logout`, {
       method: 'POST', headers: { Cookie: cookie, Origin: 'https://example.invalid' }

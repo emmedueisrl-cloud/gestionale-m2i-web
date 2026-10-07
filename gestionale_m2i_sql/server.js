@@ -18,6 +18,10 @@ const riferimentiAziendali = require('./riferimenti_aziendali');
 const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./email_attachment_link');
 const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
+const { createReceiptsService } = require('./incassi_insoluti');
+const incassiInsoluti = createReceiptsService(knex);
+const consulenteEmail = require('./consulente_email');
+const tableExport = require('./tabella_contabilita_export');
 const { ensureIndexes } = require('./db_indexes');
 const autodiagnosi = require('./autodiagnosi');
 const operatori = require('./operatori');
@@ -134,7 +138,10 @@ app.post('/api/public/appuntamenti/:token/:id/rifissa', async (req, res) => {
 app.use('/api', auth.requireAuth);
 // L'account amministrativo non accede alle altre API, neppure digitando URL diretti.
 app.use('/api', (req, res, next) => {
-  if (req.authUser.role === 'contabilita' && !req.path.startsWith('/contabilita/')) {
+  const payrollAccess = (req.method === 'GET' && req.path === '/buste-paga/mese') ||
+    (req.method === 'POST' && ['/buste-paga/upload', '/buste-paga/conferma'].includes(req.path)) ||
+    (req.method === 'DELETE' && /^\/buste-paga\/[^/]+$/.test(req.path));
+  if (req.authUser.role === 'contabilita' && !req.path.startsWith('/contabilita/') && !payrollAccess) {
     return res.status(403).json({ error: 'Accesso limitato alla sezione amministrativa.' });
   }
   next();
@@ -229,6 +236,14 @@ app.get('/api/contabilita/fatture', handleWorkflow(async () => {
     .orderBy('f.registrata_at', 'desc');
   return registrationStatuses(knex, rows);
 }));
+app.get('/api/contabilita/incassi-insoluti', handleWorkflow(() => incassiInsoluti.list()));
+app.post('/api/contabilita/incassi-insoluti/:id/incassi', handleWorkflow(req =>
+  incassiInsoluti.register({ fatturaId: req.params.id, data: req.body?.data, importo: req.body?.importo,
+    nota: req.body?.nota, idempotencyKey: req.body?.idempotencyKey, userId: req.authUser.id })));
+app.post('/api/contabilita/incassi-insoluti/incassi/:id/annulla', handleWorkflow(req =>
+  incassiInsoluti.cancel({ receiptId: req.params.id, reason: req.body?.motivo, userId: req.authUser.id })));
+app.put('/api/contabilita/incassi-insoluti/:id/scadenza', handleWorkflow(req =>
+  incassiInsoluti.setDueDate({ fatturaId: req.params.id, date: req.body?.scadenza, userId: req.authUser.id })));
 app.get('/api/contabilita/fatture/:id/rettifiche', handleWorkflow(async req => {
   const records = await knex('rettifiche_fatture_aruba').where({ registrazione_id: req.params.id }).orderBy('id', 'desc');
   return records.map(record => {
@@ -285,6 +300,10 @@ app.get('/api/contabilita/provvigioni/:anno/:mese', async (req, res) => {
 });
 app.get(`/api/contabilita/${tipo}/${anno}/${mese}`, handleWorkflow(req =>
   workflowElaborati.accountingRows(req.params.tipo, req.params.mese, req.params.anno)));
+app.get('/api/contabilita/dipendenti/anagrafica', handleWorkflow(async () =>
+  (await knex('dipendenti').select('id', 'nome', 'cognome', 'codice_fiscale', 'stato').orderBy('cognome').orderBy('nome'))
+    .map(row => ({ id: row.id, nome: row.nome, cognome: row.cognome,
+      nomeCompleto: `${row.cognome} ${row.nome}`, codiceFiscale: row.codice_fiscale, stato: row.stato }))));
 app.get(`/api/contabilita/${tipo}/${anno}/${mese}/mancanti`, handleWorkflow(req =>
   workflowElaborati.missingCount(req.params.tipo, req.params.mese, req.params.anno)));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
@@ -294,6 +313,29 @@ app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWor
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));
 app.post('/api/contabilita/pagamenti', handleWorkflow(req =>
   workflowElaborati.registerPayment({ ...req.body, userId: req.authUser.id })));
+app.put('/api/contabilita/dipendenti/:anno/:mese/:id/nota-consulente', handleWorkflow(req =>
+  workflowElaborati.saveConsultantNote({ mese: req.params.mese, anno: req.params.anno, dipendenteId: req.params.id, testo: req.body?.testo })));
+app.put('/api/contabilita/dipendenti/:anno/:mese/:id/nota-ufficio-paghe', handleWorkflow(req =>
+  workflowElaborati.saveOfficePayrollNote({ mese: req.params.mese, anno: req.params.anno, dipendenteId: req.params.id, testo: req.body?.testo })));
+app.put('/api/contabilita/dipendenti/:anno/:mese/:id/cc', handleWorkflow(req =>
+  workflowElaborati.saveCcAmount({ mese: req.params.mese, anno: req.params.anno, dipendenteId: req.params.id, importo: req.body?.importo })));
+app.post('/api/contabilita/ufficio-paghe/:bustaId/pagato', handleWorkflow(req =>
+  workflowElaborati.markOfficePayrollPaid({ bustaId: req.params.bustaId, userId: req.authUser.id })));
+app.get('/api/contabilita/consulente/email', handleWorkflow(() => consulenteEmail.getRecipient()));
+app.put('/api/contabilita/consulente/email', handleWorkflow(req => consulenteEmail.saveRecipient(req.body?.email)));
+app.post('/api/contabilita/consulente/invia', handleWorkflow(req => consulenteEmail.send(req.body || {})));
+app.get('/api/contabilita/consulente/pdf/:anno/:mese', async (req, res) => {
+  try {
+    const pdf = await consulenteEmail.buildConsultantPdf(req.params.mese, req.params.anno);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Per_consulente_${req.params.mese}_${req.params.anno}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(pdf);
+  } catch (error) {
+    await autodiagnosi.recordError(error, errorContext(req, 'PDF per consulente'));
+    res.status(400).json({ error: error.message });
+  }
+});
 app.post('/api/dipendenti/:id/collega-allegato', createAttachmentLinkHandler(knex, baseUploadPath));
 
 // Configurazione Multer per l'upload dei file
@@ -639,6 +681,34 @@ const pdfGenerator = require('./pdf_generator');
 const { buildReportContabilitaClientiPDF } = require('./report_contabilita_clienti_pdf');
 const { buildReportContabilitaDipendentiPDF } = require('./report_contabilita_dipendenti_pdf');
 const { buildReportProvvigioniOperatoriPDF } = require('./report_provvigioni_operatori_pdf');
+
+app.get('/api/contabilita/tabella/:tipo/:sezione/:anno/:mese.:formato', async (req, res) => {
+  try {
+    const { tipo, sezione, anno, mese, formato } = req.params;
+    workflowElaborati.period(tipo, mese, anno);
+    if (!['pdf', 'xlsx'].includes(formato)) return res.status(400).json({ error: 'Formato non valido.' });
+    if (!/^\d+$/.test(sezione)) return res.status(400).json({ error: 'Sezione non valida.' });
+    const rows = await workflowElaborati.accountingRows(tipo, mese, anno);
+    let buste = [];
+    if (tipo === 'dipendente' && Number(sezione) === 2) {
+      buste = await knex('buste_paga').join('dipendenti', 'buste_paga.dipendente_id', '=', 'dipendenti.id')
+        .select('buste_paga.*', 'dipendenti.nome', 'dipendenti.cognome', 'dipendenti.iban')
+        .where('buste_paga.mese', mese).where('buste_paga.anno', anno);
+      const notes = await knex('note_elaborati').select('soggetto_id', 'testo')
+        .where({ tipo: 'ufficio_paghe', mese: Number(mese), anno: Number(anno) });
+      const paid = buste.length ? await knex('pagamenti_ufficio_paghe').select('busta_id', 'pagato_at').whereIn('busta_id', buste.map(item => item.id)) : [];
+      const noteById = new Map(notes.map(item => [String(item.soggetto_id), item.testo]));
+      const paidById = new Map(paid.map(item => [String(item.busta_id), item.pagato_at]));
+      buste = buste.map(item => ({ ...item, nota_ufficio_paghe: noteById.get(String(item.dipendente_id)) || '', pagato_ufficio_at: paidById.get(String(item.id)) || null }));
+    }
+    const table = tableExport.tableData(tipo, sezione, rows, buste, mese, anno);
+    const buffer = formato === 'pdf' ? await tableExport.toPdf(table) : await tableExport.toXlsx(table);
+    const name = `${tipo}_${sezione}_${anno}_${String(mese).padStart(2, '0')}.${formato}`;
+    res.setHeader('Content-Type', formato === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `${formato === 'pdf' ? 'inline' : 'attachment'}; filename="${name}"`);
+    res.send(buffer);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 
 app.get('/api/contabilita/pdf/report-clienti/:anno/:mese', async (req, res) => {
   try {
@@ -1222,6 +1292,7 @@ Promise.resolve().then(async () => {
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
   await workflowElaborati.initialize();
+  await incassiInsoluti.initialize();
   await ensureIndexes(knex);
   app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
     console.log(`Gestionale M2I attivo sulla porta ${PORT}`);

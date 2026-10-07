@@ -123,8 +123,17 @@ module.exports = {
   async getBusteMese(req,res) {
     try {
       const buste = await knex('buste_paga').join('dipendenti','buste_paga.dipendente_id','=','dipendenti.id')
-        .select('buste_paga.*','dipendenti.nome','dipendenti.cognome','dipendenti.codice_fiscale')
+        .select('buste_paga.*','dipendenti.nome','dipendenti.cognome','dipendenti.codice_fiscale','dipendenti.iban')
         .where('buste_paga.mese',req.query.mese).where('buste_paga.anno',req.query.anno);
+      const notes = await knex('note_elaborati').select('soggetto_id', 'testo')
+        .where({ tipo: 'ufficio_paghe', mese: Number(req.query.mese), anno: Number(req.query.anno) });
+      const noteByEmployee = new Map(notes.map(note => [String(note.soggetto_id), note.testo || '']));
+      const paid = buste.length ? await knex('pagamenti_ufficio_paghe').select('busta_id', 'pagato_at').whereIn('busta_id', buste.map(busta => busta.id)) : [];
+      const paidByPayroll = new Map(paid.map(row => [String(row.busta_id), row.pagato_at]));
+      buste.forEach(busta => {
+        busta.nota_ufficio_paghe = noteByEmployee.get(String(busta.dipendente_id)) || '';
+        busta.pagato_ufficio_at = paidByPayroll.get(String(busta.id)) || null;
+      });
       res.json({ success:true,buste });
     } catch(error) { res.status(500).json({success:false,error:error.message}); }
   },

@@ -64,7 +64,10 @@ function createPayrollStore(knex, dataDir) {
           }
           const employee = await trx('dipendenti').where('id', item.row.dipendenteId).first();
           if (!employee) throw new Error('Dipendente non trovato');
+          if (String(employee.stato || '').trim().toLowerCase() === 'in prova') throw new Error('Il dipendente in prova non ha una busta paga.');
           if (!fs.existsSync(item.file)) throw new Error('PDF temporaneo mancante: ricaricare il documento');
+          const existing = await trx('buste_paga').where({ dipendente_id: employee.id, mese: String(month), anno: String(year) });
+          if (existing.length) throw new Error('Busta paga già caricata per questo dipendente e mese: eliminala prima di caricarne una nuova.');
           const folder = `uploads/buste_paga/${year}_${month}`;
           fs.mkdirSync(path.join(dataDir, folder), { recursive: true });
           // Un'interruzione prima del commit non deve bloccare il prossimo tentativo.
@@ -72,13 +75,9 @@ function createPayrollStore(knex, dataDir) {
           const target = path.join(dataDir, relativePath);
           fs.copyFileSync(item.file, target, fs.constants.COPYFILE_EXCL);
           createdFiles.push(target);
-          const existing = await trx('buste_paga').where({ dipendente_id: employee.id, mese: String(month), anno: String(year) });
-          if (existing.length > 1) throw new Error('Esistono più buste per lo stesso dipendente e periodo: verificare prima di sostituire');
-          const id = existing[0]?.id || `BP_${crypto.randomUUID()}`;
+          const id = `BP_${crypto.randomUUID()}`;
           const values = { importo_netto: item.amount, allegato_busta_paga: relativePath, email_inviata: 0, data_invio_email: null };
-          if (existing.length) await trx('buste_paga').where('id', id).update(values);
-          else await trx('buste_paga').insert({ id, dipendente_id: employee.id, mese: String(month), anno: String(year), ...values, creato_da: 'System' });
-          // Il vecchio PDF resta sul disco per recupero; non si elimina durante una sostituzione.
+          await trx('buste_paga').insert({ id, dipendente_id: employee.id, mese: String(month), anno: String(year), ...values, creato_da: 'System' });
           if (item.row.updateCF) {
             if (!/^[A-Z0-9]{16}$/.test(item.row.extractedCF || '')) throw new Error('Codice fiscale estratto non valido');
             const duplicate = await trx('dipendenti').whereRaw('UPPER(TRIM(codice_fiscale)) = ?', [item.row.extractedCF]).whereNot('id', employee.id).first();
