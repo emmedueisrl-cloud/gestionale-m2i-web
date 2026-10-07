@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, RefreshCw, Users } from 'lucide-react';
+import { nomeClienteAgenda } from '../../utils/nomeClienteAgenda';
 
 const dateKey = date => date.toISOString().slice(0, 10);
 const parseDate = value => new Date(`${value}T12:00:00Z`);
@@ -42,7 +43,8 @@ export default function AgendaCaposquadraPubblica() {
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => shift(week, index)), [week]);
   const names = useMemo(() => new Map(data.capisquadra.map(p => [p.id, p.nome])), [data.capisquadra]);
-  const visible = useMemo(() => person === 'all' ? data.impegni : data.impegni.filter(item => item.idCaposquadra === person), [data.impegni, person]);
+  const visible = useMemo(() => (person === 'all' ? [...data.impegni] : data.impegni.filter(item => item.idCaposquadra === person))
+    .sort((a, b) => a.data.localeCompare(b.data) || Number(a.senzaOrario) - Number(b.senzaOrario) || a.oraInizio.localeCompare(b.oraInizio)), [data.impegni, person]);
   const today = dateKey(new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 12)));
 
   return (
@@ -90,11 +92,21 @@ export default function AgendaCaposquadraPubblica() {
                   <span className="ml-auto text-xs text-slate-500">{items.length}</span>
                 </div>
                 {items.length ? <div className="space-y-3 pl-2">
-                  {items.map(item => <article key={item.id} className="rounded-xl border border-slate-700 bg-slate-800/80 p-4 shadow-sm" style={{ borderLeft: `4px solid ${safeColor(item.colore)}` }}>
-                    <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-base">{names.get(item.idCaposquadra) || 'Caposquadra'}</strong><span className="flex items-center gap-1.5 rounded-lg bg-slate-900/70 px-2.5 py-1 text-sm font-semibold text-indigo-200"><Clock3 size={14} />{item.oraInizio} – {item.oraFine}</span></div>
-                    <div className="mt-3 flex items-start gap-2 text-sm text-slate-200"><MapPin size={16} className="mt-0.5 shrink-0 text-slate-400" /><span className="break-words">{item.cliente}</span></div>
+                  {items.map((item, index) => <div key={item.id}>
+                    {item.senzaOrario && (index === 0 || !items[index - 1].senzaOrario) && <h3 className="mb-3 mt-5 border-t border-slate-700 pt-4 text-sm font-bold uppercase tracking-wide text-indigo-200">Da fare in giornata</h3>}
+                    <article className="rounded-xl border border-slate-700 bg-slate-800/80 p-4 shadow-sm" style={{ borderLeft: `4px solid ${safeColor(item.colore)}` }}>
+                    <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-base">{names.get(item.idCaposquadra) || 'Caposquadra'}</strong><div className="flex max-w-full items-center gap-2 overflow-x-auto"><span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-900/70 px-2.5 py-1 text-sm font-semibold text-indigo-200">{!item.senzaOrario && <Clock3 size={14} />}{item.senzaOrario ? 'Senza orario' : `${item.oraInizio}${item.oraFine ? ` – ${item.oraFine}` : ''}`}</span><span className="shrink-0 whitespace-nowrap rounded-full bg-indigo-500/25 px-2.5 py-1 text-xs font-semibold text-indigo-100">{item.tipoImpegno || 'Da classificare'}</span></div></div>
+                    {item.tipoImpegno === 'Sopralluogo' && item.statoAppuntamento && item.statoAppuntamento !== 'Programmato' && <p className="mt-2 text-xs font-bold text-amber-200">{item.statoAppuntamento}</p>}
+                    {item.tipoImpegno === 'Sopralluogo' ? <div className="mt-3 space-y-1 text-sm text-slate-200">
+                      {item.attivita && <p className="break-words"><strong>Attività:</strong> {item.attivita}</p>}
+                      {item.nomeReferente && <p className="break-words"><strong>Referente:</strong> {item.nomeReferente}</p>}
+                      {item.indirizzo && <p className="flex items-start gap-2 break-words"><MapPin size={16} className="mt-0.5 shrink-0 text-slate-400" />{item.indirizzo}</p>}
+                    </div> : item.tipoImpegno === 'Ufficio' ? <p className="mt-3 text-sm text-slate-200">Ufficio M2I</p>
+                      : item.tipoImpegno === 'Acquisto prodotti' ? (item.luogoAcquisto && <p className="mt-3 flex items-start gap-2 break-words text-sm text-slate-200"><MapPin size={16} className="mt-0.5 shrink-0 text-slate-400" />{item.luogoAcquisto}</p>)
+                        : <div className="mt-3 flex items-start gap-2 text-sm text-slate-200"><MapPin size={16} className="mt-0.5 shrink-0 text-slate-400" /><span className="break-words" title={item.cliente}>{nomeClienteAgenda(item.cliente)}</span></div>}
                     {item.note && <p className="mt-2 pl-6 text-sm text-slate-400 break-words">{item.note}</p>}
-                  </article>)}
+                    </article>
+                  </div>)}
                 </div> : <p className="pl-2 text-sm text-slate-500">Nessun impegno</p>}
               </section>;
             })}

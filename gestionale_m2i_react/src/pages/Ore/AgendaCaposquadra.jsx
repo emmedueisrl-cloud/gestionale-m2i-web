@@ -1,11 +1,92 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Trash2, Loader2, Clock, Shield, Download, Eraser, Link2, Copy } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Calendar, Plus, Trash2, Pencil, Loader2, Clock, Shield, Download, Eraser, Link2, Copy, Sparkles, Paintbrush, Users, MapPin, PackageCheck, Building2, ShoppingCart } from 'lucide-react';
 import { recuperaElencoDipendenti, impostaCaposquadra } from '../../api/dipendenti';
 import { recuperaElencoClienti } from '../../api/clienti';
-import { recuperaDatiAgenda, salvaImpegnoAgenda, eliminaImpegnoAgenda, importaProgrammaFissoAgenda, svuotaSettimanaAgenda } from '../../api/ore';
+import { recuperaDatiAgenda, salvaImpegnoAgenda, modificaImpegnoAgenda, eliminaImpegnoAgenda, importaProgrammaFissoAgenda, svuotaSettimanaAgenda } from '../../api/ore';
 import ModernModal from '../../components/ui/ModernModal';
+import { nomeClienteAgenda } from '../../utils/nomeClienteAgenda';
+import { inizioSettimanaAgenda, trovaSovrapposizioniAgenda } from '../../utils/sovrapposizioniAgenda';
+
+const TIPI_IMPEGNO = ['Pulizie Ordinarie', 'Sgrosso', 'Affiancamento', 'Sopralluogo', 'Consegna prodotti', 'Ufficio', 'Acquisto prodotti'];
+const SCELTE_IMPEGNO = [
+  { nome: 'Pulizie Ordinarie', icona: Sparkles, stile: 'border-sky-500/50 bg-sky-500/15 text-sky-200' },
+  { nome: 'Sgrosso', icona: Paintbrush, stile: 'border-orange-500/50 bg-orange-500/15 text-orange-200' },
+  { nome: 'Affiancamento', icona: Users, stile: 'border-violet-500/50 bg-violet-500/15 text-violet-200' },
+  { nome: 'Sopralluogo', icona: MapPin, stile: 'border-emerald-500/50 bg-emerald-500/15 text-emerald-200' },
+  { nome: 'Consegna prodotti', icona: PackageCheck, stile: 'border-amber-500/50 bg-amber-500/15 text-amber-200' },
+  { nome: 'Ufficio', icona: Building2, stile: 'border-indigo-500/50 bg-indigo-500/15 text-indigo-200' },
+  { nome: 'Acquisto prodotti', icona: ShoppingCart, stile: 'border-pink-500/50 bg-pink-500/15 text-pink-200' }
+];
+const COLORI_IMPEGNO = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+
+function CampiImpegno({ impegno, onChange, capisquadra, clienti, error, allowModeChange = false }) {
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <label className="block text-sm font-medium text-slate-200 sm:col-span-2">Tipo di impegno
+      <select value={impegno.tipoImpegno} onChange={event => onChange('tipoImpegno', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100">
+        <option value="">-- Seleziona il tipo --</option>
+        {TIPI_IMPEGNO.map(tipo => <option key={tipo} value={tipo}>{tipo}</option>)}
+      </select>
+    </label>
+    <label className="block text-sm font-medium text-slate-200">Caposquadra
+      <select value={impegno.idDipendente} onChange={event => onChange('idDipendente', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100">
+        <option value="">-- Seleziona caposquadra --</option>
+        {capisquadra.map(d => <option key={d.id} value={d.id}>{d.nomeCompleto}</option>)}
+      </select>
+    </label>
+    <label className="block text-sm font-medium text-slate-200">Data
+      <input type="date" value={impegno.data} onChange={event => onChange('data', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+    </label>
+    <div className="sm:col-span-2">
+      <span className="block text-sm font-medium text-slate-200">Modalità</span>
+      {allowModeChange ? <div className="mt-1 flex flex-wrap gap-2">
+        <button type="button" onClick={() => onChange('senzaOrario', false)} className={`rounded-lg px-3 py-2 text-sm ${!impegno.senzaOrario ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-200'}`}>Con orario programmato</button>
+        <button type="button" onClick={() => onChange('senzaOrario', true)} className={`rounded-lg px-3 py-2 text-sm ${impegno.senzaOrario ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-200'}`}>Da fare in giornata</button>
+      </div> : <p className="mt-1 text-sm text-indigo-200">{impegno.senzaOrario ? 'Da fare in giornata · senza orario' : 'Con orario programmato'}</p>}
+    </div>
+    {!impegno.senzaOrario && <>
+      <label className="block text-sm font-medium text-slate-200">Inizio
+        <input type="time" value={impegno.oraInizio} onChange={event => onChange('oraInizio', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+      </label>
+      <label className="block text-sm font-medium text-slate-200">Fine (facoltativa)
+        <input type="time" value={impegno.oraFine || ''} onChange={event => onChange('oraFine', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+      </label>
+    </>}
+    {impegno.tipoImpegno === 'Sopralluogo' ? <>
+      <label className="block text-sm font-medium text-slate-200 sm:col-span-2">Attività
+        <input type="text" value={impegno.attivita || ''} onChange={event => onChange('attivita', event.target.value)} maxLength={300} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+      </label>
+      <label className="block text-sm font-medium text-slate-200 sm:col-span-2">Nome referente
+        <input type="text" value={impegno.nomeReferente || ''} onChange={event => onChange('nomeReferente', event.target.value)} maxLength={200} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+      </label>
+      <label className="block text-sm font-medium text-slate-200 sm:col-span-2">Indirizzo
+        <input type="text" value={impegno.indirizzo || ''} onChange={event => onChange('indirizzo', event.target.value)} maxLength={500} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+      </label>
+    </> : impegno.tipoImpegno === 'Ufficio' ? <p className="sm:col-span-2 rounded-lg border border-slate-600 bg-slate-900 p-3 text-sm text-slate-200">Destinazione: <strong>Ufficio M2I</strong></p>
+      : impegno.tipoImpegno === 'Acquisto prodotti' ? <label className="block text-sm font-medium text-slate-200 sm:col-span-2">Luogo (facoltativo)
+        <input type="text" value={impegno.luogoAcquisto || ''} onChange={event => onChange('luogoAcquisto', event.target.value)} maxLength={300} placeholder="Dove acquistare i prodotti" className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+      </label> : <label className="block text-sm font-medium text-slate-200 sm:col-span-2">Cliente / destinazione
+        <select value={impegno.idCliente} onChange={event => onChange('idCliente', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100">
+          <option value="">-- Nessun Cliente --</option>
+          {clienti.map(c => <option key={c.id} value={c.id}>{c.ragione_sociale}</option>)}
+        </select>
+      </label>}
+    <label className="block text-sm font-medium text-slate-200 sm:col-span-2">Note
+      <textarea value={impegno.note} onChange={event => onChange('note', event.target.value)} maxLength={2000} rows={3} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2 text-slate-100" />
+    </label>
+    <div className="sm:col-span-2">
+      <span className="block text-sm font-medium text-slate-200">Colore</span>
+      <div className="mt-2 flex flex-wrap gap-3">
+        {COLORI_IMPEGNO.map(color => <button key={color} type="button" onClick={() => onChange('colore', color)} aria-label={`Colore ${color}`} aria-pressed={impegno.colore === color} className={`h-8 w-8 rounded-full border-2 ${impegno.colore === color ? 'border-white ring-2 ring-indigo-400' : 'border-transparent'}`} style={{ backgroundColor: color }} />)}
+      </div>
+    </div>
+    {error && <p role="alert" className="text-sm text-red-400 sm:col-span-2">{error}</p>}
+  </div>;
+}
 
 export default function AgendaCaposquadra() {
+  const [searchParams] = useSearchParams();
+  const [linkedDate] = useState(() => searchParams.get('data'));
   const [dipendenti, setDipendenti] = useState([]);
   const [clienti, setClienti] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -15,7 +96,7 @@ export default function AgendaCaposquadra() {
   const [publicToken, setPublicToken] = useState('');
   const [linkMessage, setLinkMessage] = useState('');
   
-  const [idDipendente, setIdDipendente] = useState('');
+  const [idDipendente, setIdDipendente] = useState(() => searchParams.get('dipendente') || 'all');
   // Gestione data: lunedì della settimana in visualizzazione
   const [dataInizioSettimana, setDataInizioSettimana] = useState('');
   
@@ -23,10 +104,15 @@ export default function AgendaCaposquadra() {
   const [modalState, setModalState] = useState({ isOpen: false, type: '', message: '' });
 
   // Nuovo impegno
-  const [nuovoImpegno, setNuovoImpegno] = useState({
-    data: '', oraInizio: '08:00', oraFine: '12:00', idCliente: '', note: '', colore: '#4f46e5'
-  });
+  const [isSceltaImpegnoOpen, setIsSceltaImpegnoOpen] = useState(false);
+  const [tipoScelto, setTipoScelto] = useState('');
+  const [nuovoImpegno, setNuovoImpegno] = useState(null);
+  const [addError, setAddError] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [impegnoInModifica, setImpegnoInModifica] = useState(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+  const [sovrapposizione, setSovrapposizione] = useState(null);
 
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_URL || ''}/api/agenda-public-link`, { credentials: 'same-origin' })
@@ -34,7 +120,8 @@ export default function AgendaCaposquadra() {
       .then(result => setPublicToken(result.token))
       .catch(() => setLinkMessage('Link pubblico non disponibile.'));
     // Imposta dataInizioSettimana al lunedì della settimana corrente
-    const today = new Date();
+    const requestedDate = linkedDate && /^\d{4}-\d{2}-\d{2}$/.test(linkedDate) ? new Date(`${linkedDate}T12:00:00`) : null;
+    const today = requestedDate && !Number.isNaN(requestedDate.getTime()) ? requestedDate : new Date();
     const day = today.getDay();
     const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
     const lunedi = new Date(today.setDate(diff));
@@ -56,7 +143,7 @@ export default function AgendaCaposquadra() {
       }
     }
     loadFiltri();
-  }, []);
+  }, [linkedDate]);
 
   useEffect(() => {
     if (idDipendente && dataInizioSettimana) {
@@ -80,22 +167,65 @@ export default function AgendaCaposquadra() {
     }
   }
 
-  const handleAggiungi = async () => {
-    if (!nuovoImpegno.data || !nuovoImpegno.oraInizio || !nuovoImpegno.oraFine) {
-      setModalState({ isOpen: true, type: 'error', message: 'Compila Data e Orari.' });
-      return;
-    }
-    setIsAdding(true);
+  const apriAggiungi = () => {
+    setTipoScelto('');
+    setIsSceltaImpegnoOpen(true);
+  };
+
+  const scegliModalita = senzaOrario => {
+    setAddError('');
+    setNuovoImpegno({ idDipendente: idDipendente === 'all' ? '' : idDipendente, tipoImpegno: tipoScelto, senzaOrario, data: dataInizioSettimana, oraInizio: senzaOrario ? '' : '08:00', oraFine: '', idCliente: '', attivita: '', nomeReferente: '', indirizzo: '', luogoAcquisto: '', note: '', colore: '#4f46e5' });
+    setIsSceltaImpegnoOpen(false);
+  };
+
+  const aggiornaAggiungi = (campo, valore) => setNuovoImpegno(prev => ({ ...prev, [campo]: valore }));
+
+  const mostraImpegno = async imp => {
+    const lunedi = inizioSettimanaAgenda(imp.data);
+    if ((idDipendente !== 'all' && imp.idDipendente !== idDipendente) || lunedi !== dataInizioSettimana) {
+      if (idDipendente !== 'all') setIdDipendente(imp.idDipendente);
+      setDataInizioSettimana(lunedi);
+    } else await caricaAgenda();
+  };
+
+  const salvaConControlloOrario = async (imp, modalita, salvaComunque = false) => {
+    const modifica = modalita === 'modifica';
+    const setSaving = modifica ? setIsSavingEdit : setIsAdding;
+    const setError = modifica ? setEditError : setAddError;
+    setSaving(true);
+    setError('');
     try {
-      await salvaImpegnoAgenda({ ...nuovoImpegno, idDipendente });
-      await caricaAgenda(); // Ricarica
-      setNuovoImpegno({ ...nuovoImpegno, note: '' }); // reset parziale
+      if (!salvaComunque && !imp.senzaOrario) {
+        const esistenti = await recuperaDatiAgenda(imp.idDipendente, inizioSettimanaAgenda(imp.data));
+        const sovrapposti = trovaSovrapposizioniAgenda(imp, esistenti || []);
+        if (sovrapposti.length) {
+          setSovrapposizione({ imp, modalita, sovrapposti });
+          return;
+        }
+      }
+      if (modifica) await modificaImpegnoAgenda(imp.id, imp);
+      else await salvaImpegnoAgenda(imp);
+      if (modifica) setImpegnoInModifica(null);
+      else setNuovoImpegno(null);
+      await mostraImpegno(imp);
     } catch (err) {
       console.error(err);
-      setModalState({ isOpen: true, type: 'error', message: 'Errore nel salvataggio.' });
+      setError(err.message || (modifica ? 'Errore durante la modifica dell’impegno.' : 'Errore nel salvataggio.'));
     } finally {
-      setIsAdding(false);
+      setSaving(false);
     }
+  };
+
+  const handleAggiungi = async () => {
+    if (!nuovoImpegno?.tipoImpegno || !nuovoImpegno.idDipendente || !nuovoImpegno.data || (!nuovoImpegno.senzaOrario && !nuovoImpegno.oraInizio)) {
+      setAddError('Compila tipo, caposquadra, data e, se previsto, ora di inizio.');
+      return;
+    }
+    if (nuovoImpegno.tipoImpegno === 'Sopralluogo' && (!nuovoImpegno.attivita.trim() || !nuovoImpegno.nomeReferente.trim() || !nuovoImpegno.indirizzo.trim())) {
+      setAddError('Per il sopralluogo compila attività, nome referente e indirizzo.');
+      return;
+    }
+    await salvaConControlloOrario(nuovoImpegno, 'aggiungi');
   };
 
   const handleElimina = async (idImpegno) => {
@@ -106,6 +236,33 @@ export default function AgendaCaposquadra() {
       console.error(err);
       setModalState({ isOpen: true, type: 'error', message: 'Errore durante l\'eliminazione.' });
     }
+  };
+
+  const apriModifica = imp => {
+    setEditError('');
+    setImpegnoInModifica({
+      id: imp.id, idDipendente: imp.idDipendente, data: imp.data, tipoImpegno: imp.tipoImpegno || '',
+      senzaOrario: Boolean(imp.senzaOrario), oraInizio: imp.oraInizio, oraFine: imp.oraFine || '',
+      idCliente: imp.idCliente || '', attivita: imp.attivita || '', nomeReferente: imp.nomeReferente || '', indirizzo: imp.indirizzo || '', luogoAcquisto: imp.luogoAcquisto || '', colore: imp.colore || '#4f46e5', note: imp.note || ''
+    });
+  };
+
+  const aggiornaModifica = (campo, valore) => setImpegnoInModifica(prev => campo === 'senzaOrario'
+    ? (prev.senzaOrario === valore ? prev : { ...prev, senzaOrario: valore, oraInizio: valore ? '' : '08:00', oraFine: '' })
+    : { ...prev, [campo]: valore });
+
+  const handleModifica = async () => {
+    if (!impegnoInModifica) return;
+    const imp = impegnoInModifica;
+    if (!imp.tipoImpegno || !imp.data || !imp.idDipendente || (!imp.senzaOrario && !imp.oraInizio)) {
+      setEditError('Compila tipo, caposquadra, data e, se previsto, ora di inizio.');
+      return;
+    }
+    if (imp.tipoImpegno === 'Sopralluogo' && (!imp.attivita.trim() || !imp.nomeReferente.trim() || !imp.indirizzo.trim())) {
+      setEditError('Per il sopralluogo compila attività, nome referente e indirizzo.');
+      return;
+    }
+    await salvaConControlloOrario(imp, 'modifica');
   };
 
   // Costruisci array dei 7 giorni
@@ -185,7 +342,7 @@ export default function AgendaCaposquadra() {
   };
 
   return (
-    <div className="p-6 w-full mx-auto h-[calc(100vh-100px)] flex flex-col">
+    <div className="p-6 w-full mx-auto">
       
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
@@ -198,13 +355,16 @@ export default function AgendaCaposquadra() {
           </div>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
+          <button type="button" onClick={apriAggiungi} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500">
+            <Plus className="h-4 w-4" /> Aggiungi impegno
+          </button>
           <select 
             value={idDipendente} 
             onChange={(e) => setIdDipendente(e.target.value)}
             className="p-2 bg-slate-800 border border-slate-600 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 min-w-[250px] shadow-sm"
           >
-            <option value="">-- Seleziona Caposquadra --</option>
+            <option value="all">Tutti i caposquadra</option>
             {capisquadra.map(d => (
               <option key={d.id} value={d.id}>{d.nomeCompleto} ({d.id})</option>
             ))}
@@ -228,7 +388,7 @@ export default function AgendaCaposquadra() {
         {linkMessage && <p role="status" className="mt-2 text-xs text-slate-300">{linkMessage}</p>}
       </div>
 
-      <div className="flex-1 bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden flex flex-col relative">
+      <div className="bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden relative">
         {isLoading && (
           <div className="absolute inset-0 bg-slate-800/70 z-10 flex items-center justify-center text-indigo-400">
             <Loader2 className="w-8 h-8 animate-spin" />
@@ -236,15 +396,15 @@ export default function AgendaCaposquadra() {
         )}
 
         {!idDipendente ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+          <div className="flex min-h-64 flex-col items-center justify-center text-slate-400">
             <Calendar className="w-16 h-16 mb-4 opacity-20" />
             <p className="text-lg font-medium">Seleziona un dipendente per visualizzare l'agenda</p>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
+          <div>
             
             {/* Calendario Visivo */}
-            <div className="flex-1 flex flex-col min-h-0">
+            <div>
               {/* Header Navigazione */}
               <div className="p-4 border-b border-slate-700 bg-slate-900/50 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-start">
@@ -257,7 +417,7 @@ export default function AgendaCaposquadra() {
                 </div>
                 
                 <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
-                  <button 
+                  {idDipendente !== 'all' && <><button
                     onClick={handleSvuotaSettimana}
                     disabled={isImporting} 
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 text-red-400 border border-red-500/30 rounded hover:bg-red-600/30 text-sm font-medium transition-colors disabled:opacity-50"
@@ -273,46 +433,55 @@ export default function AgendaCaposquadra() {
                   >
                     {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                     <span className="hidden md:inline">Importa Prog.</span>
-                  </button>
+                  </button></>}
                 </div>
               </div>
 
               {/* Colonne Giorni */}
-              <div className="flex-1 flex overflow-x-auto">
+              <div className="flex overflow-x-auto">
                 {giorniSettimana.map((giorno, idx) => {
                   const formatLocalISODate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                   const dataStr = formatLocalISODate(giorno);
-                  const impegniGiorno = impegni.filter(i => i.data === dataStr).sort((a,b) => a.oraInizio.localeCompare(b.oraInizio));
+                  const impegniGiorno = impegni.filter(i => i.data === dataStr).sort((a, b) => Number(a.senzaOrario) - Number(b.senzaOrario) || a.oraInizio.localeCompare(b.oraInizio));
                   const isToday = dataStr === formatLocalISODate(new Date());
 
                   return (
-                    <div key={idx} className={`flex-1 min-w-0 border-r border-slate-800 flex flex-col ${isToday ? 'bg-indigo-500/10/30' : ''}`}>
+                    <div key={idx} className={`flex-1 min-w-[225px] border-r border-slate-800 flex flex-col ${isToday ? 'bg-indigo-500/10/30' : ''}`}>
                       <div className={`p-1.5 md:p-2 text-center border-b border-slate-700 ${isToday ? 'bg-indigo-500/20 text-indigo-800' : 'bg-slate-900/50 text-slate-300'}`}>
                         <div className="text-[10px] md:text-xs uppercase font-bold tracking-wider">{giorno.toLocaleDateString('it-IT', { weekday: 'short' })}</div>
                         <div className="text-base md:text-lg font-black">{giorno.getDate()}</div>
                       </div>
-                      <div className="flex-1 p-1 md:p-2 space-y-1 md:space-y-2 overflow-y-auto overflow-x-hidden">
-                        {impegniGiorno.map(imp => (
-                          <div 
-                            key={imp.id} 
+                      <div className="p-1 md:p-2 space-y-1 md:space-y-2">
+                        {impegniGiorno.map((imp, impIndex) => (
+                          <React.Fragment key={imp.id}>
+                          {imp.senzaOrario && (impIndex === 0 || !impegniGiorno[impIndex - 1].senzaOrario) && <div className="border-t border-slate-600 pt-2 text-[10px] font-bold uppercase tracking-wide text-indigo-200">Da fare in giornata</div>}
+                          <div
                             className="p-1.5 md:p-2 rounded border shadow-sm text-[10px] 2xl:text-xs relative group cursor-default break-words"
                             style={{ backgroundColor: `${imp.colore}15`, borderColor: `${imp.colore}40`, borderLeftWidth: '4px', borderLeftColor: imp.colore }}
                           >
-                            <button 
-                              onClick={() => handleElimina(imp.id)}
-                              className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                            <div className="font-bold mb-0.5 md:mb-1 text-slate-50 flex items-center gap-1">
-                              <Clock className="w-2.5 h-2.5 md:w-3 md:h-3 flex-shrink-0" /> 
-                              <span className="truncate">{imp.oraInizio} - {imp.oraFine}</span>
+                            <div className="font-bold mb-0.5 md:mb-1 text-slate-50 flex items-center gap-1 whitespace-nowrap">
+                              {!imp.senzaOrario && <Clock className="w-2.5 h-2.5 md:w-3 md:h-3 flex-shrink-0" />}
+                              <span>{imp.senzaOrario ? 'Senza orario' : `${imp.oraInizio}${imp.oraFine ? ` - ${imp.oraFine}` : ''}`}</span>
+                              <span title={imp.tipoImpegno || 'Modifica l’impegno per assegnare un tipo'} className="rounded-full bg-indigo-500/25 px-1.5 py-0.5 text-[9px] font-semibold leading-tight text-indigo-100">{imp.tipoImpegno || 'Da classificare'}</span>
                             </div>
+                            {idDipendente === 'all' && <div className="mb-1 text-[10px] font-bold text-indigo-200 break-words">{imp.nomeCaposquadra}</div>}
+                            {imp.tipoImpegno === 'Sopralluogo' && imp.statoAppuntamento && imp.statoAppuntamento !== 'Programmato' && <div className="mb-1 text-[10px] font-semibold text-amber-200">{imp.statoAppuntamento}</div>}
                             <div className="font-medium text-slate-200 leading-tight break-words" style={{ wordBreak: 'break-word', hyphens: 'auto' }}>
-                              {imp.cliente}
+                              {imp.tipoImpegno === 'Sopralluogo' ? <>
+                                {imp.attivita && <div>Attività: {imp.attivita}</div>}
+                                {imp.nomeReferente && <div>Referente: {imp.nomeReferente}</div>}
+                                {imp.indirizzo && <div>Indirizzo: {imp.indirizzo}</div>}
+                              </> : imp.tipoImpegno === 'Ufficio' ? 'Ufficio M2I'
+                                : imp.tipoImpegno === 'Acquisto prodotti' ? (imp.luogoAcquisto ? `Luogo: ${imp.luogoAcquisto}` : '')
+                                  : <span title={imp.cliente}>{nomeClienteAgenda(imp.cliente)}</span>}
                             </div>
                             {imp.note && <div className="text-[9px] 2xl:text-[10px] text-slate-400 mt-1 italic leading-tight break-words">{imp.note}</div>}
+                            <div className="mt-2 flex justify-end gap-1 border-t border-slate-600/50 pt-1">
+                              <button type="button" onClick={() => apriModifica(imp)} aria-label={`Modifica impegno del ${imp.data}${imp.senzaOrario ? ' senza orario' : ` dalle ${imp.oraInizio}`}`} title="Modifica impegno" className="flex h-7 w-7 items-center justify-center rounded text-indigo-200 hover:bg-indigo-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400"><Pencil className="h-3.5 w-3.5" /></button>
+                              <button type="button" onClick={() => handleElimina(imp.id)} aria-label={`Elimina impegno del ${imp.data}${imp.senzaOrario ? ' senza orario' : ` dalle ${imp.oraInizio}`}`} title="Elimina impegno" className="flex h-7 w-7 items-center justify-center rounded text-slate-300 hover:bg-red-500/20 hover:text-red-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
+                            </div>
                           </div>
+                          </React.Fragment>
                         ))}
                       </div>
                     </div>
@@ -321,94 +490,83 @@ export default function AgendaCaposquadra() {
               </div>
             </div>
 
-            {/* Form Inserimento (In Basso) */}
-            <div className="flex-none bg-slate-900/50 p-4 border-t border-slate-700">
-              <h3 className="font-bold text-slate-50 mb-3 uppercase tracking-wide text-sm flex items-center gap-2">
-                <Plus className="w-4 h-4 text-indigo-400" /> Aggiungi Impegno
-              </h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Data</label>
-                  <input 
-                    type="date" 
-                    value={nuovoImpegno.data}
-                    onChange={(e) => setNuovoImpegno({...nuovoImpegno, data: e.target.value})}
-                    className="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  />
-                </div>
-                
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Inizio</label>
-                    <input 
-                      type="time" 
-                      value={nuovoImpegno.oraInizio}
-                      onChange={(e) => setNuovoImpegno({...nuovoImpegno, oraInizio: e.target.value})}
-                      className="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Fine</label>
-                    <input 
-                      type="time" 
-                      value={nuovoImpegno.oraFine}
-                      onChange={(e) => setNuovoImpegno({...nuovoImpegno, oraFine: e.target.value})}
-                      className="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-1">Cliente / Destinazione</label>
-                  <select 
-                    value={nuovoImpegno.idCliente}
-                    onChange={(e) => setNuovoImpegno({...nuovoImpegno, idCliente: e.target.value})}
-                    className="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  >
-                    <option value="">-- Nessun Cliente --</option>
-                    {clienti.map(c => <option key={c.id} value={c.id}>{c.ragione_sociale}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-400 uppercase">Colore</label>
-                  </div>
-                  <div className="flex gap-2 p-1">
-                    {['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'].map(color => (
-                      <button 
-                        key={color}
-                        onClick={() => setNuovoImpegno({...nuovoImpegno, colore: color})}
-                        className={`w-7 h-7 rounded-full border-2 transition-transform ${nuovoImpegno.colore === color ? 'border-slate-800 scale-110' : 'border-transparent'}`}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <input 
-                    type="text"
-                    placeholder="Note opzionali..."
-                    value={nuovoImpegno.note}
-                    onChange={(e) => setNuovoImpegno({...nuovoImpegno, note: e.target.value})}
-                    className="w-full p-2 bg-slate-800 border border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  />
-                  <button 
-                    onClick={handleAggiungi}
-                    disabled={isAdding}
-                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
-                  >
-                    {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                    Salva
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </div>
+
+      <ModernModal
+        isOpen={isSceltaImpegnoOpen}
+        onClose={() => setIsSceltaImpegnoOpen(false)}
+        type={null}
+        title="Che impegno vuoi aggiungere?"
+        maxWidth="max-w-xl"
+        textAlign="text-left"
+        secondaryAction={{ label: 'Annulla', onClick: () => setIsSceltaImpegnoOpen(false) }}
+      >
+        <div role="group" aria-label="Tipo di impegno" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {SCELTE_IMPEGNO.map(({ nome, icona: Icona, stile }) => <button
+            key={nome}
+            type="button"
+            aria-pressed={tipoScelto === nome}
+            onClick={() => setTipoScelto(nome)}
+            className={`flex aspect-square min-h-28 flex-col items-center justify-center gap-3 rounded-xl border-2 p-3 text-center text-sm font-semibold leading-tight transition-transform hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${stile} ${tipoScelto === nome ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-slate-800' : ''}`}
+          ><Icona className="h-7 w-7 shrink-0" aria-hidden="true" /><span>{nome}</span></button>)}
+        </div>
+        {tipoScelto && <div className="mt-6 space-y-3">
+          <p className="text-sm font-semibold text-slate-200">Come va programmato?</p>
+          <button type="button" onClick={() => scegliModalita(false)} className="w-full rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-4 text-left text-sm font-semibold text-indigo-100 hover:bg-indigo-500/20">Con orario programmato<span className="mt-1 block font-normal text-slate-400">Indica l’ora di inizio e, se serve, quella di fine.</span></button>
+          <button type="button" onClick={() => scegliModalita(true)} className="w-full rounded-xl border border-slate-600 bg-slate-900/60 p-4 text-left text-sm font-semibold text-slate-100 hover:bg-slate-700">Senza orario · da fare in giornata<span className="mt-1 block font-normal text-slate-400">Compare in fondo agli impegni del giorno.</span></button>
+        </div>}
+      </ModernModal>
+
+      <ModernModal
+        isOpen={Boolean(nuovoImpegno) && !sovrapposizione}
+        onClose={() => { if (!isAdding) setNuovoImpegno(null); }}
+        type={null}
+        title="Aggiungi impegno"
+        maxWidth="max-w-xl"
+        textAlign="text-left"
+        primaryAction={{ label: isAdding ? 'Salvataggio...' : 'Salva impegno', onClick: handleAggiungi, disabled: isAdding }}
+        secondaryAction={{ label: 'Annulla', onClick: () => setNuovoImpegno(null), disabled: isAdding }}
+      >
+        {nuovoImpegno && <CampiImpegno impegno={nuovoImpegno} onChange={aggiornaAggiungi} capisquadra={capisquadra} clienti={clienti} error={addError} />}
+      </ModernModal>
+
+      <ModernModal
+        isOpen={Boolean(impegnoInModifica) && !sovrapposizione}
+        onClose={() => { if (!isSavingEdit) setImpegnoInModifica(null); }}
+        type={null}
+        title="Modifica impegno"
+        maxWidth="max-w-xl"
+        textAlign="text-left"
+        primaryAction={{ label: isSavingEdit ? 'Salvataggio...' : 'Salva modifiche', onClick: handleModifica, disabled: isSavingEdit }}
+        secondaryAction={{ label: 'Annulla', onClick: () => setImpegnoInModifica(null), disabled: isSavingEdit }}
+      >
+        {impegnoInModifica && <CampiImpegno impegno={impegnoInModifica} onChange={aggiornaModifica} capisquadra={capisquadra} clienti={clienti} error={editError} allowModeChange />}
+      </ModernModal>
+
+      <ModernModal
+        isOpen={Boolean(sovrapposizione)}
+        onClose={() => { if (!isAdding && !isSavingEdit) setSovrapposizione(null); }}
+        type="warning"
+        title="Orario già occupato"
+        maxWidth="max-w-xl"
+        textAlign="text-left"
+        primaryAction={{ label: 'Salva comunque', onClick: async () => {
+          const scelta = sovrapposizione;
+          setSovrapposizione(null);
+          await salvaConControlloOrario(scelta.imp, scelta.modalita, true);
+        }, disabled: isAdding || isSavingEdit }}
+        secondaryAction={{ label: 'Cambia orario', onClick: () => setSovrapposizione(null), disabled: isAdding || isSavingEdit }}
+      >
+        {sovrapposizione && <div className="space-y-3 text-sm text-slate-200">
+          <p>Il {new Date(`${sovrapposizione.imp.data}T12:00:00`).toLocaleDateString('it-IT')} {capisquadra.find(d => d.id === sovrapposizione.imp.idDipendente)?.nomeCompleto || 'la caposquadra'} ha già {sovrapposizione.sovrapposti.length === 1 ? 'un impegno' : `${sovrapposizione.sovrapposti.length} impegni`} in questo orario:</p>
+          <ul className="space-y-2">
+            {sovrapposizione.sovrapposti.map(imp => <li key={imp.id} className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"><strong>{imp.tipoImpegno || 'Impegno'}</strong> · {imp.oraInizio}{imp.oraFine ? ` – ${imp.oraFine}` : ' (senza ora di fine)'}</li>)}
+          </ul>
+          <p>Puoi modificare l’orario oppure salvare comunque i due impegni sovrapposti.</p>
+        </div>}
+      </ModernModal>
 
       <ModernModal 
         isOpen={isGestioneCapisquadraOpen}

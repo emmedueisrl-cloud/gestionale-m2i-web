@@ -64,3 +64,4 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/workflow_elaborati.js
 !/gestionale_m2i_sql/registro_ore_state.js
 !/gestionale_m2i_sql/autodiagnosi.js
+!/gestionale_m2i_sql/public_appuntamenti.js

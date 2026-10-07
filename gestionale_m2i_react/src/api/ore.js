@@ -75,6 +75,10 @@ export async function salvaImpegnoAgenda(imp) {
   return await apiCall('salvaImpegnoAgenda', [imp]);
 }
 
+export async function modificaImpegnoAgenda(idImpegno, imp) {
+  return await apiCall('modificaImpegnoAgenda', [idImpegno, imp]);
+}
+
 /**
  * Elimina un impegno in agenda.
  * @param {Number|String} idImpegno 

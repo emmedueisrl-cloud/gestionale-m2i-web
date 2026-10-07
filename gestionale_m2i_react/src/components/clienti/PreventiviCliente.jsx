@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Download, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { FileText, Download } from 'lucide-react';
 
 const PreventiviCliente = ({ clienteId }) => {
   const [preventivi, setPreventivi] = useState([]);
@@ -20,14 +20,6 @@ const PreventiviCliente = ({ clienteId }) => {
     fetchPreventivi();
   }, [clienteId]);
 
-  const getStatusBadge = (stato) => {
-    switch(stato) {
-      case 'Accettato': return <span className="flex items-center gap-1 bg-emerald-500 text-white px-2 py-1 rounded text-xs font-bold"><CheckCircle size={12}/> Accettato</span>;
-      case 'Rifiutato': return <span className="flex items-center gap-1 bg-red-500 text-white px-2 py-1 rounded text-xs font-bold"><XCircle size={12}/> Rifiutato</span>;
-      default: return <span className="flex items-center gap-1 bg-amber-500 text-white px-2 py-1 rounded text-xs font-bold"><Clock size={12}/> In Attesa</span>;
-    }
-  };
-
   return (
     <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 overflow-hidden">
       <div className="bg-slate-900/50 border-b border-slate-700 p-5 flex items-center justify-between">
@@ -47,7 +39,6 @@ const PreventiviCliente = ({ clienteId }) => {
                   <div className="flex items-center gap-3 mb-1">
                     <span className="font-bold text-slate-200">{p.numero_preventivo}</span>
                     <span className="text-xs text-slate-400">{new Date(p.data_preventivo).toLocaleDateString('it-IT')}</span>
-                    {getStatusBadge(p.stato)}
                   </div>
                   <div className="text-sm text-slate-300">{p.oggetto || 'Preventivo per pulizie ordinarie'} - <strong className="text-indigo-400">€ {Number(p.costo_mensile).toLocaleString('it-IT', {minimumFractionDigits: 2})}</strong></div>
                 </div>

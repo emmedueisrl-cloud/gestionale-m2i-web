@@ -19,6 +19,15 @@ async function createFixtureDatabase(filePath, schemaPath) {
       ['D0001', 'Prova', 'Test', 'TEST000000000001', '2026-01-01'],
       error => error ? reject(error) : resolve()
     ));
+    await new Promise((resolve, reject) => db.run(
+      'INSERT INTO preventivi (numero_preventivo, data_preventivo, ragione_sociale_prospect) VALUES (?, ?, ?)',
+      ['LEGACY-001', '2026-01-01', 'Cliente storico'],
+      error => error ? reject(error) : resolve()
+    ));
+    await new Promise((resolve, reject) => db.exec(
+      "INSERT INTO agenda_caposquadra (dipendente_id, data, ora_inizio, ora_fine, tipo_impegno, attivita, nome_referente, indirizzo, note, colore) VALUES ('D0001', '2026-11-02', '09:00', '', 'Sopralluogo', 'Uffici', 'Referente storico', 'Via Verdi 1', 'Note storiche', '#4f46e5'); INSERT INTO agenda_caposquadra (dipendente_id, data, ora_inizio, ora_fine, tipo_impegno, nominativo_appuntamento, luogo_appuntamento, note, colore) VALUES ('D0001', '2026-11-03', '10:00', '', 'Appuntamento', 'Referente precedente', 'Via Rossi 2', 'Vecchio tipo', '#4f46e5');",
+      error => error ? reject(error) : resolve()
+    ));
   } finally {
     await new Promise(resolve => db.close(resolve));
   }
@@ -97,6 +106,77 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const cookie = login.headers.get('set-cookie')?.split(';')[0];
     assert.ok(cookie);
     assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200);
+    const schedeStoriche = await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
+    assert.equal(schedeStoriche.length, 2);
+    assert.equal(schedeStoriche.find(item => item.nominativo === 'Referente storico')?.attivita, 'Uffici');
+    assert.equal(schedeStoriche.find(item => item.nominativo === 'Referente precedente')?.luogo, 'Via Rossi 2');
+    const preventiviStorici = await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
+    const preventivoStorico = preventiviStorici.find(item => item.numero_preventivo === 'LEGACY-001');
+    assert.match(preventivoStorico?.id || '', /^PREV_LEGACY_[0-9a-f]{32}$/);
+    assert.equal((await fetch(`${base}/api/preventivi/${preventivoStorico.id}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 204);
+    assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).some(item => item.numero_preventivo === 'LEGACY-001'), false);
+
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`)).status, 401);
+    const appuntamento = { dataOra: '2026-10-08T10:30', nominativo: 'Cliente di prova', luogo: 'Roma', note: 'Sopralluogo', stato: 'Programmato' };
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(appuntamento)
+    })).status, 401);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ ...appuntamento, dataOra: '2026-02-30T10:30' })
+    })).status, 400);
+    const appuntamentoCreato = await fetch(`${base}/api/appuntamenti-preventivi`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(appuntamento)
+    });
+    assert.equal(appuntamentoCreato.status, 201);
+    const { id: idAppuntamento } = await appuntamentoCreato.json();
+    assert.ok(idAppuntamento);
+    const appuntamentiDiretti = await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
+    assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.agendaImpegnoId, null);
+    const impegniInAgenda = await new Promise((resolve, reject) => {
+      const db = new sqlite3.Database(path.join(temporaryDir, 'gestionale.db'));
+      db.get('SELECT COUNT(*) AS totale FROM agenda_caposquadra', (error, row) => db.close(() => error ? reject(error) : resolve(row.totale)));
+    });
+    assert.equal(impegniInAgenda, 2);
+    const appuntamentoModificato = await fetch(`${base}/api/appuntamenti-preventivi/${idAppuntamento}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ ...appuntamento, stato: 'Svolto' })
+    });
+    assert.equal(appuntamentoModificato.status, 200);
+    assert.equal((await appuntamentoModificato.json()).stato, 'Svolto');
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).length, 3);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idAppuntamento}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 204);
+
+    assert.equal((await fetch(`${base}/api/appuntamenti-public-link`)).status, 401);
+    const { token: tokenInserimento } = await fetch(`${base}/api/appuntamenti-public-link`, { headers: { Cookie: cookie } }).then(response => response.json());
+    assert.match(tokenInserimento, /^[0-9a-f]{64}$/);
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`)).status, 200);
+    if (fs.existsSync(path.join(backendDir, '..', 'gestionale_m2i_react', 'dist', 'index.html'))) {
+      assert.equal((await fetch(`${base}/inserisci-appuntamento/${tokenInserimento}`)).status, 200);
+    }
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${'0'.repeat(64)}`)).status, 404);
+    const schedaPubblica = new FormData();
+    schedaPubblica.append('dataOra', '2026-10-15T09:30');
+    schedaPubblica.append('nominativo', 'Cliente dal link');
+    schedaPubblica.append('luogo', 'Via Roma 20');
+    schedaPubblica.append('stato', 'Programmato');
+    schedaPubblica.append('note', 'Richiesta pubblica');
+    schedaPubblica.append('scheda', new Blob(['%PDF-1.4\n%%EOF\n'], { type: 'application/pdf' }), 'scheda.pdf');
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${'0'.repeat(64)}`, { method: 'POST', body: schedaPubblica })).status, 404);
+    const invioPubblico = await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: schedaPubblica });
+    assert.equal(invioPubblico.status, 201);
+    const { id: idPubblico } = await invioPubblico.json();
+    const schedaSalvata = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idPubblico);
+    assert.equal(schedaSalvata?.nominativo, 'Cliente dal link');
+    assert.equal(schedaSalvata?.luogo, 'Via Roma 20');
+    assert.equal(schedaSalvata?.agendaImpegnoId, null);
+    assert.match(schedaSalvata?.schedaPdf || '', /^\/uploads\/appuntamenti\/[0-9a-f-]+\.pdf$/);
+    assert.equal((await fetch(`${base}${schedaSalvata.schedaPdf}`)).status, 401);
+    assert.equal((await fetch(`${base}${schedaSalvata.schedaPdf}`, { headers: { Cookie: cookie } })).status, 200);
+    const fileNonPdf = new FormData();
+    for (const [key, value] of Object.entries(appuntamento)) fileNonPdf.append(key, value);
+    fileNonPdf.append('scheda', new Blob(['non è un PDF'], { type: 'application/pdf' }), 'scheda.pdf');
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: fileNonPdf })).status, 400);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 204);
+    assert.equal(fs.existsSync(path.join(temporaryDir, schedaSalvata.schedaPdf.slice(1))), false);
 
     assert.equal((await fetch(`${base}/api/agenda-public-link`)).status, 401);
     const linkResponse = await fetch(`${base}/api/agenda-public-link`, { headers: { Cookie: cookie } });
@@ -144,6 +224,115 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
       assert.equal(response.status, 200);
       return response.json();
     };
+    const agendaCompleta = (await runFunction('recuperaDatiAgenda', 'all', '2026-10-05')).data;
+    assert.equal(agendaCompleta.length, 2);
+    assert.deepEqual(agendaCompleta.map(item => item.idDipendente).sort(), ['D0001', 'D0002']);
+    assert.deepEqual(agendaCompleta.map(item => item.nomeCaposquadra).sort(), ['Prova Test', 'Rossi Anna']);
+    const impegno = (await runFunction('recuperaDatiAgenda', 'D0001', '2026-10-05')).data[0];
+    const modifica = { idDipendente: 'D0002', tipoImpegno: 'Sopralluogo', data: '2026-10-07', oraInizio: '10:00', oraFine: '13:00', idCliente: '', attivita: 'Pulizia locali', nomeReferente: 'Mario Rossi', indirizzo: 'Via Roma 10', colore: '#ef4444', note: 'Impegno aggiornato' };
+    assert.equal((await fetch(`${base}/api/run`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ functionName: 'modificaImpegnoAgenda', args: [impegno.id, modifica] })
+    })).status, 401);
+    assert.equal((await runFunction('modificaImpegnoAgenda', impegno.id, { ...modifica, oraFine: '09:00' })).success, false);
+    assert.equal((await runFunction('modificaImpegnoAgenda', impegno.id, modifica)).success, true);
+    assert.equal((await runFunction('recuperaDatiAgenda', 'D0001', '2026-10-05')).data.length, 0);
+    const agendaAggiornata = (await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data;
+    assert.equal(agendaAggiornata.find(item => item.id === impegno.id)?.note, 'Impegno aggiornato');
+    assert.equal(agendaAggiornata.find(item => item.id === impegno.id)?.tipoImpegno, 'Sopralluogo');
+    assert.equal(agendaAggiornata.find(item => item.id === impegno.id)?.nomeReferente, 'Mario Rossi');
+    const schedaSopralluogo = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.agendaImpegnoId === impegno.id);
+    assert.equal(schedaSopralluogo?.nominativo, 'Mario Rossi');
+    assert.equal(schedaSopralluogo?.attivita, 'Pulizia locali');
+    assert.equal(schedaSopralluogo?.luogo, 'Via Roma 10');
+    const pubblicaAggiornata = await fetch(`${base}/api/public/agenda/${agendaToken}?week=2026-10-05`);
+    const impegnoPubblicoAggiornato = (await pubblicaAggiornata.json()).impegni.find(item => item.id === impegno.id);
+    assert.equal(impegnoPubblicoAggiornato?.idCaposquadra, 'D0002');
+    assert.equal(impegnoPubblicoAggiornato?.tipoImpegno, 'Sopralluogo');
+    assert.equal(impegnoPubblicoAggiornato?.attivita, 'Pulizia locali');
+    assert.equal(impegnoPubblicoAggiornato?.indirizzo, 'Via Roma 10');
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...modifica, tipoImpegno: 'Ufficio', data: '2026-10-08', oraFine: '' })).success, true);
+    const senzaFine = (await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.find(item => item.tipoImpegno === 'Ufficio');
+    assert.equal(senzaFine?.oraFine, '');
+    assert.equal((await runFunction('modificaImpegnoAgenda', impegno.id, { ...modifica, oraFine: '' })).success, true);
+    assert.equal((await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.find(item => item.id === impegno.id)?.oraFine, '');
+    assert.equal((await fetch(`${base}/api/public/agenda/${agendaToken}?week=2026-10-05`).then(response => response.json())).impegni.find(item => item.id === impegno.id)?.oraFine, '');
+    const daFareInGiornata = { ...modifica, tipoImpegno: 'Consegna prodotti', data: '2026-10-07', senzaOrario: true, oraInizio: '', oraFine: '' };
+    assert.equal((await runFunction('salvaImpegnoAgenda', daFareInGiornata)).success, true);
+    const impegnoSenzaOrario = (await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.find(item => item.tipoImpegno === 'Consegna prodotti');
+    assert.equal(impegnoSenzaOrario?.senzaOrario, true);
+    assert.equal(impegnoSenzaOrario?.oraInizio, '');
+    assert.equal((await runFunction('modificaImpegnoAgenda', impegnoSenzaOrario.id, { ...daFareInGiornata, note: 'Da fare durante la giornata' })).success, true);
+    const pubblicaConGiornata = (await fetch(`${base}/api/public/agenda/${agendaToken}?week=2026-10-05`).then(response => response.json())).impegni.filter(item => item.data === '2026-10-07');
+    assert.equal(pubblicaConGiornata.at(-1)?.id, impegnoSenzaOrario.id);
+    assert.equal(pubblicaConGiornata.at(-1)?.senzaOrario, true);
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...daFareInGiornata, senzaOrario: false })).success, false);
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...modifica, indirizzo: '' })).success, false);
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...modifica, tipoImpegno: 'Ufficio', idCliente: 'NON-ESISTE', data: '2026-10-09' })).success, true);
+    const ufficio = (await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.find(item => item.tipoImpegno === 'Ufficio');
+    assert.equal(ufficio?.idCliente, null);
+    assert.equal(ufficio?.cliente, 'Ufficio M2I');
+    assert.equal(ufficio?.note, 'Impegno aggiornato');
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...modifica, tipoImpegno: 'Acquisto prodotti', data: '2026-10-10', luogoAcquisto: 'Ferramenta Centro' })).success, true);
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...modifica, tipoImpegno: 'Acquisto prodotti', data: '2026-10-11', luogoAcquisto: '' })).success, true);
+    const acquisti = (await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.filter(item => item.tipoImpegno === 'Acquisto prodotti');
+    assert.deepEqual(acquisti.map(item => item.luogoAcquisto).sort(), ['', 'Ferramenta Centro']);
+    const acquistiPubblici = (await fetch(`${base}/api/public/agenda/${agendaToken}?week=2026-10-05`).then(response => response.json())).impegni.filter(item => item.tipoImpegno === 'Acquisto prodotti');
+    assert.deepEqual(acquistiPubblici.map(item => item.luogoAcquisto).sort(), ['', 'Ferramenta Centro']);
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...modifica, tipoImpegno: 'Appuntamento' })).success, false);
+    const appuntamentoAgenda = { ...modifica, data: '2026-10-09', nomeReferente: 'Cliente prova', indirizzo: 'Via Milano 5' };
+    assert.equal((await runFunction('salvaImpegnoAgenda', appuntamentoAgenda)).success, true);
+    const impegnoAppuntamento = (await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.find(item => item.tipoImpegno === 'Sopralluogo' && item.data === '2026-10-09');
+    let collegati = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).filter(item => item.agendaImpegnoId === impegnoAppuntamento.id);
+    assert.equal(collegati.length, 1);
+    assert.equal(collegati[0].nominativo, 'Cliente prova');
+    assert.equal(collegati[0].dataOra, '2026-10-09T10:00');
+    assert.equal(collegati[0].idCaposquadra, 'D0002');
+    assert.equal((await runFunction('modificaImpegnoAgenda', impegnoAppuntamento.id, { ...appuntamentoAgenda, oraInizio: '11:00', nomeReferente: 'Cliente aggiornato' })).success, true);
+    collegati = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).filter(item => item.agendaImpegnoId === impegnoAppuntamento.id);
+    assert.equal(collegati.length, 1);
+    assert.equal(collegati[0].nominativo, 'Cliente aggiornato');
+    assert.equal(collegati[0].dataOra, '2026-10-09T11:00');
+    const appointmentId = collegati[0].id;
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${appointmentId}/stato`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ stato: 'Esitato', esito: '' }) })).status, 400);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${appointmentId}/stato`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ stato: 'Esitato', esito: 'Cliente interessato' }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === appointmentId)?.esito, 'Cliente interessato');
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${appointmentId}/stato`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ stato: 'Annullato' }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === appointmentId)?.stato, 'Annullato');
+    assert.equal((await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.find(item => item.id === impegnoAppuntamento.id)?.statoAppuntamento, 'Annullato');
+    assert.equal((await fetch(`${base}/api/public/agenda/${agendaToken}?week=2026-10-05`).then(response => response.json())).impegni.find(item => item.id === impegnoAppuntamento.id)?.statoAppuntamento, 'Annullato');
+    const file = new FormData();
+    file.append('file', new Blob(['%PDF-1.4\n%%EOF\n'], { type: 'application/pdf' }), 'offerta.pdf');
+    file.append('numeroPreventivo', 'OFFERTA-TEST');
+    const uploadQuote = await fetch(`${base}/api/appuntamenti-preventivi/${appointmentId}/preventivi`, { method: 'POST', headers: { Cookie: cookie }, body: file });
+    assert.equal(uploadQuote.status, 201);
+    const attachedQuote = await uploadQuote.json();
+    assert.equal(attachedQuote.appuntamento_id, appointmentId);
+    assert.equal(attachedQuote.numero_preventivo, 'OFFERTA-TEST');
+    assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === attachedQuote.id)?.appuntamento_id, appointmentId);
+    assert.equal((await fetch(`${base}${attachedQuote.allegato_preventivo}`, { headers: { Cookie: cookie } })).status, 200);
+    assert.equal((await fetch(`${base}/api/preventivi/${attachedQuote.id}/appuntamento`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ appuntamentoId: null }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/preventivi/${attachedQuote.id}/appuntamento`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ appuntamentoId: appointmentId }) })).status, 200);
+    const generatedQuote = await fetch(`${base}/api/preventivi/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ ragione_sociale_prospect: 'Cliente aggiornato', indirizzo_locali: 'Via Milano 5', servizi_inclusi: 'Pulizia locali', costo_mensile: 250, tipo_prezzo: 'Mensile', appuntamento_id: appointmentId }) });
+    assert.equal(generatedQuote.status, 201);
+    const generatedQuoteData = (await generatedQuote.json()).data;
+    assert.equal(generatedQuoteData.appuntamento_id, appointmentId);
+    assert.equal((await fetch(`${base}/api/preventivi/${generatedQuoteData.id}`, { method: 'DELETE' })).status, 401);
+    assert.equal((await fetch(`${base}/api/preventivi/inesistente`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 404);
+    assert.equal((await fetch(`${base}/api/preventivi/${generatedQuoteData.id}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 204);
+    assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).some(item => item.id === generatedQuoteData.id), false);
+    assert.equal(fs.existsSync(path.join(temporaryDir, generatedQuoteData.allegato_preventivo.slice(1))), false);
+    assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).some(item => item.id === attachedQuote.id), true);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${collegati[0].id}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 400);
+    assert.equal((await runFunction('modificaImpegnoAgenda', impegnoAppuntamento.id, { ...appuntamentoAgenda, tipoImpegno: 'Ufficio' })).success, true);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).some(item => item.agendaImpegnoId === impegnoAppuntamento.id), false);
+    assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === attachedQuote.id)?.appuntamento_id, null);
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...appuntamentoAgenda, data: '2026-10-10', senzaOrario: true, oraInizio: '', oraFine: '' })).success, true);
+    const appuntamentoGiornata = (await runFunction('recuperaDatiAgenda', 'D0002', '2026-10-05')).data.find(item => item.tipoImpegno === 'Sopralluogo' && item.data === '2026-10-10');
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.agendaImpegnoId === appuntamentoGiornata.id)?.senzaOrario, 1);
+    assert.equal((await runFunction('eliminaImpegnoAgenda', appuntamentoGiornata.id)).success, true);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).some(item => item.agendaImpegnoId === appuntamentoGiornata.id), false);
+    assert.equal((await runFunction('salvaImpegnoAgenda', { ...modifica, tipoImpegno: 'Altro' })).success, false);
     const saveHours = async data => {
       const current = await runFunction('recuperaOreMensili', data.idDipendente, data.mese, data.anno);
       return runFunction('salvaPresenzeMensili', { ...data, revisione: current.data?.revisione });

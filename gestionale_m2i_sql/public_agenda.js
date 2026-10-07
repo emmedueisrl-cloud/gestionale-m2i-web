@@ -39,17 +39,26 @@ function createPublicAgenda(knex) {
       knex('agenda_caposquadra as a')
         .join('dipendenti as d', 'a.dipendente_id', 'd.id')
         .leftJoin('clienti as c', 'a.cliente_id', 'c.id')
+        .leftJoin('appuntamenti_preventivi as ap', 'ap.agenda_impegno_id', 'a.id')
         .where('d.is_caposquadra', 1).whereNot('d.stato', 'Cessato').where('d.cestinato', 0)
         .whereBetween('a.data', [monday, sunday])
-        .select('a.id', 'a.dipendente_id', 'a.data', 'a.ora_inizio', 'a.ora_fine', 'a.colore', 'a.note', 'c.ragione_sociale as cliente')
-        .orderBy('a.data').orderBy('a.ora_inizio').orderBy('d.cognome')
+        .select('a.id', 'a.dipendente_id', 'a.data', 'a.ora_inizio', 'a.ora_fine', 'a.colore', 'a.tipo_impegno', 'a.attivita', 'a.nome_referente', 'a.indirizzo', 'a.luogo_acquisto', 'a.nominativo_appuntamento', 'a.luogo_appuntamento', 'a.note', 'c.ragione_sociale as cliente', 'ap.stato as statoAppuntamento')
+        .orderBy('a.data').orderByRaw("CASE WHEN a.ora_inizio = '' THEN 1 ELSE 0 END").orderBy('a.ora_inizio').orderBy('d.cognome')
     ]);
     return {
       capisquadra: people.map(p => ({ id: p.id, nome: `${p.cognome} ${p.nome}`.trim() })),
       impegni: appointments.map(a => ({
         id: a.id, idCaposquadra: a.dipendente_id, data: a.data,
-        oraInizio: a.ora_inizio, oraFine: a.ora_fine,
-        cliente: a.cliente || 'Servizio', colore: a.colore, note: a.note || ''
+        oraInizio: a.ora_inizio, oraFine: a.ora_fine, senzaOrario: !a.ora_inizio,
+        cliente: a.tipo_impegno === 'Ufficio' ? 'Ufficio M2I'
+          : a.tipo_impegno === 'Sopralluogo' ? ''
+            : a.tipo_impegno === 'Acquisto prodotti' ? (a.luogo_acquisto || '')
+              : (a.cliente || 'Servizio'),
+        colore: a.colore, tipoImpegno: a.tipo_impegno || '',
+        statoAppuntamento: a.statoAppuntamento || '',
+        attivita: a.attivita || '', nomeReferente: a.nome_referente || '', indirizzo: a.indirizzo || '', luogoAcquisto: a.luogo_acquisto || '',
+        nominativoAppuntamento: a.nominativo_appuntamento || '', luogoAppuntamento: a.luogo_appuntamento || '',
+        note: a.note || ''
       }))
     };
   }

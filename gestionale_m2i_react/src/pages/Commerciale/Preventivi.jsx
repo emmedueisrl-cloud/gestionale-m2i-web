@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, FileText, Search, Download, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Plus, FileText, Search, Download, Trash2, CalendarDays } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
+import AppuntamentiPreventivi from './AppuntamentiPreventivi';
 
 const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
@@ -9,11 +11,17 @@ const Preventivi = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('sezione') === 'preventivi' ? 'preventivi' : 'appuntamenti';
+  const apriSezione = sezione => setSearchParams({ sezione });
 
   const fetchPreventivi = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/preventivi`);
+      const res = await fetch(`${API_URL}/preventivi`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('Impossibile caricare i preventivi.');
       const data = await res.json();
       setPreventivi(data);
     } catch (err) {
@@ -24,29 +32,20 @@ const Preventivi = () => {
   };
 
   useEffect(() => {
-    fetchPreventivi();
-  }, []);
+    if (activeTab === 'preventivi') fetchPreventivi();
+  }, [activeTab]);
 
-  const handleStatoChange = async (id, nuovoStato) => {
+  const handleElimina = async (preventivo) => {
+    if (!window.confirm(`Eliminare il preventivo ${preventivo.numero_preventivo} di ${preventivo.ragione_sociale_prospect}?`)) return;
+    setError('');
+    setMessage('');
     try {
-      const res = await fetch(`${API_URL}/preventivi/${id}/stato`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stato: nuovoStato })
-      });
-      if (res.ok) {
-        fetchPreventivi();
-      }
+      const res = await fetch(`${API_URL}/preventivi/${encodeURIComponent(preventivo.id)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Impossibile eliminare il preventivo.');
+      setPreventivi(current => current.filter(item => item.id !== preventivo.id));
+      setMessage('Preventivo eliminato.');
     } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const getStatusBadge = (stato) => {
-    switch(stato) {
-      case 'Accettato': return <span className="flex items-center gap-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded-full text-xs font-bold"><CheckCircle size={12}/> Accettato</span>;
-      case 'Rifiutato': return <span className="flex items-center gap-1 bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-1 rounded-full text-xs font-bold"><XCircle size={12}/> Rifiutato</span>;
-      default: return <span className="flex items-center gap-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-full text-xs font-bold"><Clock size={12}/> In Attesa</span>;
+      setError(err.message);
     }
   };
 
@@ -59,10 +58,26 @@ const Preventivi = () => {
     <div className="p-6 w-full pb-12">
       <div className="flex items-center gap-3 mb-8">
         <div className="p-3 bg-indigo-500/20 rounded-xl text-indigo-400 border border-indigo-500/30">
-          <FileText size={28} />
+          <CalendarDays size={28} />
         </div>
-        <h1 className="text-3xl font-extrabold text-slate-50 uppercase tracking-tight">Preventivi Commerciali</h1>
+        <h1 className="text-3xl font-extrabold text-slate-50 uppercase tracking-tight">Appuntamenti e Preventivi</h1>
       </div>
+
+      <div role="tablist" aria-label="Sezioni appuntamenti e preventivi" className="mb-8 grid gap-4 sm:grid-cols-2">
+        <button type="button" role="tab" id="tab-appuntamenti" aria-controls="panel-appuntamenti" aria-selected={activeTab === 'appuntamenti'} onClick={() => apriSezione('appuntamenti')} className={`flex items-center gap-4 rounded-2xl border p-5 text-left transition-colors ${activeTab === 'appuntamenti' ? 'border-indigo-400 bg-indigo-500/20 text-white ring-2 ring-indigo-500/30' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
+          <CalendarDays className="h-8 w-8 shrink-0 text-indigo-300" />
+          <span><strong className="block text-lg">Appuntamenti</strong><span className="mt-1 block text-sm text-slate-400">Incontri programmati, svolti e annullati</span></span>
+        </button>
+        <button type="button" role="tab" id="tab-preventivi" aria-controls="panel-preventivi" aria-selected={activeTab === 'preventivi'} onClick={() => apriSezione('preventivi')} className={`flex items-center gap-4 rounded-2xl border p-5 text-left transition-colors ${activeTab === 'preventivi' ? 'border-indigo-400 bg-indigo-500/20 text-white ring-2 ring-indigo-500/30' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
+          <FileText className="h-8 w-8 shrink-0 text-indigo-300" />
+          <span><strong className="block text-lg">Preventivi</strong><span className="mt-1 block text-sm text-slate-400">Offerte e documenti</span></span>
+        </button>
+      </div>
+
+      {activeTab === 'appuntamenti' ? <section id="panel-appuntamenti" role="tabpanel" aria-labelledby="tab-appuntamenti"><AppuntamentiPreventivi /></section> : <section id="panel-preventivi" role="tabpanel" aria-labelledby="tab-preventivi">
+      <h2 className="mb-5 text-xl font-bold text-slate-50">Preventivi <span className="text-base font-medium text-slate-400">({filtered.length})</span></h2>
+      {error && <p role="alert" className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
+      {message && <p role="status" className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{message}</p>}
       
       <div className="flex flex-col md:flex-row justify-between mb-8 gap-4">
         <div className="flex items-center bg-slate-900/50 p-3 rounded-xl flex-1 border border-slate-700 shadow-sm focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
@@ -94,7 +109,7 @@ const Preventivi = () => {
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Data</th>
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Cliente / Prospect</th>
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Importo</th>
-                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Stato</th>
+                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Appuntamento</th>
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Azioni</th>
               </tr>
             </thead>
@@ -124,22 +139,17 @@ const Preventivi = () => {
                       )}
                     </td>
                     <td className="p-4">
-                      <span className="font-bold text-amber-400">€ {Number(p.costo_mensile).toLocaleString('it-IT', {minimumFractionDigits: 2})}</span>
+                      <span className="font-bold text-amber-400">{p.tipo_prezzo === 'Allegato' ? 'Da PDF' : `€ ${Number(p.costo_mensile).toLocaleString('it-IT', {minimumFractionDigits: 2})}`}</span>
                     </td>
-                    <td className="p-4">{getStatusBadge(p.stato)}</td>
+                    <td className="p-4">{p.appuntamento_id ? <Link to="/admin/preventivi?sezione=appuntamenti" className="text-sm font-semibold text-indigo-300 hover:text-indigo-200">Appuntamento #{p.appuntamento_id}</Link> : <span className="text-slate-500">—</span>}</td>
                     <td className="p-4">
                       <div className="flex gap-2 justify-end">
                         {p.allegato_preventivo && (
-                          <a href={`${import.meta.env.VITE_API_URL || ''}${p.allegato_preventivo}`} target="_blank" rel="noreferrer" className="p-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors border border-indigo-500/20" title="Scarica PDF">
+                          <a href={`${import.meta.env.VITE_API_URL || ''}${p.allegato_preventivo}`} download className="p-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors border border-indigo-500/20" title="Scarica PDF" aria-label={`Scarica preventivo ${p.numero_preventivo}`}>
                             <Download size={18} />
                           </a>
                         )}
-                        {p.stato === 'In Attesa' && (
-                          <>
-                            <button onClick={() => handleStatoChange(p.id, 'Accettato')} className="p-2 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg transition-colors border border-emerald-500/20" title="Segna come Accettato"><CheckCircle size={18} /></button>
-                            <button onClick={() => handleStatoChange(p.id, 'Rifiutato')} className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors border border-red-500/20" title="Segna come Rifiutato"><XCircle size={18} /></button>
-                          </>
-                        )}
+                        <button type="button" onClick={() => handleElimina(p)} className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors border border-red-500/20" title="Elimina preventivo" aria-label={`Elimina preventivo ${p.numero_preventivo}`}><Trash2 size={18} /></button>
                       </div>
                     </td>
                   </tr>
@@ -159,6 +169,7 @@ const Preventivi = () => {
           }} 
         />
       )}
+      </section>}
     </div>
   );
 };

@@ -7,9 +7,11 @@ const api = require('./backend_api');
 const multer = require('multer');
 const { ownerFolder, finalizeUpload } = require('./upload_paths');
 const excelGenerator = require('./excel_generator');
-const { knex } = require('./db');
+const { knex, agendaMigration } = require('./db');
 const { createAuth } = require('./auth');
 const { createPublicAgenda, validMonday } = require('./public_agenda');
+const { createPublicAppuntamenti } = require('./public_appuntamenti');
+const appuntamentiPreventivi = require('./appuntamenti_preventivi');
 const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./email_attachment_link');
 const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
@@ -47,7 +49,10 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  if (req.path.startsWith('/agenda/')) res.setHeader('Referrer-Policy', 'no-referrer');
+  if (req.path.startsWith('/agenda/') || req.path.startsWith('/inserisci-appuntamento/') || req.path.startsWith('/api/public/appuntamenti/')) {
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  }
   next();
 });
 
@@ -57,6 +62,7 @@ app.use(express.static(reactDistPath));
 const baseUploadPath = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'uploads') : path.join(__dirname, 'uploads');
 const auth = createAuth(knex);
 const publicAgenda = createPublicAgenda(knex);
+const publicAppuntamenti = createPublicAppuntamenti(knex);
 app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', auth.router);
 app.get('/api/public/agenda/:token', async (req, res) => {
@@ -72,6 +78,38 @@ app.get('/api/public/agenda/:token', async (req, res) => {
     res.status(500).json({ error: 'Agenda temporaneamente non disponibile.' });
   }
 });
+const uploadSchedaAppuntamento = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => cb(path.extname(file.originalname || '').toLowerCase() === '.pdf' ? null : new Error('Allega un PDF valido.'), true),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 8 }
+}).single('scheda');
+app.get('/api/public/appuntamenti/:token', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    if (!await publicAppuntamenti.isValid(req.params.token)) return res.status(404).json({ error: 'Link non valido.' });
+    res.json({ valid: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Link temporaneamente non disponibile.' });
+  }
+});
+app.post('/api/public/appuntamenti/:token', async (req, res, next) => {
+  try {
+    if (!await publicAppuntamenti.isValid(req.params.token)) return res.status(404).json({ error: 'Link non valido.' });
+    uploadSchedaAppuntamento(req, res, error => {
+      if (error) return res.status(error.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: error.code === 'LIMIT_FILE_SIZE' ? 'Il PDF supera 10 MB.' : error.message });
+      next();
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Link temporaneamente non disponibile.' });
+  }
+}, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(201).json(await appuntamentiPreventivi.createPublic(req.body, req.file));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 app.use('/api', auth.requireAuth);
 // L'account amministrativo non accede alle altre API, neppure digitando URL diretti.
 app.use('/api', (req, res, next) => {
@@ -84,6 +122,14 @@ app.get('/api/agenda-public-link', async (req, res) => {
   try {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ token: await publicAgenda.getToken() });
+  } catch (error) {
+    res.status(500).json({ error: 'Link non disponibile.' });
+  }
+});
+app.get('/api/appuntamenti-public-link', async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ token: await publicAppuntamenti.getToken() });
   } catch (error) {
     res.status(500).json({ error: 'Link non disponibile.' });
   }
@@ -1016,7 +1062,42 @@ const preventiviCtrl = require('./controllers/preventiviController');
 app.get('/api/preventivi', preventiviCtrl.getAllPreventivi);
 app.get('/api/clienti/:id/preventivi', preventiviCtrl.getPreventiviByCliente);
 app.post('/api/preventivi/generate', preventiviCtrl.generatePreventivo);
-app.put('/api/preventivi/:id/stato', preventiviCtrl.updateStato);
+app.delete('/api/preventivi/:id', preventiviCtrl.eliminaPreventivo);
+app.put('/api/preventivi/:id/appuntamento', (req, res, next) => Promise.resolve(preventiviCtrl.collegaAppuntamento(req, res)).catch(next));
+const uploadPreventivoPdf = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => cb(null, path.extname(file.originalname || '').toLowerCase() === '.pdf'),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2 }
+});
+app.post('/api/appuntamenti-preventivi/:id/preventivi', uploadPreventivoPdf.single('file'), (req, res, next) => Promise.resolve(preventiviCtrl.uploadDaAppuntamento(req, res)).catch(next));
+app.get('/api/appuntamenti-preventivi', async (req, res) => {
+  try { res.json(await appuntamentiPreventivi.list()); }
+  catch (error) { res.status(500).json({ error: 'Impossibile caricare gli appuntamenti.' }); }
+});
+app.post('/api/appuntamenti-preventivi', async (req, res) => {
+  try { res.status(201).json(await appuntamentiPreventivi.create(req.body)); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.put('/api/appuntamenti-preventivi/:id', async (req, res) => {
+  try {
+    const result = await appuntamentiPreventivi.update(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.patch('/api/appuntamenti-preventivi/:id/stato', async (req, res) => {
+  try {
+    const result = await appuntamentiPreventivi.updateStatus(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.delete('/api/appuntamenti-preventivi/:id', async (req, res) => {
+  try {
+    if (!await appuntamentiPreventivi.remove(req.params.id)) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.status(204).end();
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 
 app.use((req, res, next) => {
   if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
@@ -1033,8 +1114,12 @@ app.use((req, res, next) => {
 });
 
 Promise.resolve().then(async () => {
+  await agendaMigration;
   await auth.initialize();
   await publicAgenda.initialize();
+  await appuntamentiPreventivi.ensureTable();
+  await publicAppuntamenti.initialize();
+  await preventiviCtrl.ensurePreventiviIds();
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
   await workflowElaborati.initialize();

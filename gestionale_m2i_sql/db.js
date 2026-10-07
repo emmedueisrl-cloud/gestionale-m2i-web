@@ -121,10 +121,10 @@ function getVal(obj, key) {
 }
 
 // Auto-migrazione: crea agenda_caposquadra se non esiste (necessario per persistent disk su Render)
-knex.schema.hasTable('agenda_caposquadra').then(exists => {
+const agendaMigration = knex.schema.hasTable('agenda_caposquadra').then(async exists => {
   if (!exists) {
     console.log("Creazione tabella agenda_caposquadra in corso...");
-    return knex.schema.createTable('agenda_caposquadra', t => {
+    await knex.schema.createTable('agenda_caposquadra', t => {
       t.increments('id').primary();
       t.text('dipendente_id').references('id').inTable('dipendenti').onDelete('CASCADE');
       t.text('data').notNullable();
@@ -132,13 +132,29 @@ knex.schema.hasTable('agenda_caposquadra').then(exists => {
       t.text('ora_fine').notNullable();
       t.text('cliente_id').references('id').inTable('clienti').onDelete('RESTRICT');
       t.text('colore').defaultTo('#3b82f6');
+      t.text('tipo_impegno');
+      t.text('attivita');
+      t.text('nome_referente');
+      t.text('indirizzo');
+      t.text('luogo_acquisto');
+      t.text('nominativo_appuntamento');
+      t.text('luogo_appuntamento');
       t.text('note');
-    }).then(() => console.log("Tabella agenda_caposquadra creata con successo."));
+    });
+    console.log("Tabella agenda_caposquadra creata con successo.");
+  } else {
+    for (const column of ['tipo_impegno', 'attivita', 'nome_referente', 'indirizzo', 'luogo_acquisto', 'nominativo_appuntamento', 'luogo_appuntamento']) {
+      if (!await knex.schema.hasColumn('agenda_caposquadra', column)) {
+        await knex.schema.alterTable('agenda_caposquadra', t => t.text(column));
+      }
+    }
   }
-}).catch(err => console.error("Errore auto-migrazione agenda_caposquadra:", err));
+});
+agendaMigration.catch(err => console.error("Errore auto-migrazione agenda_caposquadra:", err));
 
 module.exports = {
   knex,
+  agendaMigration,
   generaIDIncrementale,
   getVal
 };

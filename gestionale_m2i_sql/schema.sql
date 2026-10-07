@@ -157,6 +157,13 @@ CREATE TABLE agenda_caposquadra (
     ora_fine TEXT NOT NULL,
     cliente_id TEXT REFERENCES clienti(id) ON DELETE RESTRICT,
     colore TEXT DEFAULT '#3b82f6',
+    tipo_impegno TEXT,
+    attivita TEXT,
+    nome_referente TEXT,
+    indirizzo TEXT,
+    luogo_acquisto TEXT,
+    nominativo_appuntamento TEXT,
+    luogo_appuntamento TEXT,
     note TEXT
 );
 
@@ -172,9 +179,27 @@ CREATE TABLE preventivi (
     servizi_inclusi TEXT,
     stato TEXT DEFAULT 'In Attesa',
     allegato_preventivo TEXT,
+    appuntamento_id INTEGER,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,
     creato_da TEXT
 , `tipo_prezzo` varchar(255) default 'Mensile');
+
+CREATE TABLE appuntamenti_preventivi (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data_ora TEXT NOT NULL,
+    nominativo TEXT NOT NULL,
+    attivita TEXT NOT NULL DEFAULT '',
+    luogo TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    stato TEXT NOT NULL DEFAULT 'Programmato',
+    esito TEXT NOT NULL DEFAULT '',
+    scheda_pdf TEXT,
+    agenda_impegno_id INTEGER,
+    senza_orario INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_appuntamenti_preventivi_data ON appuntamenti_preventivi(data_ora);
+CREATE UNIQUE INDEX idx_appuntamenti_preventivi_agenda ON appuntamenti_preventivi(agenda_impegno_id);
 
 CREATE TABLE crm_outbound (
     id_operatore TEXT PRIMARY KEY,

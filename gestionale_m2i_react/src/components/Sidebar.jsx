@@ -29,7 +29,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
     { type: 'item', label: '🧾 Gestione Fatture', path: '/admin/fatture' },
     { type: 'item', label: '📋 Contabilità elaborati', path: '/contabilita/clienti' },
     { type: 'item', label: '📦 Magazzino', path: '/admin/magazzino' },
-    { type: 'item', label: '📄 Preventivi', path: '/admin/preventivi' },
+    { type: 'item', label: '📅 Appuntamenti e Preventivi', path: '/admin/preventivi' },
     
     { type: 'header', label: '📂 Gestione Documentale' },
     { type: 'item', label: '🏢 Dati e Documenti m2i', path: '/admin/azienda' },

@@ -5,16 +5,18 @@ import ModernModal from '../../components/ui/ModernModal';
 
 const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
-const NuovoPreventivoModal = ({ onClose, onSuccess }) => {
+const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
   const [isCliente, setIsCliente] = useState(false);
   const [clienti, setClienti] = useState([]);
+  const [appuntamenti, setAppuntamenti] = useState([]);
   const [searchCliente, setSearchCliente] = useState('');
   
   const [formData, setFormData] = useState({
     cliente_prospect_id: '',
-    ragione_sociale_prospect: '',
+    ragione_sociale_prospect: appuntamento?.nominativo || '',
     oggetto: 'Preventivo per pulizie ordinarie',
-    indirizzo_locali: '',
+    indirizzo_locali: appuntamento?.luogo || '',
+    appuntamento_id: appuntamento?.id || '',
     tipo_prezzo: 'Mensile',
     costo_mensile: '',
     commerciale: '',
@@ -35,6 +37,10 @@ const NuovoPreventivoModal = ({ onClose, onSuccess }) => {
       }
     };
     fetchClienti();
+    fetch(`${API_URL}/appuntamenti-preventivi`, { credentials: 'same-origin' })
+      .then(response => response.ok ? response.json() : [])
+      .then(setAppuntamenti)
+      .catch(() => setAppuntamenti([]));
   }, []);
 
   const handleChange = (e) => {
@@ -104,6 +110,16 @@ const NuovoPreventivoModal = ({ onClose, onSuccess }) => {
         
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 overflow-y-auto flex-1 space-y-6">
+            <label className="block text-sm font-semibold text-slate-300">Collega a un appuntamento (facoltativo)
+              <select value={formData.appuntamento_id} onChange={event => {
+                const id = event.target.value;
+                const selected = appuntamenti.find(item => String(item.id) === id);
+                setFormData(prev => ({ ...prev, appuntamento_id: id, ragione_sociale_prospect: selected?.nominativo || prev.ragione_sociale_prospect, indirizzo_locali: selected?.luogo || prev.indirizzo_locali }));
+              }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white">
+                <option value="">Nessun appuntamento</option>
+                {appuntamenti.map(item => <option key={item.id} value={item.id}>{item.nominativo} · {item.dataOra.slice(0, 10)}</option>)}
+              </select>
+            </label>
             
             <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-700/50">
               <button 

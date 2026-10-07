@@ -18,7 +18,7 @@ export function saveMessageForRequest(url, options = {}) {
   }
   if (/^\/api\/(anteprima-|auth\/login|auth\/logout|emails\/sync|ai\/ask|buste-paga\/upload)/.test(pathname)) return null;
   if (/^\/api\/(upload(?:-multiple|-fattura-xml)?|dipendenti\/[^/]+\/collega-allegato)$/.test(pathname)) return 'Allegato caricato correttamente.';
-  if (/^\/api\/(conferma-fatture-(?:csv|xml)|excel\/carica-presenze|buste-paga\/conferma|preventivi\/generate|magazzino(?:\/[^/]+)?|ai\/settings|configurazione-email|auth\/(?:users(?:\/[^/]+)?(?:\/(?:password|active))?|me\/password)|emails\/[^/]+\/(?:cartella|preferito|letto)|preventivi\/[^/]+\/stato)$/.test(pathname)) {
+  if (/^\/api\/(conferma-fatture-(?:csv|xml)|excel\/carica-presenze|buste-paga\/conferma|preventivi\/generate|magazzino(?:\/[^/]+)?|ai\/settings|configurazione-email|auth\/(?:users(?:\/[^/]+)?(?:\/(?:password|active))?|me\/password)|emails\/[^/]+\/(?:cartella|preferito|letto))$/.test(pathname)) {
     return 'Dati salvati correttamente.';
   }
   return null;

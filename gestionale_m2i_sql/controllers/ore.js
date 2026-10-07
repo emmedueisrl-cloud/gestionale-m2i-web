@@ -1,5 +1,7 @@
 const { knex, getVal } = require('../db');
 const { registroState, assertRevision } = require('../registro_ore_state');
+const appuntamentiPreventivi = require('../appuntamenti_preventivi');
+const tipiImpegno = new Set(['Pulizie Ordinarie', 'Sgrosso', 'Affiancamento', 'Sopralluogo', 'Consegna prodotti', 'Ufficio', 'Acquisto prodotti']);
 
 function durataDiurna(oraInizio, oraFine) {
   const valida = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -11,6 +13,45 @@ function durataDiurna(oraInizio, oraFine) {
   if (durata <= 0) throw new Error('L’ora di fine deve essere successiva all’inizio nello stesso giorno.');
   if (durata > 12 * 60) throw new Error('Non sono consentite più di 12 ore nello stesso giorno.');
   return durata / 60;
+}
+
+function validaOrarioAgenda(oraInizio, oraFine, senzaOrario) {
+  if (senzaOrario === true) {
+    if (oraInizio || oraFine) throw new Error('Un impegno da fare in giornata non può avere orari.');
+    return;
+  }
+  if (oraFine === '' || oraFine == null) {
+    if (typeof oraInizio !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(oraInizio)) {
+      throw new Error('Orario di inizio non valido: usa il formato HH:MM.');
+    }
+    return;
+  }
+  durataDiurna(oraInizio, oraFine);
+}
+
+function dettagliImpegnoAgenda(imp) {
+  const testo = (campo, maxLength) => {
+    const valore = imp[campo] == null ? '' : imp[campo];
+    if (typeof valore !== 'string' || valore.length > maxLength) throw new Error(`${campo} non valido`);
+    return valore.trim();
+  };
+  const sopralluogo = imp.tipoImpegno === 'Sopralluogo';
+  const acquisto = imp.tipoImpegno === 'Acquisto prodotti';
+  const attivita = sopralluogo ? testo('attivita', 300) : '';
+  const nomeReferente = sopralluogo ? testo('nomeReferente', 200) : '';
+  const indirizzo = sopralluogo ? testo('indirizzo', 500) : '';
+  if (sopralluogo && (!attivita || !nomeReferente || !indirizzo)) {
+    throw new Error('Per il sopralluogo compila attività, nome referente e indirizzo.');
+  }
+  return {
+    cliente_id: sopralluogo || imp.tipoImpegno === 'Ufficio' || acquisto ? null : (imp.idCliente || null),
+    attivita,
+    nome_referente: nomeReferente,
+    indirizzo,
+    luogo_acquisto: acquisto ? testo('luogoAcquisto', 300) : '',
+    nominativo_appuntamento: '',
+    luogo_appuntamento: ''
+  };
 }
 
 module.exports = {
@@ -280,19 +321,37 @@ module.exports = {
       dateArray.push(`${year}-${month}-${day}`);
     }
 
-    const rows = await knex('agenda_caposquadra as a')
+    const query = knex('agenda_caposquadra as a')
+      .join('dipendenti as d', 'a.dipendente_id', 'd.id')
       .leftJoin('clienti as c', 'a.cliente_id', 'c.id')
-      .select('a.*', 'c.ragione_sociale as clienteNome')
-      .where('a.dipendente_id', idDipendente)
+      .leftJoin('appuntamenti_preventivi as ap', 'ap.agenda_impegno_id', 'a.id')
+      .select('a.*', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra', 'c.ragione_sociale as clienteNome', 'ap.stato as statoAppuntamento')
       .whereIn('a.data', dateArray);
+    if (idDipendente === 'all') query.where('d.is_caposquadra', 1).whereNot('d.stato', 'Cessato').where('d.cestinato', 0);
+    else query.where('a.dipendente_id', idDipendente);
+    const rows = await query;
       
     return rows.map(r => ({
       id: r.id,
+      idDipendente: r.dipendente_id,
+      nomeCaposquadra: `${r.cognomeCaposquadra || ''} ${r.nomeCaposquadra || ''}`.trim(),
       data: r.data,
       oraInizio: r.ora_inizio,
       oraFine: r.ora_fine,
+      senzaOrario: !r.ora_inizio,
       idCliente: r.cliente_id,
-      cliente: r.clienteNome || r.note || "Servizio",
+      cliente: r.tipo_impegno === 'Ufficio' ? 'Ufficio M2I'
+        : r.tipo_impegno === 'Sopralluogo' ? ''
+          : r.tipo_impegno === 'Acquisto prodotti' ? (r.luogo_acquisto || '')
+            : (r.clienteNome || r.note || 'Servizio'),
+      tipoImpegno: r.tipo_impegno || '',
+      statoAppuntamento: r.statoAppuntamento || '',
+      attivita: r.attivita || '',
+      nomeReferente: r.nome_referente || '',
+      indirizzo: r.indirizzo || '',
+      luogoAcquisto: r.luogo_acquisto || '',
+      nominativoAppuntamento: r.nominativo_appuntamento || '',
+      luogoAppuntamento: r.luogo_appuntamento || '',
       colore: r.colore,
       note: r.note || ""
     }));
@@ -300,28 +359,81 @@ module.exports = {
 
   async salvaImpegnoAgenda(imp) {
     if (!imp || typeof imp !== 'object') throw new Error('Impegno agenda non valido');
-    durataDiurna(imp.oraInizio, imp.oraFine);
-    await knex('agenda_caposquadra').insert({
-      dipendente_id: imp.idDipendente,
-      data: imp.data,
-      ora_inizio: imp.oraInizio,
-      ora_fine: imp.oraFine,
-      cliente_id: imp.idCliente || null,
-      colore: imp.colore,
-      note: imp.note
-    });
-    await knex('log_attivita').insert({
-      categoria: "Agenda", icona: "📅", colore: "#8b5cf6",
-      descrizione: `Aggiunto impegno in agenda il ${imp.data} per dipendente ${imp.idDipendente}`, eseguito_da: "LocalServer"
+    validaOrarioAgenda(imp.oraInizio, imp.oraFine, imp.senzaOrario);
+    if (!tipiImpegno.has(imp.tipoImpegno)) throw new Error('Seleziona un tipo di impegno valido');
+    const dettagli = dettagliImpegnoAgenda(imp);
+    await knex.transaction(async trx => {
+      const [agendaId] = await trx('agenda_caposquadra').insert({
+        dipendente_id: imp.idDipendente,
+        data: imp.data,
+        ora_inizio: imp.senzaOrario ? '' : imp.oraInizio,
+        ora_fine: imp.senzaOrario ? '' : (imp.oraFine || ''),
+        ...dettagli,
+        tipo_impegno: imp.tipoImpegno,
+        colore: imp.colore,
+        note: imp.note
+      });
+      if (imp.tipoImpegno === 'Sopralluogo') await appuntamentiPreventivi.syncFromAgenda(trx, agendaId, imp);
+      await trx('log_attivita').insert({
+        categoria: "Agenda", icona: "📅", colore: "#8b5cf6",
+        descrizione: `Aggiunto impegno in agenda il ${imp.data} per dipendente ${imp.idDipendente}`, eseguito_da: "LocalServer"
+      });
     });
     return true;
   },
 
+  async modificaImpegnoAgenda(idImpegno, imp) {
+    const id = Number(idImpegno);
+    if (!Number.isSafeInteger(id) || id <= 0 || !imp || typeof imp !== 'object') {
+      throw new Error('Impegno agenda non valido');
+    }
+    const data = imp.data;
+    const giorno = typeof data === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data) ? new Date(`${data}T12:00:00Z`) : null;
+    if (!giorno || Number.isNaN(giorno.getTime()) || giorno.toISOString().slice(0, 10) !== data) {
+      throw new Error('Data impegno non valida');
+    }
+    validaOrarioAgenda(imp.oraInizio, imp.oraFine, imp.senzaOrario);
+    if (typeof imp.idDipendente !== 'string' || !imp.idDipendente.trim()) throw new Error('Caposquadra non valido');
+    if (typeof imp.colore !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(imp.colore)) throw new Error('Colore non valido');
+    if (typeof imp.note !== 'string' || imp.note.length > 2000) throw new Error('Note non valide');
+    if (!tipiImpegno.has(imp.tipoImpegno)) throw new Error('Seleziona un tipo di impegno valido');
+    const dettagli = dettagliImpegnoAgenda(imp);
+    return knex.transaction(async trx => {
+      const caposquadra = await trx('dipendenti').where({ id: imp.idDipendente, is_caposquadra: 1 }).first('id');
+      if (!caposquadra) throw new Error('Caposquadra non trovato');
+      if (dettagli.cliente_id) {
+        const cliente = await trx('clienti').where('id', dettagli.cliente_id).first('id');
+        if (!cliente) throw new Error('Cliente non trovato');
+      }
+      const aggiornati = await trx('agenda_caposquadra').where('id', id).update({
+        dipendente_id: imp.idDipendente,
+        data,
+        ora_inizio: imp.senzaOrario ? '' : imp.oraInizio,
+        ora_fine: imp.senzaOrario ? '' : (imp.oraFine || ''),
+        ...dettagli,
+        tipo_impegno: imp.tipoImpegno,
+        colore: imp.colore,
+        note: imp.note
+      });
+      if (!aggiornati) throw new Error('Impegno non trovato');
+      if (imp.tipoImpegno === 'Sopralluogo') await appuntamentiPreventivi.syncFromAgenda(trx, id, imp);
+      else await appuntamentiPreventivi.removeForAgenda(trx, [id]);
+      await trx('log_attivita').insert({
+        categoria: 'Agenda', icona: '✏️', colore: '#8b5cf6',
+        descrizione: `Modificato impegno in agenda ID: ${id}`, eseguito_da: 'LocalServer'
+      });
+      return true;
+    });
+  },
+
   async eliminaImpegnoAgenda(idImpegno) {
-    await knex('agenda_caposquadra').where('id', idImpegno).del();
-    await knex('log_attivita').insert({
-      categoria: "Agenda", icona: "🗑️", colore: "#ef4444",
-      descrizione: `Eliminato impegno in agenda ID: ${idImpegno}`, eseguito_da: "LocalServer"
+    await knex.transaction(async trx => {
+      await appuntamentiPreventivi.removeForAgenda(trx, [idImpegno]);
+      await trx('agenda_caposquadra').where('id', idImpegno).del();
+      await trx('log_attivita').insert({
+        categoria: "Agenda", icona: "🗑️", colore: "#ef4444",
+        descrizione: `Eliminato impegno in agenda ID: ${idImpegno}`, eseguito_da: "LocalServer"
+      });
     });
     return true;
   },
@@ -338,14 +450,14 @@ module.exports = {
       dateArray.push(`${year}-${month}-${day}`);
     }
 
-    await knex('agenda_caposquadra')
-      .where('dipendente_id', idDipendente)
-      .whereIn('data', dateArray)
-      .del();
-
-    await knex('log_attivita').insert({
-      categoria: "Agenda", icona: "🗑️", colore: "#ef4444",
-      descrizione: `Svuotata settimana agenda (dal ${dataInizioSettimana}) per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
+    await knex.transaction(async trx => {
+      const agendaIds = (await trx('agenda_caposquadra').where('dipendente_id', idDipendente).whereIn('data', dateArray).select('id')).map(row => row.id);
+      await appuntamentiPreventivi.removeForAgenda(trx, agendaIds);
+      await trx('agenda_caposquadra').whereIn('id', agendaIds).del();
+      await trx('log_attivita').insert({
+        categoria: "Agenda", icona: "🗑️", colore: "#ef4444",
+        descrizione: `Svuotata settimana agenda (dal ${dataInizioSettimana}) per dipendente ${idDipendente}`, eseguito_da: "LocalServer"
+      });
     });
 
     return true;
@@ -380,6 +492,7 @@ module.exports = {
           ora_inizio: p.ora_inizio,
           ora_fine: p.ora_fine,
           cliente_id: p.cliente_id || null,
+          tipo_impegno: 'Pulizie Ordinarie',
           colore: '#4f46e5', // Indaco di default
           note: p.note ? p.note : "Da programma fisso"
         });
