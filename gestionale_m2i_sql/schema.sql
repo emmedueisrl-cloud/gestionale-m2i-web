@@ -188,6 +188,9 @@ CREATE TABLE appuntamenti_preventivi (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     data_ora TEXT NOT NULL,
     nominativo TEXT NOT NULL,
+    referente TEXT NOT NULL DEFAULT '',
+    telefono TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
     incaricato TEXT NOT NULL DEFAULT '',
     commerciale_dipendente_id TEXT,
     attivita TEXT NOT NULL DEFAULT '',
@@ -197,12 +200,37 @@ CREATE TABLE appuntamenti_preventivi (
     esito TEXT NOT NULL DEFAULT '',
     scheda_pdf TEXT,
     origine_pubblica INTEGER NOT NULL DEFAULT 0,
+    numero_appuntamento INTEGER NOT NULL DEFAULT 1,
+    appuntamento_precedente_id INTEGER,
     agenda_impegno_id INTEGER,
     senza_orario INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_appuntamenti_preventivi_data ON appuntamenti_preventivi(data_ora);
 CREATE UNIQUE INDEX idx_appuntamenti_preventivi_agenda ON appuntamenti_preventivi(agenda_impegno_id);
+
+CREATE TABLE appuntamenti_note (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appuntamento_id INTEGER NOT NULL,
+    testo TEXT NOT NULL,
+    creata_il TEXT NOT NULL,
+    autore TEXT NOT NULL DEFAULT '',
+    visibile_pubblico INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX idx_appuntamenti_note_appuntamento ON appuntamenti_note(appuntamento_id);
+
+CREATE TABLE marketing_notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appuntamento_id INTEGER NOT NULL,
+    tipo TEXT NOT NULL,
+    azienda TEXT NOT NULL,
+    testo TEXT NOT NULL DEFAULT '',
+    creata_il TEXT NOT NULL
+);
+CREATE TABLE marketing_notification_reads (
+    utente_id INTEGER PRIMARY KEY,
+    ultimo_id INTEGER NOT NULL DEFAULT 0
+);
 
 CREATE TABLE crm_outbound (
     id_operatore TEXT PRIMARY KEY,
@@ -524,6 +552,16 @@ CREATE TABLE pagamenti_elaborati_dipendenti (
 CREATE TABLE `magazzino_attrezzature` (`id` varchar(255), `codice_custom` varchar(255), `nome` varchar(255) not null, `descrizione` text, `foto` varchar(255), `cliente_id` varchar(255), `data_assegnazione` varchar(255), `data_creazione` varchar(255), foreign key(`cliente_id`) references `clienti`(`id`), primary key (`id`));
 
 CREATE TABLE configurazioni (chiave TEXT PRIMARY KEY, valore TEXT);
+
+CREATE TABLE riferimenti_aziendali (
+  id INTEGER PRIMARY KEY,
+  commerciale1Nome TEXT NOT NULL,
+  commerciale1Telefono TEXT NOT NULL,
+  commerciale2Nome TEXT NOT NULL,
+  commerciale2Telefono TEXT NOT NULL,
+  ufficioTelefono TEXT NOT NULL,
+  email TEXT NOT NULL
+);
 
 CREATE TABLE configurazione_email (
         chiave TEXT PRIMARY KEY,

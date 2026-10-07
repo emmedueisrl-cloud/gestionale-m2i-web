@@ -2,6 +2,7 @@ const { knex } = require('./db');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const marketingNotifications = require('./marketing_notifications');
 
 const STATO_RICHIESTO_MARKETING = 'Richiesto da Marketing';
 const STATI = [STATO_RICHIESTO_MARKETING, 'Da svolgere', 'Passato', 'Programmato', 'Svolto', 'Annullato', 'Esitato'];
@@ -22,6 +23,9 @@ async function ensureTable() {
       table.increments('id').primary();
       table.string('data_ora', 16).notNullable();
       table.string('nominativo', 255).notNullable();
+      table.string('referente', 255).notNullable().defaultTo('');
+      table.string('telefono', 50).notNullable().defaultTo('');
+      table.string('email', 254).notNullable().defaultTo('');
       table.string('incaricato', 200).notNullable().defaultTo('');
       table.string('commerciale_dipendente_id', 50);
       table.string('attivita', 300).notNullable().defaultTo('');
@@ -31,6 +35,8 @@ async function ensureTable() {
       table.text('esito').notNullable().defaultTo('');
       table.text('scheda_pdf');
       table.boolean('origine_pubblica').notNullable().defaultTo(false);
+      table.integer('numero_appuntamento').notNullable().defaultTo(1);
+      table.integer('appuntamento_precedente_id');
       table.integer('agenda_impegno_id');
       table.boolean('senza_orario').notNullable().defaultTo(false);
       table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
@@ -63,6 +69,42 @@ async function ensureTable() {
     if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'commerciale_dipendente_id')) {
       await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('commerciale_dipendente_id', 50));
     }
+    if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'referente')) {
+      await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('referente', 255).notNullable().defaultTo(''));
+    }
+    if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'telefono')) {
+      await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('telefono', 50).notNullable().defaultTo(''));
+    }
+    if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'email')) {
+      await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('email', 254).notNullable().defaultTo(''));
+    }
+    if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'numero_appuntamento')) {
+      await knex.schema.alterTable('appuntamenti_preventivi', table => table.integer('numero_appuntamento').notNullable().defaultTo(1));
+    }
+    if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'appuntamento_precedente_id')) {
+      await knex.schema.alterTable('appuntamenti_preventivi', table => table.integer('appuntamento_precedente_id'));
+    }
+  }
+  if (!await knex.schema.hasTable('appuntamenti_note')) {
+    await knex.schema.createTable('appuntamenti_note', table => {
+      table.increments('id').primary();
+      table.integer('appuntamento_id').notNullable().index();
+      table.text('testo').notNullable();
+      table.string('creata_il', 24).notNullable();
+      table.string('autore', 254).notNullable().defaultTo('');
+      table.boolean('visibile_pubblico').notNullable().defaultTo(true);
+    });
+    const noteEsistenti = await knex('appuntamenti_preventivi').where('origine_pubblica', true).whereNot('note', '').select('id', 'note', 'created_at');
+    for (const item of noteEsistenti) {
+      const timestamp = new Date(`${String(item.created_at).replace(' ', 'T').replace(/Z$/, '')}Z`);
+      await knex('appuntamenti_note').insert({ appuntamento_id: item.id, testo: item.note, creata_il: Number.isNaN(timestamp.getTime()) ? new Date().toISOString() : timestamp.toISOString() });
+    }
+  }
+  if (!await knex.schema.hasColumn('appuntamenti_note', 'autore')) {
+    await knex.schema.alterTable('appuntamenti_note', table => table.string('autore', 254).notNullable().defaultTo(''));
+  }
+  if (!await knex.schema.hasColumn('appuntamenti_note', 'visibile_pubblico')) {
+    await knex.schema.alterTable('appuntamenti_note', table => table.boolean('visibile_pubblico').notNullable().defaultTo(true));
   }
   await knex.raw('CREATE UNIQUE INDEX IF NOT EXISTS idx_appuntamenti_preventivi_agenda ON appuntamenti_preventivi(agenda_impegno_id)');
   if (!await knex.schema.hasColumn('preventivi', 'appuntamento_id')) {
@@ -111,45 +153,65 @@ function validateDataOra(value) {
 function validate(body) {
   const dataOra = validateDataOra(body?.dataOra);
   const nominativo = typeof body.nominativo === 'string' ? body.nominativo.trim() : '';
+  const referente = typeof body.referente === 'string' ? body.referente.trim() : '';
+  const telefono = typeof body.telefono === 'string' ? body.telefono.trim() : '';
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
   const incaricato = typeof body.incaricato === 'string' ? body.incaricato.trim() : '';
   const luogo = typeof body.luogo === 'string' ? body.luogo.trim() : '';
   const note = typeof body.note === 'string' ? body.note.trim() : '';
   const esito = typeof body.esito === 'string' ? body.esito.trim() : '';
   const stato = body.stato || 'Programmato';
   if (!nominativo || nominativo.length > 255) throw new Error('Inserisci un nominativo valido.');
+  if (referente.length > 255) throw new Error('Il nome del referente è troppo lungo.');
+  if (telefono.length > 50) throw new Error('Il numero di telefono è troppo lungo.');
+  if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error('Inserisci un indirizzo email valido.');
   if (incaricato.length > 200) throw new Error('Il nome di chi svolge l’appuntamento è troppo lungo.');
   if (luogo.length > 500 || note.length > 2000) throw new Error('Luogo o note troppo lunghi.');
   if (!STATI.includes(stato)) throw new Error('Stato non valido.');
   if (esito.length > 2000) throw new Error('Esito troppo lungo.');
   if (stato === 'Esitato' && !esito) throw new Error('Inserisci l’esito dell’appuntamento.');
-  return { data_ora: dataOra, nominativo, incaricato, luogo, note, stato, esito: stato === 'Esitato' ? esito : '' };
+  return { data_ora: dataOra, nominativo, referente, telefono, email, incaricato, luogo, note, stato, esito: stato === 'Esitato' ? esito : '' };
 }
 
 async function list() {
   await advancePastAppointments();
-  return knex('appuntamenti_preventivi as ap')
+  const rows = await knex('appuntamenti_preventivi as ap')
     .leftJoin('agenda_caposquadra as ag', 'ap.agenda_impegno_id', 'ag.id')
     .leftJoin('dipendenti as d', 'ag.dipendente_id', 'd.id')
-    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.incaricato', 'ap.commerciale_dipendente_id as commercialeDipendenteId', 'ap.attivita', 'ap.luogo', 'ap.note', 'ap.stato', 'ap.esito', 'ap.scheda_pdf as schedaPdf', 'ap.origine_pubblica as marketing', 'ap.agenda_impegno_id as agendaImpegnoId', 'ap.senza_orario as senzaOrario', 'ag.dipendente_id as idCaposquadra', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
+    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.commerciale_dipendente_id as commercialeDipendenteId', 'ap.attivita', 'ap.luogo', 'ap.note', 'ap.stato', 'ap.esito', 'ap.scheda_pdf as schedaPdf', 'ap.origine_pubblica as marketing', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'ap.senza_orario as senzaOrario', 'ag.dipendente_id as idCaposquadra', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
     .orderBy('ap.data_ora', 'asc').orderBy('ap.id', 'asc')
     .then(rows => rows.map(({ cognomeCaposquadra, nomeCaposquadra, ...row }) => ({
       ...row,
       incaricato: row.agendaImpegnoId ? `${cognomeCaposquadra || ''} ${nomeCaposquadra || ''}`.trim() : row.incaricato || ''
     })));
+  return attachNotes(rows);
 }
 
 async function listPublic() {
   await advancePastAppointments();
-  return knex('appuntamenti_preventivi as ap')
+  const rows = await knex('appuntamenti_preventivi as ap')
     .leftJoin('agenda_caposquadra as ag', 'ap.agenda_impegno_id', 'ag.id')
     .leftJoin('dipendenti as d', 'ag.dipendente_id', 'd.id')
     .where('ap.origine_pubblica', true)
-    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.incaricato', 'ap.stato', 'ap.esito', 'ap.agenda_impegno_id as agendaImpegnoId', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
+    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.stato', 'ap.esito', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
     .orderBy('ap.created_at', 'desc').orderBy('ap.id', 'desc')
     .then(rows => rows.map(({ agendaImpegnoId, cognomeCaposquadra, nomeCaposquadra, ...row }) => ({
       ...row,
       incaricato: agendaImpegnoId ? `${cognomeCaposquadra || ''} ${nomeCaposquadra || ''}`.trim() : row.incaricato || ''
     })));
+  return attachNotes(rows, true);
+}
+
+async function attachNotes(rows, publicOnly = false) {
+  if (!rows.length) return rows;
+  const query = knex('appuntamenti_note').whereIn('appuntamento_id', rows.map(row => row.id));
+  if (publicOnly) query.where('visibile_pubblico', true);
+  const notes = await query
+    .select('id', 'appuntamento_id as appuntamentoId', 'testo', 'creata_il as creataIl', 'autore')
+    .orderBy('creata_il', 'asc').orderBy('id', 'asc');
+  const byAppointment = new Map(rows.map(row => [row.id, []]));
+  for (const note of notes) byAppointment.get(note.appuntamentoId)?.push(note);
+  return rows.map(row => ({ ...row, noteStoriche: byAppointment.get(row.id) }));
 }
 
 async function promoteToMarketing(id) {
@@ -205,7 +267,7 @@ function agendaFields(appointment, commercialeId, dataOra) {
     colore: '#4f46e5',
     tipo_impegno: 'Sopralluogo',
     attivita: appointment.attivita || 'Sopralluogo',
-    nome_referente: appointment.nominativo,
+    nome_referente: appointment.referente || appointment.nominativo,
     indirizzo: appointment.luogo || '',
     note: appointment.note || ''
   };
@@ -267,11 +329,14 @@ async function conclude(id, action, body) {
 
 async function create(body) {
   const [id] = await knex('appuntamenti_preventivi').insert(validate(body));
-  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'incaricato', 'luogo', 'note', 'stato', 'esito');
+  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'referente', 'telefono', 'email', 'incaricato', 'luogo', 'note', 'stato', 'esito');
 }
 
 async function createPublic(body, file) {
   const data = validate({ ...body, stato: STATO_RICHIESTO_MARKETING, esito: '' });
+  if (!data.referente) throw new Error('Inserisci il referente con cui parleremo.');
+  if (!data.telefono) throw new Error('Inserisci il telefono del referente.');
+  if (!data.email) throw new Error('Inserisci l’email del referente.');
   data.origine_pubblica = true;
   let filePath;
   if (file) {
@@ -284,12 +349,81 @@ async function createPublic(body, file) {
     data.scheda_pdf = `/uploads/appuntamenti/${fileName}`;
   }
   try {
-    const [id] = await knex('appuntamenti_preventivi').insert(data);
+    const id = await knex.transaction(async trx => {
+      const [appointmentId] = await trx('appuntamenti_preventivi').insert(data);
+      if (data.note) await trx('appuntamenti_note').insert({ appuntamento_id: appointmentId, testo: data.note, creata_il: new Date().toISOString() });
+      await marketingNotifications.record(trx, { appointmentId, type: 'appuntamento', company: data.nominativo });
+      return appointmentId;
+    });
     return { id };
   } catch (error) {
     if (filePath) await fs.promises.rm(filePath, { force: true }).catch(() => {});
     throw error;
   }
+}
+
+function validatePublicNote(body) {
+  const testo = typeof body?.testo === 'string' ? body.testo.trim() : '';
+  if (!testo || testo.length > 2000) throw new Error('Inserisci una nota valida (massimo 2000 caratteri).');
+  return testo;
+}
+
+async function addPublicNote(id, body) {
+  const testo = validatePublicNote(body);
+  return knex.transaction(async trx => {
+    const appointment = await trx('appuntamenti_preventivi').where({ id, origine_pubblica: true }).first('id', 'nominativo');
+    if (!appointment) return null;
+    const creataIl = new Date().toISOString();
+    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore: 'Marketing', visibile_pubblico: true });
+    await marketingNotifications.record(trx, { appointmentId: appointment.id, type: 'nota', company: appointment.nominativo, text: testo });
+    return { id: noteId, appuntamentoId: appointment.id, testo, creataIl, autore: 'Marketing' };
+  });
+}
+
+async function addInternalNote(id, body, author) {
+  const testo = validatePublicNote(body);
+  const autore = String(author || '').trim();
+  if (!autore || autore.length > 254) throw new Error('Autore della nota non valido.');
+  return knex.transaction(async trx => {
+    const appointment = await trx('appuntamenti_preventivi').where('id', id).first('id');
+    if (!appointment) return null;
+    const creataIl = new Date().toISOString();
+    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore, visibile_pubblico: false });
+    return { id: noteId, appuntamentoId: appointment.id, testo, creataIl, autore };
+  });
+}
+
+async function rebookPublic(id, body) {
+  const dataOra = validateDataOra(body?.dataOra);
+  const testo = validatePublicNote(body);
+  return knex.transaction(async trx => {
+    const previous = await trx('appuntamenti_preventivi').where({ id, origine_pubblica: true }).first();
+    if (!previous) return null;
+    if (previous.stato !== 'Esitato') throw new Error('Puoi rifissare dal link solo un appuntamento esitato.');
+    if (await trx('appuntamenti_preventivi').where('appuntamento_precedente_id', previous.id).first('id')) {
+      throw new Error('Questo appuntamento è già stato rifissato. Usa la nuova scheda per continuare.');
+    }
+    const nextNumber = (previous.numero_appuntamento || 1) + 1;
+    const [newId] = await trx('appuntamenti_preventivi').insert({
+      data_ora: dataOra,
+      nominativo: previous.nominativo,
+      referente: previous.referente || '',
+      telefono: previous.telefono || '',
+      email: previous.email || '',
+      incaricato: '',
+      attivita: previous.attivita || '',
+      luogo: previous.luogo || '',
+      note: testo,
+      stato: STATO_RICHIESTO_MARKETING,
+      esito: '',
+      origine_pubblica: true,
+      numero_appuntamento: nextNumber,
+      appuntamento_precedente_id: previous.id
+    });
+    await trx('appuntamenti_note').insert({ appuntamento_id: newId, testo, creata_il: new Date().toISOString() });
+    await marketingNotifications.record(trx, { appointmentId: newId, type: 'appuntamento', company: previous.nominativo });
+    return { id: newId, stato: STATO_RICHIESTO_MARKETING, numeroAppuntamento: nextNumber, appuntamentoPrecedenteId: previous.id };
+  });
 }
 
 async function update(id, body) {
@@ -300,7 +434,7 @@ async function update(id, body) {
   if (existing && existing.stato !== STATO_RICHIESTO_MARKETING && body?.stato === STATO_RICHIESTO_MARKETING) throw new Error('La richiesta da Marketing è uno stato iniziale.');
   const count = await knex('appuntamenti_preventivi').where('id', id).update(validate(body));
   if (!count) return null;
-  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'incaricato', 'luogo', 'note', 'stato', 'esito');
+  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'referente', 'telefono', 'email', 'incaricato', 'luogo', 'note', 'stato', 'esito');
 }
 
 async function updateStatus(id, body) {
@@ -322,6 +456,8 @@ async function remove(id) {
   if (existing?.agenda_impegno_id) throw new Error('Elimina questo appuntamento dall’Agenda Caposquadra.');
   const count = await knex.transaction(async trx => {
     await trx('preventivi').where('appuntamento_id', id).update({ appuntamento_id: null });
+    await trx('appuntamenti_note').where('appuntamento_id', id).del();
+    await trx('marketing_notifications').where('appuntamento_id', id).del();
     return trx('appuntamenti_preventivi').where('id', id).del();
   });
   if (count && /^\/uploads\/appuntamenti\/[0-9a-f-]+\.pdf$/.test(existing.scheda_pdf || '')) {
@@ -335,6 +471,7 @@ async function syncFromAgenda(trx, agendaId, imp) {
   const data = {
     data_ora: `${imp.data}T${imp.senzaOrario ? '00:00' : imp.oraInizio}`,
     nominativo: (imp.nomeReferente || imp.attivita || 'Sopralluogo').trim(),
+    referente: (imp.nomeReferente || '').trim(),
     attivita: (imp.attivita || '').trim(),
     luogo: (imp.indirizzo || '').trim(),
     note: (imp.note || '').trim(),
@@ -364,4 +501,4 @@ async function removeForAgenda(trx, agendaIds) {
   if (scollegati.length) await trx('appuntamenti_preventivi').whereIn('id', scollegati).update({ agenda_impegno_id: null });
 }
 
-module.exports = { ensureTable, list, listPublic, promoteToMarketing, acceptMarketing, reschedule, conclude, create, createPublic, update, updateStatus, remove, syncFromAgenda, removeForAgenda };
+module.exports = { ensureTable, list, listPublic, promoteToMarketing, acceptMarketing, reschedule, conclude, create, createPublic, addPublicNote, addInternalNote, rebookPublic, update, updateStatus, remove, syncFromAgenda, removeForAgenda };

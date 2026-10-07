@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, UserRound, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, UserRound, X } from 'lucide-react';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 
 const API = `${import.meta.env.VITE_API_URL || ''}/api/appuntamenti-preventivi`;
-const emptyForm = { dataOra: '', nominativo: '', incaricato: '', luogo: '', note: '', stato: 'Programmato', esito: '' };
+const emptyForm = { dataOra: '', nominativo: '', referente: '', telefono: '', email: '', incaricato: '', luogo: '', note: '', stato: 'Programmato', esito: '' };
 const STATO_RICHIESTO_MARKETING = 'Richiesto da Marketing';
 const STATI = [STATO_RICHIESTO_MARKETING, 'Da svolgere', 'Passato', 'Programmato', 'Svolto', 'Annullato', 'Esitato'];
 
@@ -32,6 +32,8 @@ function formatDate(value) {
 }
 
 export default function AppuntamentiPreventivi() {
+  const [searchParams] = useSearchParams();
+  const targetAppointmentId = Number(searchParams.get('appuntamento'));
   const [appuntamenti, setAppuntamenti] = useState([]);
   const [preventivi, setPreventivi] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +53,10 @@ export default function AppuntamentiPreventivi() {
   const [dettagliAperti, setDettagliAperti] = useState(null);
   const [publicToken, setPublicToken] = useState('');
   const [linkMessage, setLinkMessage] = useState('');
+  const [notaTesto, setNotaTesto] = useState('');
+  const [notaError, setNotaError] = useState('');
+  const [riferimenti, setRiferimenti] = useState(null);
+  const [riferimentiError, setRiferimentiError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -71,6 +77,46 @@ export default function AppuntamentiPreventivi() {
       .then(result => setPublicToken(result.token))
       .catch(() => setLinkMessage('Link di inserimento non disponibile.'));
   }, []);
+
+  useEffect(() => {
+    if (targetAppointmentId > 0) load();
+  }, [targetAppointmentId]);
+
+  useEffect(() => {
+    if (!targetAppointmentId || !appuntamenti.some(item => item.id === targetAppointmentId)) return;
+    setDettagliAperti(targetAppointmentId);
+    const timer = window.setTimeout(() => document.getElementById(`appuntamento-${targetAppointmentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+    return () => window.clearTimeout(timer);
+  }, [targetAppointmentId, appuntamenti]);
+
+  const apriRiferimenti = async () => {
+    setRiferimentiError('');
+    try { setRiferimenti(await request(`${import.meta.env.VITE_API_URL || ''}/api/riferimenti-aziendali`)); }
+    catch (err) { setError(err.message); }
+  };
+
+  const salvaRiferimenti = async event => {
+    event.preventDefault();
+    setSaving(true);
+    setRiferimentiError('');
+    try {
+      await request(`${import.meta.env.VITE_API_URL || ''}/api/riferimenti-aziendali`, { method: 'PUT', body: JSON.stringify(riferimenti) });
+      setRiferimenti(null);
+    } catch (err) { setRiferimentiError(err.message); }
+    finally { setSaving(false); }
+  };
+
+  const salvaNota = async (event, id) => {
+    event.preventDefault();
+    setSaving(true);
+    setNotaError('');
+    try {
+      const nota = await request(`${API}/${id}/note`, { method: 'POST', body: JSON.stringify({ testo: notaTesto }) });
+      setAppuntamenti(previous => previous.map(item => item.id === id ? { ...item, noteStoriche: [...(item.noteStoriche || []), nota] } : item));
+      setNotaTesto('');
+    } catch (err) { setNotaError(err.message); }
+    finally { setSaving(false); }
+  };
 
   const save = async event => {
     event.preventDefault();
@@ -212,16 +258,17 @@ export default function AppuntamentiPreventivi() {
       const data = formatDate(a.dataOra);
       const aperto = dettagliAperti === a.id;
       const inLavorazione = ['Programmato', 'Da svolgere', 'Passato'].includes(a.stato);
-      return <article key={a.id} className={`rounded-xl border bg-slate-800 shadow-sm ${aperto ? 'border-indigo-500/50' : 'border-slate-700'}`}>
-        <div className="grid grid-cols-2 items-center gap-3 p-4 text-sm text-slate-100 lg:grid-cols-[100px_78px_minmax(120px,1.1fr)_minmax(120px,1.2fr)_minmax(120px,1fr)_95px_230px]">
-          <span className="flex items-center gap-1.5 text-indigo-200"><CalendarDays size={15} className="shrink-0 lg:hidden" />{a.dataOra.slice(0, 10).split('-').reverse().join('/')}</span>
-          <span className="flex items-center gap-1.5 text-slate-300"><Clock3 size={15} className="shrink-0 lg:hidden" />{a.senzaOrario ? 'In giornata' : data.time}</span>
-          <div className="col-span-2 min-w-0 lg:col-span-1"><strong className="break-words">{a.nominativo}</strong><span className={`mt-1 block w-fit rounded px-2 py-0.5 text-[11px] font-bold ${a.marketing ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'bg-slate-600/60 text-slate-200'}`}>{a.marketing ? 'Marketing' : 'Interno'}</span></div>
-          <span className="col-span-2 flex min-w-0 items-start gap-1.5 break-words text-slate-300 lg:col-span-1"><MapPin size={15} className="mt-0.5 shrink-0 lg:hidden" />{a.luogo || '—'}</span>
-          <span className="col-span-2 min-w-0 break-words text-slate-300 lg:col-span-1"><span className="mr-1 font-semibold text-slate-400 lg:hidden">Chi lo svolge:</span>{a.incaricato || '—'}</span>
-          <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${a.stato === 'Svolto' ? 'bg-emerald-500/20 text-emerald-300' : a.stato === 'Annullato' ? 'bg-red-500/20 text-red-300' : a.stato === 'Esitato' ? 'bg-sky-500/20 text-sky-300' : a.stato === STATO_RICHIESTO_MARKETING ? 'bg-fuchsia-500/20 text-fuchsia-200' : a.stato === 'Passato' ? 'bg-slate-600/50 text-slate-200' : 'bg-amber-500/20 text-amber-300'}`}>{a.stato}</span>
-          <div className="col-span-2 flex flex-wrap items-center gap-1.5 lg:col-span-1 lg:justify-end">
-            <button type="button" onClick={() => setDettagliAperti(aperto ? null : a.id)} aria-expanded={aperto} aria-label={`${aperto ? 'Chiudi' : 'Apri'} dettagli di ${a.nominativo}`} title="Dettagli e preventivi" className="rounded-lg bg-slate-700 p-2 text-slate-200 hover:bg-slate-600"><ChevronDown size={16} className={`transition-transform ${aperto ? 'rotate-180' : ''}`} /></button>
+      return <article key={a.id} id={`appuntamento-${a.id}`} className={`rounded-xl border bg-slate-800 shadow-sm ${aperto ? 'border-indigo-500/50' : 'border-slate-700'}`}>
+        <div className="grid grid-cols-2 items-center gap-3 p-4 text-sm text-slate-100 lg:h-[76px] lg:grid-cols-[100px_170px_90px_210px_190px_150px_350px] lg:gap-2.5 lg:overflow-hidden">
+          <span className="col-span-2 flex flex-col gap-0.5 whitespace-nowrap lg:col-span-1"><span className="flex items-center gap-1.5 text-indigo-200"><CalendarDays size={15} className="shrink-0 lg:hidden" />{a.dataOra.slice(0, 10).split('-').reverse().join('/')}</span><span className="flex items-center gap-1.5 text-slate-300"><Clock3 size={15} className="shrink-0 lg:hidden" />{a.senzaOrario ? 'In giornata' : data.time}</span></span>
+          <strong className="col-span-2 min-w-0 break-words lg:col-span-1 lg:truncate" title={a.nominativo}>{a.nominativo}</strong>
+          <span className="col-span-2 flex flex-wrap items-center gap-1 lg:col-span-1"><span className="mr-1 font-semibold text-slate-400 lg:hidden">Origine:</span><span className={`w-fit rounded px-2 py-0.5 text-[11px] font-bold ${a.marketing ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'bg-slate-600/60 text-slate-200'}`}>{a.marketing ? 'Marketing' : 'Interno'}</span>{a.numeroAppuntamento > 1 && <span className="rounded bg-indigo-500/25 px-2 py-0.5 text-[11px] font-bold text-indigo-100">{a.numeroAppuntamento}° app</span>}</span>
+          <span className="col-span-2 flex min-w-0 items-start gap-1.5 break-words text-slate-300 lg:col-span-1 lg:block lg:truncate" title={a.luogo || ''}><MapPin size={15} className="mt-0.5 shrink-0 lg:hidden" />{a.luogo || '—'}</span>
+          <span className="col-span-2 min-w-0 break-words text-slate-300 lg:col-span-1 lg:truncate" title={a.incaricato || ''}><span className="mr-1 font-semibold text-slate-400 lg:hidden">Commerciale:</span>{a.incaricato || '—'}</span>
+          <span className={`w-fit max-w-full rounded-full px-2 py-1 text-xs font-semibold lg:truncate ${a.stato === 'Svolto' ? 'bg-emerald-500/20 text-emerald-300' : a.stato === 'Annullato' ? 'bg-red-500/20 text-red-300' : a.stato === 'Esitato' ? 'bg-sky-500/20 text-sky-300' : a.stato === STATO_RICHIESTO_MARKETING ? 'bg-fuchsia-500/20 text-fuchsia-200' : a.stato === 'Passato' ? 'bg-slate-600/50 text-slate-200' : 'bg-amber-500/20 text-amber-300'}`}>{a.stato}</span>
+          <div className="col-span-2 flex flex-wrap items-center gap-1.5 lg:col-span-1 lg:flex-nowrap lg:justify-end">
+            <button type="button" onClick={() => { setDettagliAperti(aperto ? null : a.id); setNotaTesto(''); setNotaError(''); }} aria-expanded={aperto} aria-label={`${aperto ? 'Chiudi' : 'Apri'} dettagli di ${a.nominativo}`} title="Dettagli, note e preventivi" className="rounded-lg bg-slate-700 p-2 text-slate-200 hover:bg-slate-600"><ChevronDown size={16} className={`transition-transform ${aperto ? 'rotate-180' : ''}`} /></button>
+            <a href={`${API}/${a.id}/stampa`} target="_blank" rel="noreferrer" title="Apri scheda appuntamento e presentazione aziendale in PDF" className="flex items-center gap-1 rounded-lg bg-slate-700 px-2 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-600"><Printer size={15} /> Stampa</a>
             {a.stato === STATO_RICHIESTO_MARKETING ? <button type="button" onClick={() => apriAccettazione(a)} title="Accetta appuntamento" className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30"><Check size={15} /> Accetta</button> : inLavorazione && <>
               <button type="button" onClick={() => { setActionError(''); setEsitoForm({ id: a.id, esito: '' }); }} className="rounded-lg bg-emerald-500/20 px-2 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30">Esita</button>
               <button type="button" onClick={() => { setActionError(''); setRifissaForm({ id: a.id, dataOra: a.dataOra, commercialeDipendenteId: a.commercialeDipendenteId || a.idCaposquadra, inAgenda: null }); }} className="rounded-lg bg-indigo-500/20 px-2 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30">Rifissa</button>
@@ -235,8 +282,16 @@ export default function AppuntamentiPreventivi() {
         {aperto && <div className="border-t border-slate-700 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-indigo-300">{a.marketing ? 'Visibile nel link esterno' : a.agendaImpegnoId ? 'Creato dall’Agenda Caposquadra' : 'Creato in Appuntamenti'}</p>{!a.marketing && <button type="button" onClick={() => passaAMarketing(a)} disabled={saving} className="rounded-lg bg-fuchsia-500/20 px-3 py-2 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/30 disabled:opacity-50">Passa a Marketing</button>}</div>
         {a.schedaPdf && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-sm text-indigo-100"><FileText size={18} /><strong>Scheda appuntamento PDF</strong><a href={`${import.meta.env.VITE_API_URL || ''}${a.schedaPdf}`} target="_blank" rel="noreferrer" className="underline hover:text-white">Apri</a><a href={`${import.meta.env.VITE_API_URL || ''}${a.schedaPdf}`} download className="flex items-center gap-1 underline hover:text-white"><Download size={15} /> Scarica</a></div>}
+        {a.referente && <p className="mt-3 break-words text-sm text-slate-300"><strong>Referente:</strong> {a.referente}</p>}
+        {a.telefono && <p className="mt-2 break-words text-sm text-slate-300"><strong>Telefono:</strong> <a href={`tel:${a.telefono.replace(/[^\d+]/g, '')}`} className="text-indigo-200 underline">{a.telefono}</a></p>}
+        {a.email && <p className="mt-2 break-words text-sm text-slate-300"><strong>Email:</strong> <a href={`mailto:${a.email}`} className="text-indigo-200 underline">{a.email}</a></p>}
         {a.attivita && <p className="mt-3 break-words text-sm text-slate-300"><strong>Attività:</strong> {a.attivita}</p>}
-        {a.note && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-400">{a.note}</p>}
+        <div className="mt-4 space-y-2 border-t border-slate-700 pt-3"><h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Note appuntamento</h4>
+          {a.note && !a.noteStoriche?.some(note => note.testo === a.note) && <p className="whitespace-pre-wrap break-words rounded-lg bg-slate-900/60 px-3 py-2 text-sm text-slate-200"><span className="mb-1 block text-xs font-semibold text-indigo-200">Nota iniziale</span>{a.note}</p>}
+          {a.noteStoriche?.map(note => <div key={note.id} className="rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{new Date(note.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>Autore: {note.autore || 'Marketing'}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p></div>)}
+          {!a.note && !a.noteStoriche?.length && <p className="text-sm text-slate-500">Nessuna nota.</p>}
+          <form onSubmit={event => salvaNota(event, a.id)} className="pt-2"><label className="block text-sm font-semibold text-slate-300">Aggiungi nota<textarea required maxLength={2000} rows={3} value={notaTesto} onChange={event => setNotaTesto(event.target.value)} placeholder="Scrivi una nota sull’appuntamento…" className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-slate-100" /></label><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-400">Data, ora e autore verranno registrati automaticamente.</span><button type="submit" disabled={saving || !notaTesto.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">Salva nota</button></div>{notaError && <p role="alert" className="mt-2 text-sm text-red-300">{notaError}</p>}</form>
+        </div>
         {a.esito && <p className="mt-2 whitespace-pre-wrap break-words text-sm text-sky-200"><strong>Esito:</strong> {a.esito}</p>}
         <div className="mt-4 border-t border-slate-700 pt-3">
           <h4 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Preventivi collegati</h4>
@@ -265,6 +320,7 @@ export default function AppuntamentiPreventivi() {
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-xl font-bold text-slate-50">Appuntamenti</h2>
           <button type="button" onClick={copiaLink} disabled={!publicUrl} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"><Copy size={15} /> COPIA LINK INSERIMENTO APP</button>
+          <button type="button" onClick={apriRiferimenti} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-600">Riferimenti aziendali</button>
         </div>
         <p className="text-sm text-slate-400">Crea appuntamenti qui, senza aggiungerli all’Agenda Caposquadra.</p>
         {linkMessage && <p role="status" className="mt-1 text-xs text-slate-300">{linkMessage}</p>}
@@ -273,13 +329,29 @@ export default function AppuntamentiPreventivi() {
     </div>
     {error && <p role="alert" className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
     {loading ? <p className="text-slate-400">Caricamento appuntamenti...</p> : <section>
-      <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Ordina gli appuntamenti per stato">
+      <div className="mb-14 flex flex-wrap items-center gap-2" role="group" aria-label="Ordina gli appuntamenti per stato">
         <span className="mr-1 text-sm font-semibold text-slate-300">Stato · metti prima:</span>
         {['Tutti', ...STATI].map(stato => <button key={stato} type="button" aria-pressed={statoInCima === stato} onClick={() => setStatoInCima(stato)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${statoInCima === stato ? 'border-indigo-400 bg-indigo-500/25 text-white' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{stato} <span className="text-xs opacity-75">{stato === 'Tutti' ? appuntamenti.length : appuntamenti.filter(a => a.stato === stato).length}</span></button>)}
       </div>
-      <div className="mb-2 hidden grid-cols-[100px_78px_minmax(120px,1.1fr)_minmax(120px,1.2fr)_minmax(120px,1fr)_95px_230px] gap-3 px-4 text-xs font-bold uppercase tracking-wide text-slate-400 lg:grid"><span>Data</span><span>Ora</span><span>Cliente</span><span>Via</span><span>Chi lo svolge</span><span>Stato</span><span className="text-right">Azioni</span></div>
-      {renderList(appuntamentiInOrdine, 'Nessun appuntamento.')}
+      <div className="lg:overflow-x-auto"><div className="mx-auto w-full lg:min-w-[1350px] lg:max-w-[1360px]">
+        <div className="mb-2 hidden grid-cols-[100px_170px_90px_210px_190px_150px_350px] gap-2.5 px-4 text-xs font-bold uppercase tracking-wide text-slate-400 lg:grid"><span>Data e ora</span><span>Azienda</span><span>Origine</span><span>Via</span><span>Commerciale</span><span>Stato</span><span className="text-right">Azioni</span></div>
+        {renderList(appuntamentiInOrdine, 'Nessun appuntamento.')}
+      </div></div>
     </section>}
+
+    {riferimenti && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" onMouseDown={() => { if (!saving) setRiferimenti(null); }}>
+      <form onSubmit={salvaRiferimenti} role="dialog" aria-modal="true" aria-label="Riferimenti aziendali" onMouseDown={event => event.stopPropagation()} className="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-800 p-5 text-slate-100 shadow-2xl">
+        <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Riferimenti aziendali</h2><button type="button" onClick={() => setRiferimenti(null)} aria-label="Chiudi" className="rounded p-1 hover:bg-slate-700"><X size={20} /></button></div>
+        <p className="text-sm text-slate-400">Questi recapiti compariranno nella presentazione allegata alla stampa di ogni appuntamento.</p>
+        {[
+          ['commerciale1Nome', 'Primo commerciale'], ['commerciale1Telefono', 'Telefono primo commerciale'],
+          ['commerciale2Nome', 'Secondo commerciale'], ['commerciale2Telefono', 'Telefono secondo commerciale'],
+          ['ufficioTelefono', 'Telefono ufficio'], ['email', 'Email']
+        ].map(([key, label]) => <label key={key} className="block text-sm font-semibold">{label}<input required maxLength={255} type={key === 'email' ? 'email' : key.includes('Telefono') ? 'tel' : 'text'} value={riferimenti[key] || ''} onChange={event => setRiferimenti(previous => ({ ...previous, [key]: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100" /></label>)}
+        {riferimentiError && <p role="alert" className="text-sm text-red-300">{riferimentiError}</p>}
+        <button type="submit" disabled={saving} className="w-full rounded-lg bg-indigo-600 px-4 py-2 font-semibold hover:bg-indigo-500 disabled:opacity-50">Salva riferimenti</button>
+      </form>
+    </div>}
 
     {form && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" onMouseDown={() => { if (!saving) setForm(null); }}>
       <form onSubmit={save} role="dialog" aria-modal="true" aria-label={form.id ? 'Modifica appuntamento' : 'Nuovo appuntamento'} onMouseDown={event => event.stopPropagation()} className="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-800 p-5 text-slate-100 shadow-2xl">
@@ -288,6 +360,9 @@ export default function AppuntamentiPreventivi() {
         {error && <p role="alert" className="rounded-lg bg-red-500/10 p-2 text-sm text-red-300">{error}</p>}
         <label className="block text-sm font-medium">Data e ora<input required type="datetime-local" value={form.dataOra} onChange={event => setForm({ ...form, dataOra: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Cliente o potenziale cliente<div className="relative mt-1"><UserRound size={17} className="absolute left-3 top-3 text-slate-400" /><input required maxLength={255} value={form.nominativo} onChange={event => setForm({ ...form, nominativo: event.target.value })} className="w-full rounded-lg border border-slate-600 bg-slate-900 p-2 pl-10" /></div></label>
+        <label className="block text-sm font-medium">Referente<input maxLength={255} value={form.referente || ''} onChange={event => setForm({ ...form, referente: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
+        <label className="block text-sm font-medium">Telefono<input type="tel" autoComplete="tel" maxLength={50} value={form.telefono || ''} onChange={event => setForm({ ...form, telefono: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
+        <label className="block text-sm font-medium">Email<input type="email" autoComplete="email" maxLength={254} value={form.email || ''} onChange={event => setForm({ ...form, email: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Chi lo svolge<input required maxLength={200} value={form.incaricato || ''} onChange={event => setForm({ ...form, incaricato: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Luogo<input maxLength={500} value={form.luogo} onChange={event => setForm({ ...form, luogo: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Note<textarea rows={3} maxLength={2000} value={form.note} onChange={event => setForm({ ...form, note: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>

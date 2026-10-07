@@ -47,6 +47,9 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/pdf_generator.js
 !/gestionale_m2i_sql/report_contabilita_clienti_pdf.js
 !/gestionale_m2i_sql/report_contabilita_dipendenti_pdf.js
+!/gestionale_m2i_sql/scheda_appuntamento_pdf.js
+!/gestionale_m2i_sql/marketing_notifications.js
+!/gestionale_m2i_sql/riferimenti_aziendali.js
 !/gestionale_m2i_sql/auth.js
 !/gestionale_m2i_sql/ai_query.js
 !/gestionale_m2i_sql/attachment_delete.js

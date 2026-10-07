@@ -12,6 +12,9 @@ const { createAuth } = require('./auth');
 const { createPublicAgenda, validMonday } = require('./public_agenda');
 const { createPublicAppuntamenti } = require('./public_appuntamenti');
 const appuntamentiPreventivi = require('./appuntamenti_preventivi');
+const marketingNotifications = require('./marketing_notifications');
+const { buildSchedaAppuntamentoPDF } = require('./scheda_appuntamento_pdf');
+const riferimentiAziendali = require('./riferimenti_aziendali');
 const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./email_attachment_link');
 const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
@@ -81,7 +84,7 @@ app.get('/api/public/agenda/:token', async (req, res) => {
 const uploadSchedaAppuntamento = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => cb(path.extname(file.originalname || '').toLowerCase() === '.pdf' ? null : new Error('Allega un PDF valido.'), true),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 8 }
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 10 }
 }).single('scheda');
 app.get('/api/public/appuntamenti/:token', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -110,6 +113,24 @@ app.post('/api/public/appuntamenti/:token', async (req, res, next) => {
     res.status(400).json({ error: error.message });
   }
 });
+app.post('/api/public/appuntamenti/:token/:id/note', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    if (!await publicAppuntamenti.isValid(req.params.token)) return res.status(404).json({ error: 'Link non valido.' });
+    const note = await appuntamentiPreventivi.addPublicNote(req.params.id, req.body);
+    if (!note) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.status(201).json(note);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.post('/api/public/appuntamenti/:token/:id/rifissa', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    if (!await publicAppuntamenti.isValid(req.params.token)) return res.status(404).json({ error: 'Link non valido.' });
+    const result = await appuntamentiPreventivi.rebookPublic(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.status(201).json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 app.use('/api', auth.requireAuth);
 // L'account amministrativo non accede alle altre API, neppure digitando URL diretti.
 app.use('/api', (req, res, next) => {
@@ -133,6 +154,17 @@ app.get('/api/appuntamenti-public-link', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Link non disponibile.' });
   }
+});
+app.get('/api/marketing-notifiche', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { res.json(await marketingNotifications.listUnread(req.authUser.id)); }
+  catch { res.status(500).json({ error: 'Impossibile caricare gli avvisi Marketing.' }); }
+});
+app.post('/api/marketing-notifiche/:id/letto', async (req, res) => {
+  try {
+    if (!await marketingNotifications.markRead(req.authUser.id, req.params.id)) return res.status(404).json({ error: 'Avviso non trovato.' });
+    res.status(204).end();
+  } catch { res.status(500).json({ error: 'Impossibile confermare la lettura dell’avviso.' }); }
 });
 app.use('/uploads', auth.requireAuth, (req, res, next) => {
   if (req.authUser.role === 'contabilita') return res.status(403).send('Accesso non consentito.');
@@ -1075,6 +1107,35 @@ app.get('/api/appuntamenti-preventivi', async (req, res) => {
   try { res.json(await appuntamentiPreventivi.list()); }
   catch (error) { res.status(500).json({ error: 'Impossibile caricare gli appuntamenti.' }); }
 });
+app.post('/api/appuntamenti-preventivi/:id/note', async (req, res) => {
+  try {
+    const note = await appuntamentiPreventivi.addInternalNote(req.params.id, req.body, req.authUser.email);
+    if (!note) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.status(201).json(note);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.get('/api/riferimenti-aziendali', async (req, res) => {
+  try { res.json(await riferimentiAziendali.get()); }
+  catch { res.status(500).json({ error: 'Impossibile caricare i riferimenti aziendali.' }); }
+});
+app.put('/api/riferimenti-aziendali', async (req, res) => {
+  try { res.json(await riferimentiAziendali.update(req.body)); }
+  catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.get('/api/appuntamenti-preventivi/:id/stampa', async (req, res) => {
+  try {
+    const appointment = (await appuntamentiPreventivi.list()).find(item => item.id === Number(req.params.id));
+    if (!appointment) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    const buffer = await buildSchedaAppuntamentoPDF(appointment, await riferimentiAziendali.get());
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="scheda-appuntamento-${appointment.id}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buffer);
+  } catch (error) {
+    console.error('[SCHEDA APPUNTAMENTO PDF]', error);
+    res.status(500).json({ error: 'Impossibile generare la scheda appuntamento.' });
+  }
+});
 app.post('/api/appuntamenti-preventivi', async (req, res) => {
   try { res.status(201).json(await appuntamentiPreventivi.create(req.body)); }
   catch (error) { res.status(400).json({ error: error.message }); }
@@ -1154,6 +1215,8 @@ Promise.resolve().then(async () => {
   await auth.initialize();
   await publicAgenda.initialize();
   await appuntamentiPreventivi.ensureTable();
+  await marketingNotifications.ensureTables();
+  await riferimentiAziendali.ensureTable();
   await publicAppuntamenti.initialize();
   await preventiviCtrl.ensurePreventiviIds();
   await ensureAttachmentColumns(knex);

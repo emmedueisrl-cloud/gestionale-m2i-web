@@ -4,6 +4,7 @@ import React, { useContext, useState } from 'react';
 import { TopbarContext } from '../context/topbarContextValue';
 import Sidebar from './Sidebar';
 import SaveConfirmation from './SaveConfirmation';
+import MarketingNotifications from './MarketingNotifications';
 
 const AppShell = ({ area }) => {
   const isAccounting = area === 'contabilita';
@@ -15,6 +16,7 @@ const AppShell = ({ area }) => {
   return (
     <div className={`flex h-screen w-full overflow-hidden ${isAccounting ? 'bg-white text-slate-900' : 'bg-slate-900'}`}>
       <SaveConfirmation />
+      <MarketingNotifications />
       <Sidebar area={area} isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
       
       <div className={`flex-1 flex flex-col h-screen transition-all duration-300 w-full ${isAccounting ? 'md:pl-56' : 'md:pl-80'}`}>
