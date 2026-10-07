@@ -1,15 +1,88 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, FileText, Search, Download, Trash2, CalendarDays } from 'lucide-react';
+import { Plus, FileText, Search, Download, Trash2, CalendarDays, Upload, X } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import AppuntamentiPreventivi from './AppuntamentiPreventivi';
 
 const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
+function CaricaPreventivoModal({ onClose, onSuccess }) {
+  const [appuntamenti, setAppuntamenti] = useState([]);
+  const [numero, setNumero] = useState('');
+  const [data, setData] = useState(() => {
+    const oggi = new Date();
+    return `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, '0')}-${String(oggi.getDate()).padStart(2, '0')}`;
+  });
+  const [nominativo, setNominativo] = useState('');
+  const [appuntamentoId, setAppuntamentoId] = useState('');
+  const [file, setFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_URL}/appuntamenti-preventivi`)
+      .then(response => response.ok ? response.json() : [])
+      .then(setAppuntamenti)
+      .catch(() => setAppuntamenti([]));
+  }, []);
+
+  const submit = async event => {
+    event.preventDefault();
+    setError('');
+    if (!file || !file.name.toLowerCase().endsWith('.pdf') || file.size > 10 * 1024 * 1024) {
+      setError('Seleziona un PDF valido di massimo 10 MB.');
+      return;
+    }
+    const body = new FormData();
+    body.append('file', file);
+    body.append('numeroPreventivo', numero);
+    body.append('dataPreventivo', data);
+    body.append('nominativo', nominativo.trim());
+    if (appuntamentoId) body.append('appuntamentoId', appuntamentoId);
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_URL}/preventivi/upload`, { method: 'POST', body });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Impossibile caricare il preventivo.');
+      onSuccess();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputClass = 'mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-slate-100';
+  return <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 p-4" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div role="dialog" aria-modal="true" aria-labelledby="carica-preventivo-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700 bg-slate-800 p-5 shadow-2xl sm:p-6">
+      <div className="mb-5 flex items-center justify-between gap-3"><h2 id="carica-preventivo-title" className="text-xl font-bold text-white">Carica preventivo già fatto</h2><button type="button" onClick={onClose} aria-label="Chiudi" className="rounded-lg p-2 text-slate-300 hover:bg-slate-700"><X size={20} /></button></div>
+      <form onSubmit={submit} className="space-y-4">
+        <label className="block text-sm font-semibold text-slate-200">Numero preventivo (facoltativo)<input value={numero} onChange={event => setNumero(event.target.value)} maxLength={80} className={inputClass} placeholder="Se vuoto, viene assegnato automaticamente" /></label>
+        <label className="block text-sm font-semibold text-slate-200">Data preventivo<input type="date" required value={data} onChange={event => setData(event.target.value)} className={inputClass} /></label>
+        <label className="block text-sm font-semibold text-slate-200">Collega a un appuntamento (facoltativo)
+          <select value={appuntamentoId} onChange={event => {
+            const id = event.target.value;
+            setAppuntamentoId(id);
+            const selected = appuntamenti.find(item => String(item.id) === id);
+            if (selected) setNominativo(selected.nominativo);
+          }} className={inputClass}>
+            <option value="">Nessun appuntamento</option>
+            {appuntamenti.map(item => <option key={item.id} value={item.id}>{item.nominativo} · {item.dataOra.slice(0, 10)}</option>)}
+          </select>
+        </label>
+        <label className="block text-sm font-semibold text-slate-200">Cliente / prospect<input required value={nominativo} onChange={event => setNominativo(event.target.value)} maxLength={200} className={inputClass} /></label>
+        <label className="block text-sm font-semibold text-slate-200">Preventivo PDF (massimo 10 MB)<input type="file" required accept="application/pdf,.pdf" onChange={event => setFile(event.target.files?.[0] || null)} className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1 file:text-white`} /></label>
+        {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={onClose} className="rounded-lg bg-slate-700 px-4 py-2 text-slate-100 hover:bg-slate-600">Annulla</button><button type="submit" disabled={saving} className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{saving ? 'Caricamento...' : 'Salva preventivo'}</button></div>
+      </form>
+    </div>
+  </div>;
+}
+
 const Preventivi = () => {
   const [preventivi, setPreventivi] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -91,6 +164,8 @@ const Preventivi = () => {
           />
         </div>
         
+        <div className="flex flex-wrap gap-2">
+        <button type="button" className="flex items-center gap-2 rounded-xl border border-indigo-500/50 bg-indigo-500/15 px-5 py-3 font-bold text-indigo-100 hover:bg-indigo-500/25" onClick={() => setUploadOpen(true)}><Upload size={18} /> Carica preventivo già fatto</button>
         <button 
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-sm shrink-0" 
           onClick={() => setIsModalOpen(true)}
@@ -98,6 +173,7 @@ const Preventivi = () => {
           <Plus size={18} />
           Nuovo Preventivo
         </button>
+        </div>
       </div>
 
       <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 overflow-hidden">
@@ -169,6 +245,7 @@ const Preventivi = () => {
           }} 
         />
       )}
+      {uploadOpen && <CaricaPreventivoModal onClose={() => setUploadOpen(false)} onSuccess={() => { setUploadOpen(false); setMessage('Preventivo caricato.'); fetchPreventivi(); }} />}
       </section>}
     </div>
   );

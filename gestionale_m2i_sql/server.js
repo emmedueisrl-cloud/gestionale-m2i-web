@@ -87,7 +87,7 @@ app.get('/api/public/appuntamenti/:token', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     if (!await publicAppuntamenti.isValid(req.params.token)) return res.status(404).json({ error: 'Link non valido.' });
-    res.json({ valid: true });
+    res.json({ valid: true, appuntamenti: await appuntamentiPreventivi.listPublic() });
   } catch (error) {
     res.status(500).json({ error: 'Link temporaneamente non disponibile.' });
   }
@@ -1067,8 +1067,9 @@ app.put('/api/preventivi/:id/appuntamento', (req, res, next) => Promise.resolve(
 const uploadPreventivoPdf = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => cb(null, path.extname(file.originalname || '').toLowerCase() === '.pdf'),
-  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 2 }
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 5 }
 });
+app.post('/api/preventivi/upload', uploadPreventivoPdf.single('file'), (req, res, next) => Promise.resolve(preventiviCtrl.uploadPreventivoPronto(req, res)).catch(next));
 app.post('/api/appuntamenti-preventivi/:id/preventivi', uploadPreventivoPdf.single('file'), (req, res, next) => Promise.resolve(preventiviCtrl.uploadDaAppuntamento(req, res)).catch(next));
 app.get('/api/appuntamenti-preventivi', async (req, res) => {
   try { res.json(await appuntamentiPreventivi.list()); }
@@ -1088,6 +1089,41 @@ app.put('/api/appuntamenti-preventivi/:id', async (req, res) => {
 app.patch('/api/appuntamenti-preventivi/:id/stato', async (req, res) => {
   try {
     const result = await appuntamentiPreventivi.updateStatus(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.patch('/api/appuntamenti-preventivi/:id/marketing', async (req, res) => {
+  try {
+    const result = await appuntamentiPreventivi.promoteToMarketing(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.json(result);
+  } catch (error) { res.status(500).json({ error: 'Impossibile aggiornare l’appuntamento.' }); }
+});
+app.post('/api/appuntamenti-preventivi/:id/accetta', async (req, res) => {
+  try {
+    const result = await appuntamentiPreventivi.acceptMarketing(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.post('/api/appuntamenti-preventivi/:id/rifissa', async (req, res) => {
+  try {
+    const result = await appuntamentiPreventivi.reschedule(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.post('/api/appuntamenti-preventivi/:id/esita', async (req, res) => {
+  try {
+    const result = await appuntamentiPreventivi.conclude(req.params.id, 'esita', req.body);
+    if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.post('/api/appuntamenti-preventivi/:id/annulla', async (req, res) => {
+  try {
+    const result = await appuntamentiPreventivi.conclude(req.params.id, 'annulla');
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
     res.json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }

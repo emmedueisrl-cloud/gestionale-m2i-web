@@ -344,6 +344,44 @@ exports.uploadDaAppuntamento = async (req, res) => {
   }
 };
 
+exports.uploadPreventivoPronto = async (req, res) => {
+  if (!req.file || req.file.buffer.subarray(0, 5).toString() !== '%PDF-') return res.status(400).json({ error: 'Allega un PDF valido.' });
+  const numeroInput = typeof req.body.numeroPreventivo === 'string' ? req.body.numeroPreventivo.trim() : '';
+  const nominativo = typeof req.body.nominativo === 'string' ? req.body.nominativo.trim() : '';
+  const data = typeof req.body.dataPreventivo === 'string' ? req.body.dataPreventivo.trim() : '';
+  const appointmentId = req.body.appuntamentoId ? Number(req.body.appuntamentoId) : null;
+  if (!nominativo || nominativo.length > 200) return res.status(400).json({ error: 'Inserisci un cliente o prospect valido.' });
+  if (numeroInput.length > 80) return res.status(400).json({ error: 'Numero preventivo troppo lungo.' });
+  const dataParsed = /^\d{4}-\d{2}-\d{2}$/.test(data) ? new Date(`${data}T00:00:00Z`) : null;
+  if (!dataParsed || Number.isNaN(dataParsed.getTime()) || dataParsed.toISOString().slice(0, 10) !== data) return res.status(400).json({ error: 'Data preventivo non valida.' });
+  if (appointmentId !== null && (!Number.isSafeInteger(appointmentId) || appointmentId <= 0 || !await knex('appuntamenti_preventivi').where('id', appointmentId).first('id'))) {
+    return res.status(400).json({ error: 'Appuntamento non valido.' });
+  }
+  const dir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', 'preventivi');
+  const fileName = `${crypto.randomUUID()}.pdf`;
+  const filePath = path.join(dir, fileName);
+  try {
+    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.writeFile(filePath, req.file.buffer, { flag: 'wx' });
+    const preventivo = {
+      id: `PREV_${crypto.randomUUID()}`,
+      numero_preventivo: numeroInput || `ALLEGATO-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+      data_preventivo: data,
+      ragione_sociale_prospect: nominativo,
+      costo_mensile: 0,
+      tipo_prezzo: 'Allegato',
+      allegato_preventivo: `/uploads/preventivi/${fileName}`,
+      appuntamento_id: appointmentId
+    };
+    await knex('preventivi').insert(preventivo);
+    res.status(201).json(preventivo);
+  } catch (error) {
+    await fs.promises.rm(filePath, { force: true }).catch(() => {});
+    console.error('Errore caricamento preventivo PDF:', error);
+    res.status(500).json({ error: 'Impossibile salvare il preventivo.' });
+  }
+};
+
 exports.collegaAppuntamento = async (req, res) => {
   const appointmentId = req.body?.appuntamentoId == null || req.body.appuntamentoId === '' ? null : Number(req.body.appuntamentoId);
   if (appointmentId !== null && (!Number.isSafeInteger(appointmentId) || appointmentId <= 0 || !await knex('appuntamenti_preventivi').where('id', appointmentId).first('id'))) {
