@@ -94,4 +94,36 @@ async function replaceRegistration(trx, registration, row, source, userId, curre
   });
 }
 
-module.exports = { sameDocument, sameOfficialInvoice, rowKey, inspectChoice, requireChoices, replaceRegistration };
+async function replacementBlocked(trx, registration) {
+  if (!registration || (registration.tipo_documento && registration.tipo_documento !== 'TD01')) {
+    return 'La fattura non può essere sostituita da questa riga.';
+  }
+  const official = registration.fattura_id
+    ? await trx('fatture').where({ id: registration.fattura_id }).first() : null;
+  if (registration.fattura_id && !official) return 'Fattura contabile collegata non trovata: verifica la riconciliazione.';
+  if (!official && await trx('fatture').where({ cliente_id: registration.cliente_id })
+    .whereRaw('TRIM(numero_fattura) = ?', [String(registration.numero_fattura || '').trim()]).first()) {
+    return 'Fattura contabile non riconciliata: verifica prima di sostituire.';
+  }
+  if (official && (Number(official.importo_pagato || 0) > 0 ||
+    ['PAGATA', 'INCASSATA', 'PARZIALMENTE PAGATA'].includes(String(official.stato_pagamento || '').trim().toUpperCase()))) {
+    return 'Fattura già pagata o parzialmente pagata.';
+  }
+  if (official && await trx.schema.hasTable('incassi_fatture') &&
+    await trx('incassi_fatture').where({ fattura_id: official.id }).whereNull('annullato_at').first()) {
+    return 'Fattura con incassi registrati.';
+  }
+  if (await trx.schema.hasTable('incassi_fatture_aruba') &&
+    await trx('incassi_fatture_aruba').where({ registrazione_id: registration.id }).whereNull('annullato_at').first()) {
+    return 'Fattura con incassi Aruba registrati.';
+  }
+  if (await trx.schema.hasTable('incassi_fatture_inviate') &&
+    await trx('incassi_fatture_inviate').where({ cliente_id: registration.cliente_id,
+    mese: registration.mese, anno: registration.anno }).whereNull('annullato_at').first()) {
+    return 'Fattura inviata con incassi già registrati.';
+  }
+  return null;
+}
+
+module.exports = { sameDocument, sameOfficialInvoice, rowKey, inspectChoice, requireChoices, replaceRegistration,
+  replacementBlocked };

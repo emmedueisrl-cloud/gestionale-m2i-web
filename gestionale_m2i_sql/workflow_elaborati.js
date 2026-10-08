@@ -7,6 +7,7 @@ const { calcolaCostoPersonalePerCliente, statoCostoPersonalePerCliente } = requi
 const { calcolaValoriContabilitaCliente } = require('./valori_contabilita_clienti');
 const { ricalcolaRitenutaStorica } = require('./ricalcolo_ritenuta_storica');
 const { reconcileRegistration, registrationStatuses } = require('./fatture_reconciliation');
+const { replacementBlocked } = require('./fatture_import_choice');
 const { transferSentReceipts } = require('./incassi_insoluti');
 
 const kinds = {
@@ -266,6 +267,8 @@ async function accountingRows(tipo, mese, anno) {
     const frozenIds = new Set((await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id')).map(r => r.soggetto_id));
     if (tipo === 'cliente') {
       const invoices = await registrationStatuses(trx, await trx('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
+      const replacementBlocks = new Map();
+      for (const invoice of invoices) replacementBlocks.set(invoice.id, await replacementBlocked(trx, invoice));
       const documents = await trx('documenti_aruba_mese').where({ mese: p.mese, anno: p.anno }).orderBy('id');
       const sent = await trx('fatture_inviate_elaborati').where({ mese: p.mese, anno: p.anno });
       const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
@@ -285,7 +288,8 @@ async function accountingRows(tipo, mese, anno) {
       const costiPersonale = calcolaCostoPersonalePerCliente(dipendenti, oreRegistrate);
       const statoCosti = statoCostoPersonalePerCliente(dipendenti, oreRegistrate);
       const result = rows.map(row => {
-        const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), tipoDocumento: f.tipo_documento || 'TD01', registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione }));
+        const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), tipoDocumento: f.tipo_documento || 'TD01', registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione,
+          modificabile: !replacementBlocks.get(f.id), motivoModifica: replacementBlocks.get(f.id) || null }));
         const attachments = documents.filter(d => d.cliente_id === row.idCliente).map(d => ({ id: d.id, numero: d.numero_fattura,
           data: d.data_fattura, importo: Number(d.importo_documento), tipoDocumento: d.tipo_documento,
           registrataAt: d.registrata_at }));
@@ -301,7 +305,8 @@ async function accountingRows(tipo, mese, anno) {
           const linked = invoices.filter(f => String(f.cliente_id) === String(client.id)).map(f => ({ id: f.id,
             numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale),
             tipoDocumento: f.tipo_documento || 'TD01', registrataAt: f.registrata_at,
-            allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione }));
+            allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione,
+            modificabile: !replacementBlocks.get(f.id), motivoModifica: replacementBlocks.get(f.id) || null }));
           const attachments = documents.filter(d => String(d.cliente_id) === String(client.id)).map(d => ({ id: d.id,
             numero: d.numero_fattura, data: d.data_fattura, importo: Number(d.importo_documento),
             tipoDocumento: d.tipo_documento, registrataAt: d.registrata_at }));

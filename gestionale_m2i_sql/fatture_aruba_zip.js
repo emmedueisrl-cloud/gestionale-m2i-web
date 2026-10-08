@@ -6,6 +6,7 @@ const xml2js = require('xml2js');
 const { reconcileRegistration } = require('./fatture_reconciliation');
 const { transferSentReceipts } = require('./incassi_insoluti');
 const { calcolaImportoXmlFattura } = require('./importo_xml_fattura');
+const { replacementBlocked } = require('./fatture_import_choice');
 
 const MAX_ENTRIES = 300;
 const MAX_UNCOMPRESSED = 100 * 1024 * 1024;
@@ -84,11 +85,12 @@ async function parseInvoice(content) {
 }
 
 async function readPair(xmlZip, pdfZip) {
-  const first = await Promise.allSettled([entries(xmlZip, 'XML'), entries(pdfZip, 'PDF')]);
+  const singleArchive = !pdfZip;
+  const first = await Promise.allSettled([entries(xmlZip, 'XML'), entries(pdfZip || xmlZip, 'PDF')]);
   let xmls, pdfs, swapped = false;
   if (first.every(result => result.status === 'fulfilled')) {
     [xmls, pdfs] = first.map(result => result.value);
-  } else if (first[0].status === 'rejected' && first[1].status === 'rejected' &&
+  } else if (!singleArchive && first[0].status === 'rejected' && first[1].status === 'rejected' &&
     first[0].reason?.message === 'Nessun file XML nell’archivio.' &&
     first[1].reason?.message === 'Nessun file PDF nell’archivio.') {
     [xmls, pdfs] = await Promise.all([entries(pdfZip, 'XML'), entries(xmlZip, 'PDF')]);
@@ -103,6 +105,23 @@ async function readPair(xmlZip, pdfZip) {
   }
   const orphanPdfs = [...pdfs.values()].filter(pdf => !xmls.has(pdf.id));
   return { invoices, pdfs, orphanPdfs, pdfWithoutXml: orphanPdfs.length, swapped };
+}
+
+async function readSingle(xmlFile, pdfFile) {
+  const validFile = (file, extension) => file && Buffer.isBuffer(file.buffer) &&
+    file.buffer.length > 0 && file.buffer.length <= 10 * 1024 * 1024 &&
+    path.extname(file.originalname || '').toLowerCase() === extension;
+  if (!validFile(xmlFile, '.xml')) throw new Error('Seleziona un file XML valido (massimo 10 MB).');
+  if (!validFile(pdfFile, '.pdf') || !pdfFile.buffer.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+    throw new Error('Seleziona un file PDF valido (massimo 10 MB).');
+  }
+  const id = 'fattura-singola';
+  const xml = { id, name: path.basename(xmlFile.originalname), content: xmlFile.buffer };
+  const pdf = { id, name: path.basename(pdfFile.originalname), content: pdfFile.buffer };
+  let invoice;
+  try { invoice = { id, xml, pdf, ...await parseInvoice(xml.content) }; }
+  catch (error) { invoice = { id, xml, pdf, parseError: error.message }; }
+  return { invoices: [invoice], pdfs: new Map([[id, pdf]]), orphanPdfs: [], pdfWithoutXml: 0, swapped: false };
 }
 
 function classify(invoices, clients, monthlyRows, registrations, officialInvoices = [], selectedPeriod = null, separateDocuments = []) {
@@ -215,9 +234,13 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
 }
 
 function createArubaZipService(knex, workflow) {
-  async function analyze({ xmlZip, pdfZip, mese, anno }) {
+  async function analyze({ xmlZip, pdfZip, xmlFile, pdfFile, mese, anno, registrationId }) {
     const period = workflow.period('cliente', mese, anno);
-    const pair = await readPair(xmlZip, pdfZip);
+    const pair = xmlFile || pdfFile ? await readSingle(xmlFile, pdfFile) : await readPair(xmlZip, pdfZip);
+    const replaced = registrationId ? await knex('fatture_aruba_elaborati').where({ id: registrationId }).first() : null;
+    if (registrationId && (!replaced || Number(replaced.mese) !== period.mese || Number(replaced.anno) !== period.anno)) {
+      throw new Error('Fattura da sostituire non trovata nel mese scelto.');
+    }
     const [clients, rows, registrations, officialInvoices, separateDocuments] = await Promise.all([
       knex('clienti').select('id', 'ragione_sociale', 'partita_iva', 'codice_fiscale'),
       workflow.lockedRows('cliente', period.mese, period.anno),
@@ -226,7 +249,10 @@ function createArubaZipService(knex, workflow) {
       knex('documenti_aruba_mese').where({ mese: period.mese, anno: period.anno })
     ]);
     const selectedPeriod = `${period.anno}-${String(period.mese).padStart(2, '0')}`;
-    const classified = classify(pair.invoices, clients, rows, registrations, officialInvoices, selectedPeriod, separateDocuments);
+    const classified = classify(pair.invoices, clients, rows,
+      registrations.filter(record => record.id !== replaced?.id),
+      officialInvoices.filter(record => record.id !== replaced?.fattura_id),
+      selectedPeriod, separateDocuments);
     return { period, pair, classified, clients, rows };
   }
 
@@ -245,6 +271,8 @@ function createArubaZipService(knex, workflow) {
       partitaIvaXml: item.vat || '', codiceFiscaleXml: item.taxCode || '',
       abbinamentoFiscale: item.matchedBy, tipoDocumento: item.tipoDocumento || '',
       numero: item.numero || '', data: item.dataFattura || '', importo: item.importoTotale ?? null,
+      imponibile: item.imponibile ?? null, iva: item.iva ?? null,
+      importoPrevisto: item.importoPrevisto ?? null,
       importoLordo: item.importoLordo ?? null, importoRitenuta: item.importoRitenuta ?? 0,
       xml: item.xml?.name || null, pdf: item.pdf?.name || null, pdfId: item.pdf?.id || null,
       stato: item.stato, motivo: item.motivo, incongruenze: item.issues,
@@ -383,7 +411,133 @@ function createArubaZipService(knex, workflow) {
       errori: results.filter(result => result.errore).length };
   }
 
-  return { preview, importSelected };
+  async function previewSingle(args) {
+    const targetId = String(args.clienteId || '');
+    if (!targetId) throw new Error('Cliente non valido.');
+    if (args.registrationId) {
+      const registration = await knex('fatture_aruba_elaborati').where({ id: args.registrationId }).first();
+      if (!registration || String(registration.cliente_id) !== targetId ||
+        Number(registration.mese) !== Number(args.mese) || Number(registration.anno) !== Number(args.anno)) {
+        throw new Error('Fattura da sostituire non trovata per questo cliente e mese.');
+      }
+      const blocked = await replacementBlocked(knex, registration);
+      if (blocked) throw new Error(blocked);
+    }
+    const result = await preview(args);
+    const invoice = result.fatture[0];
+    if (!invoice) throw new Error('Fattura XML non trovata.');
+    const blockers = [];
+    if (invoice.tipoDocumento !== 'TD01') blockers.push('Per questo documento usa l’importazione ZIP Aruba.');
+    if (String(invoice.clienteId || '') !== targetId) blockers.push('Partita IVA o codice fiscale dell’XML non corrispondono al cliente della riga.');
+    if (invoice.stato === 'presente') blockers.push('Fattura già presente nel gestionale.');
+    if (args.registrationId && invoice.numero) {
+      const otherRegistration = await knex('fatture_aruba_elaborati').where({ cliente_id: targetId })
+        .whereRaw('TRIM(numero_fattura) = ?', [invoice.numero]).whereNot({ id: args.registrationId }).first();
+      if (otherRegistration) blockers.push('Numero fattura già registrato per questo cliente.');
+      const current = await knex('fatture_aruba_elaborati').where({ id: args.registrationId }).first();
+      const otherOfficial = await knex('fatture').where({ cliente_id: targetId })
+        .whereRaw('TRIM(numero_fattura) = ?', [invoice.numero])
+        .modify(query => { if (current?.fattura_id) query.whereNot({ id: current.fattura_id }); }).first();
+      if (otherOfficial) blockers.push('Numero fattura già presente nell’archivio contabile.');
+    }
+    const warningCodes = new Set(['periodo', 'importo']);
+    for (const issue of invoice.incongruenze) {
+      if (!warningCodes.has(issue.code)) blockers.push(issue.message);
+    }
+    return { ...invoice, blocchi: [...new Set(blockers)],
+      avvisi: invoice.incongruenze.filter(issue => warningCodes.has(issue.code)).map(issue => issue.message) };
+  }
+
+  async function importSingle(args) {
+    const invoice = await previewSingle(args);
+    if (invoice.blocchi.length) throw new Error(invoice.blocchi.join(' '));
+    if (invoice.avvisi.length && args.confermaAvvisi !== true) {
+      throw new Error('Conferma gli avvisi prima di registrare la fattura.');
+    }
+    return importSelected({ ...args, selected: [{ id: invoice.id,
+      clienteId: args.clienteId, pdfId: invoice.pdfId,
+      reviewed: invoice.avvisi.length > 0 }] });
+  }
+
+  async function replaceSingle(args) {
+    if (!args.registrationId) throw new Error('Scegli la fattura da sostituire.');
+    const previewed = await previewSingle(args);
+    if (previewed.blocchi.length) throw new Error(previewed.blocchi.join(' '));
+    if (previewed.avvisi.length && args.confermaAvvisi !== true) {
+      throw new Error('Conferma gli avvisi prima di sostituire la fattura.');
+    }
+    if (!process.env.DATA_DIR) throw new Error('DATA_DIR richiesto per conservare XML e PDF.');
+    const parsed = await readSingle(args.xmlFile, args.pdfFile);
+    const item = parsed.invoices[0];
+    if (item.parseError || item.tipoDocumento !== 'TD01') throw new Error(item.parseError || 'Tipo documento non valido.');
+    const pdfRelative = path.join('uploads', 'fatture_aruba', `${crypto.randomUUID()}.pdf`);
+    const xmlName = `${crypto.randomUUID()}.xml`;
+    const pdfPath = path.join(process.env.DATA_DIR, pdfRelative);
+    const xmlPath = path.join(process.env.DATA_DIR, 'uploads', 'unknown', xmlName);
+    let committed = false;
+    try {
+      fs.mkdirSync(path.dirname(pdfPath), { recursive: true });
+      fs.mkdirSync(path.dirname(xmlPath), { recursive: true });
+      fs.writeFileSync(pdfPath, item.pdf.content, { flag: 'wx' });
+      fs.writeFileSync(xmlPath, item.xml.content, { flag: 'wx' });
+      const result = await knex.transaction(async trx => {
+        const registration = await trx('fatture_aruba_elaborati').where({ id: args.registrationId }).first();
+        if (!registration || String(registration.cliente_id) !== String(args.clienteId) ||
+          Number(registration.mese) !== Number(args.mese) || Number(registration.anno) !== Number(args.anno)) {
+          throw new Error('Fattura da sostituire non trovata per questo cliente e mese.');
+        }
+        const blocked = await replacementBlocked(trx, registration);
+        if (blocked) throw new Error(blocked);
+        const client = await trx('clienti').where({ id: registration.cliente_id }).first();
+        const matchesVat = item.vat && fiscal(client?.partita_iva) === item.vat;
+        const matchesTaxCode = item.taxCode && fiscal(client?.codice_fiscale) === item.taxCode;
+        if (!matchesVat && !matchesTaxCode || item.vat && fiscal(client?.partita_iva) && !matchesVat ||
+          item.taxCode && fiscal(client?.codice_fiscale) && !matchesTaxCode) {
+          throw new Error('Partita IVA o codice fiscale dell’XML non corrispondono al cliente della riga.');
+        }
+        const otherRegistration = await trx('fatture_aruba_elaborati').where({ cliente_id: registration.cliente_id })
+          .whereRaw('TRIM(numero_fattura) = ?', [item.numero]).whereNot({ id: registration.id }).first();
+        if (otherRegistration) throw new Error('Numero fattura già registrato per questo cliente.');
+        const otherOfficial = await trx('fatture').where({ cliente_id: registration.cliente_id })
+          .whereRaw('TRIM(numero_fattura) = ?', [item.numero])
+          .modify(query => { if (registration.fattura_id) query.whereNot({ id: registration.fattura_id }); }).first();
+        if (otherOfficial) throw new Error('Numero fattura già presente nell’archivio contabile.');
+        const previousOfficial = registration.fattura_id
+          ? await trx('fatture').where({ id: registration.fattura_id }).first() : null;
+        const officialId = previousOfficial?.id || `FAT_${crypto.randomUUID()}`;
+        await trx('rettifiche_fatture_aruba').insert({ registrazione_id: registration.id,
+          precedente: JSON.stringify({ numero_fattura: registration.numero_fattura,
+            data_fattura: registration.data_fattura, importo_totale: registration.importo_totale,
+            allegato_path: registration.allegato_path, fattura_id: registration.fattura_id,
+            fattura_contabile: previousOfficial }),
+          successivo: JSON.stringify({ numero_fattura: item.numero, data_fattura: item.dataFattura,
+            importo_totale: item.importoTotale, allegato_path: pdfRelative, xml_name: xmlName }),
+          fonte: 'sostituzione_singola_xml_pdf', rettificata_at: new Date().toISOString(),
+          rettificata_da: args.userId || null });
+        const officialValues = { numero_fattura: item.numero, data_fattura: item.dataFattura,
+          importo_imponibile: item.imponibile, importo_iva: item.iva,
+          importo_totale: item.importoTotale, tipo_documento: 'TD01', allegato_fattura: xmlName };
+        if (previousOfficial) await trx('fatture').where({ id: officialId }).update(officialValues);
+        else await trx('fatture').insert({ id: officialId, cliente_id: registration.cliente_id,
+          ...officialValues, importo_pagato: 0, stato_pagamento: 'Da Pagare',
+          data_scadenza: registration.data_scadenza || null });
+        await trx('fatture_aruba_elaborati').where({ id: registration.id }).update({
+          numero_fattura: item.numero, data_fattura: item.dataFattura,
+          importo_totale: item.importoTotale, allegato_path: pdfRelative,
+          tipo_documento: 'TD01', fattura_id: officialId });
+        return { importate: 1, registrazioneId: registration.id, numero: item.numero };
+      });
+      committed = true;
+      return result;
+    } finally {
+      if (!committed) {
+        fs.rmSync(pdfPath, { force: true });
+        fs.rmSync(xmlPath, { force: true });
+      }
+    }
+  }
+
+  return { preview, importSelected, previewSingle, importSingle, replaceSingle };
 }
 
 module.exports = { createArubaZipService, readPair, classify };

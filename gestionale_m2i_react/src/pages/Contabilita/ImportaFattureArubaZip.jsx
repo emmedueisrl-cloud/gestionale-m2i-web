@@ -11,6 +11,8 @@ const puoIgnorare = row => row.stato !== 'presente' && row.clienteId && row.pdfI
 
 export default function ImportaFattureArubaZip({ mese, anno, onChanged }) {
   const [open, setOpen] = useState(false);
+  const [modalita, setModalita] = useState('unico');
+  const [zipUnico, setZipUnico] = useState(null);
   const [xmlZip, setXmlZip] = useState(null);
   const [pdfZip, setPdfZip] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -21,17 +23,21 @@ export default function ImportaFattureArubaZip({ mese, anno, onChanged }) {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
-  useEffect(() => { setPreview(null); setSelected(new Set()); setOverrides({}); setActiveId(null); setResult(null); }, [mese, anno, xmlZip, pdfZip]);
+  useEffect(() => { setPreview(null); setSelected(new Set()); setOverrides({}); setActiveId(null); setResult(null); setError(''); }, [mese, anno, modalita, zipUnico, xmlZip, pdfZip]);
 
   const payload = () => {
     const form = new FormData();
-    form.append('xml', xmlZip); form.append('pdf', pdfZip);
+    if (modalita === 'unico') form.append('zip', zipUnico);
+    else { form.append('xml', xmlZip); form.append('pdf', pdfZip); }
     form.append('mese', String(mese)); form.append('anno', String(anno));
     return form;
   };
 
   const analyze = async () => {
-    if (!xmlZip || !pdfZip) { setError('Seleziona entrambi gli ZIP di Aruba.'); return; }
+    if (modalita === 'unico' ? !zipUnico : !xmlZip || !pdfZip) {
+      setError(modalita === 'unico' ? 'Seleziona lo ZIP che contiene XML e PDF.' : 'Seleziona entrambi gli ZIP di Aruba.');
+      return;
+    }
     setBusy(true); setError(''); setResult(null);
     try {
       const data = await workflowRequest('contabilita/fatture/importazione-zip/anteprima', { method: 'POST', body: payload() });
@@ -99,12 +105,17 @@ export default function ImportaFattureArubaZip({ mese, anno, onChanged }) {
     <button type="button" onClick={() => setOpen(true)} className="rounded-lg bg-indigo-700 px-4 py-3 font-semibold text-white hover:bg-indigo-800">Importa ZIP Aruba (XML + PDF)</button>
     {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
       <div role="dialog" aria-modal="true" aria-labelledby="aruba-zip-title" className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-white p-5 text-slate-900 shadow-2xl">
-        <div className="flex items-start justify-between gap-4"><div><h2 id="aruba-zip-title" className="text-xl font-bold">Importa fatture Aruba · {mese}/{anno}</h2><p className="mt-1 text-sm text-slate-600">Carica gli ZIP XML e PDF scaricati dalla stessa selezione di fatture. Il mese indicato è quello di riferimento dell’elaborato, anche se la data fattura è successiva.</p></div><button type="button" disabled={busy} onClick={() => setOpen(false)} className="rounded bg-slate-100 px-3 py-2 font-semibold hover:bg-slate-200">Chiudi</button></div>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">ZIP XML<input type="file" accept=".zip,application/zip" onChange={event => setXmlZip(event.target.files?.[0] || null)} className="mt-2 block w-full rounded border border-slate-300 p-2" /></label>
-          <label className="block text-sm font-semibold">ZIP PDF<input type="file" accept=".zip,application/zip" onChange={event => setPdfZip(event.target.files?.[0] || null)} className="mt-2 block w-full rounded border border-slate-300 p-2" /></label>
+        <div className="flex items-start justify-between gap-4"><div><h2 id="aruba-zip-title" className="text-xl font-bold">Importa fatture Aruba · {mese}/{anno}</h2><p className="mt-1 text-sm text-slate-600">Carica uno ZIP con XML e PDF delle stesse fatture. Il mese indicato è quello di riferimento dell’elaborato, anche se la data fattura è successiva.</p></div><button type="button" disabled={busy} onClick={() => setOpen(false)} className="rounded bg-slate-100 px-3 py-2 font-semibold hover:bg-slate-200">Chiudi</button></div>
+        <div className="mt-5 flex flex-wrap gap-2" role="group" aria-label="Formato degli archivi Aruba">
+          <button type="button" disabled={busy} aria-pressed={modalita === 'unico'} onClick={() => setModalita('unico')} className={`rounded px-3 py-2 font-semibold ${modalita === 'unico' ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-800'}`}>Unico ZIP</button>
+          <button type="button" disabled={busy} aria-pressed={modalita === 'separati'} onClick={() => setModalita('separati')} className={`rounded px-3 py-2 font-semibold ${modalita === 'separati' ? 'bg-indigo-700 text-white' : 'bg-slate-100 text-slate-800'}`}>Due ZIP separati</button>
         </div>
-        <button type="button" disabled={busy || !xmlZip || !pdfZip} onClick={analyze} className="mt-4 rounded bg-slate-800 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Analisi...' : 'Controlla abbinamenti'}</button>
+        {modalita === 'unico' ? <label className="mt-4 block text-sm font-semibold">ZIP con XML e PDF<input type="file" accept=".zip,application/zip" onChange={event => setZipUnico(event.target.files?.[0] || null)} className="mt-2 block w-full rounded border border-slate-300 p-2" /></label> :
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="block text-sm font-semibold">ZIP XML<input type="file" accept=".zip,application/zip" onChange={event => setXmlZip(event.target.files?.[0] || null)} className="mt-2 block w-full rounded border border-slate-300 p-2" /></label>
+            <label className="block text-sm font-semibold">ZIP PDF<input type="file" accept=".zip,application/zip" onChange={event => setPdfZip(event.target.files?.[0] || null)} className="mt-2 block w-full rounded border border-slate-300 p-2" /></label>
+          </div>}
+        <button type="button" disabled={busy || (modalita === 'unico' ? !zipUnico : !xmlZip || !pdfZip)} onClick={analyze} className="mt-4 rounded bg-slate-800 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Analisi...' : 'Controlla abbinamenti'}</button>
         {error && <p role="alert" className="mt-4 rounded bg-red-50 p-3 text-red-800">{error}</p>}
         {result && <div role="status" className="mt-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-900"><p>Importate o aggiornate: {result.importate}. Da verificare: {result.daVerificare}. Errori: {result.errori}.</p>{result.risultati.filter(row => row.errore || row.esito === 'da_verificare').map(row => <p key={row.id} className="mt-1 text-sm">{row.numero || row.id}: {row.errore || 'riconciliazione contabile da verificare.'}</p>)}</div>}
         {preview && <>{preview.archiviInvertiti && <p role="status" className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Gli ZIP sono stati selezionati nei campi invertiti. Ho riconosciuto XML e PDF dal contenuto e corretto l’abbinamento automaticamente.</p>}<p className="mt-5 text-sm font-semibold">{preview.fatture.length} XML analizzati · {preview.pdfSenzaXml} PDF senza XML · {preview.fatture.filter(row => row.incongruenze.length).length} documenti con incongruenze. Le righe senza incongruenze sono già selezionate. Usa “Ignora” per confermare un avviso e selezionare la fattura, oppure “Risolvi” quando serve una scelta.</p>

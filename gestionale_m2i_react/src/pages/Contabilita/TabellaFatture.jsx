@@ -19,7 +19,7 @@ const regimeBreve = value => {
   return regime;
 };
 
-export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onInviata, busy, euro }) {
+export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, busy, euro }) {
   const [detailsRow, setDetailsRow] = useState(null);
   useEffect(() => {
     if (!detailsRow) return;
@@ -109,7 +109,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
         </div>
         <div className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
           <h4 className="font-bold">Fatture e allegati</h4>
-          {(detailsRow.fatture || []).map(f => <p key={f.id}>{f.tipoDocumento === 'TD04' ? 'Nota di credito' : 'Fattura'} {f.numero} · {f.data} · {euro(f.importo)} · registrata {new Date(f.registrataAt).toLocaleString('it-IT')} · {f.statoRiconciliazione === 'riconciliata' ? 'Riconciliata' : f.statoRiconciliazione === 'da_verificare' ? 'Da verificare' : 'In attesa XML/CSV'}{f.allegato && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/allegato`}>Apri PDF</a></>}{f.xml && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/xml`}>Scarica XML</a></>}</p>)}
+          {(detailsRow.fatture || []).map(f => <p key={f.id}>{f.tipoDocumento === 'TD04' ? 'Nota di credito' : 'Fattura'} {f.numero} · {f.data} · {euro(f.importo)} · registrata {new Date(f.registrataAt).toLocaleString('it-IT')} · {f.statoRiconciliazione === 'riconciliata' ? 'Riconciliata' : f.statoRiconciliazione === 'da_verificare' ? 'Da verificare' : 'In attesa XML/CSV'}{f.allegato && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/allegato`}>Apri PDF</a></>}{f.xml && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/xml`}>Scarica XML</a></>}{f.modificabile ? <> · <button type="button" disabled={busy} onClick={() => { setDetailsRow(null); onSostituisci(detailsRow, f); }} className="font-semibold text-indigo-700 underline disabled:opacity-50">Modifica XML e PDF</button></> : f.motivoModifica && <> · <span className="text-slate-600">{f.motivoModifica}</span></>}</p>)}
           {(detailsRow.documentiAruba || []).map(d => <p key={`doc-${d.id}`}>Nota di credito {d.numero} · {d.data} · {euro(d.importo)} · solo allegato, senza effetto sui totali · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/pdf`}>Apri PDF</a> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/xml`}>Scarica XML</a></p>)}
         </div>
       </div>

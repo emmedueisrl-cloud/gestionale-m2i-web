@@ -10,10 +10,7 @@ import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
-const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-
 export default function ContabilitaElaborati({ tipo }) {
-  const today = new Date();
   const [periodoIniziale] = useState(mesePredefinitoElaborati);
   const [mese, setMese] = useState(periodoIniziale.mese);
   const [anno, setAnno] = useState(periodoIniziale.anno);
@@ -23,16 +20,17 @@ export default function ContabilitaElaborati({ tipo }) {
   const [sezioneAttiva, setSezioneAttiva] = useState(0);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
+  const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [selectedConsultant, setSelectedConsultant] = useState(null);
   const [selectedCc, setSelectedCc] = useState(null);
   const [ccValue, setCcValue] = useState('');
   const [ccError, setCcError] = useState('');
   const [consultantNote, setConsultantNote] = useState('');
   const [consultantError, setConsultantError] = useState('');
-  const [numero, setNumero] = useState('');
-  const [dataFattura, setDataFattura] = useState(localDate(today));
-  const [importo, setImporto] = useState('');
-  const [allegato, setAllegato] = useState(null);
+  const [xmlFattura, setXmlFattura] = useState(null);
+  const [pdfFattura, setPdfFattura] = useState(null);
+  const [anteprimaFattura, setAnteprimaFattura] = useState(null);
+  const [erroreFattura, setErroreFattura] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -57,13 +55,13 @@ export default function ContabilitaElaborati({ tipo }) {
   }, [tipo, mese, anno]);
   useEffect(() => { load(); }, [load]);
 
-  const openInvoice = row => {
-    if (row.storicoPreesistente && !window.confirm('Questo elaborato era già chiuso prima del nuovo flusso. Verifica su Aruba e nella sezione Fatture che la fattura non sia già stata registrata. Vuoi proseguire?')) return;
+  const openInvoice = (row, registration = null) => {
     setSelected(row);
-    setNumero('');
-    setDataFattura(localDate(new Date()));
-    setImporto(Math.max(0, Number(row.importoTotale || 0) - Number(row.importoRealmenteFatturato || 0)).toFixed(2));
-    setAllegato(null);
+    setSelectedRegistration(registration);
+    setXmlFattura(null);
+    setPdfFattura(null);
+    setAnteprimaFattura(null);
+    setErroreFattura('');
   };
 
   const markInvoiceSent = async row => {
@@ -76,27 +74,41 @@ export default function ContabilitaElaborati({ tipo }) {
     finally { setBusy(false); }
   };
 
-  const registerInvoice = async event => {
+  const invoicePayload = () => {
+    const form = new FormData();
+    form.append('clienteId', selected.idCliente);
+    form.append('mese', String(mese)); form.append('anno', String(anno));
+    if (selectedRegistration) form.append('registrazioneId', String(selectedRegistration.id));
+    form.append('xml', xmlFattura); form.append('pdf', pdfFattura);
+    return form;
+  };
+
+  const analyzeInvoice = async event => {
     event.preventDefault();
-    const amount = Number(importo);
-    if (!Number.isFinite(amount) || amount < 0) { setError('Importo non valido.'); return; }
-    const proposed = Number(selected.importoTotale || 0) - Number(selected.importoRealmenteFatturato || 0);
-    const difference = amount - proposed;
-    if (!window.confirm(`Confermi la fattura Aruba n. ${numero} del ${dataFattura} per ${selected.ragioneSociale}?\nImporto previsto residuo: ${euro(proposed)}\nImporto registrato: ${euro(amount)}\nDifferenza: ${euro(difference)}\nRegistrazione: ${new Date().toLocaleString('it-IT')}`)) return;
-    setBusy(true); setError(''); setMessage(null);
+    if (!xmlFattura || !pdfFattura) { setErroreFattura('Seleziona XML e PDF della stessa fattura.'); return; }
+    setBusy(true); setErroreFattura(''); setAnteprimaFattura(null);
     try {
-      const form = new FormData();
-      form.append('clienteId', selected.idCliente);
-      form.append('mese', String(mese)); form.append('anno', String(anno));
-      form.append('numero', numero); form.append('dataFattura', dataFattura); form.append('importo', String(amount));
-      if (selected.storicoPreesistente) form.append('confermaStorico', 'true');
-      if (allegato) form.append('allegato', allegato);
-      const result = await workflowRequest('contabilita/fatture', { method: 'POST', body: form });
-      setSelected(null); showMessage(result.stato === 'da_verificare'
-        ? 'Fattura registrata nell’elaborato, ma la fattura contabile esistente non coincide: controlla data e importo nel catalogo.'
-        : result.stato === 'riconciliata' ? 'Fattura registrata e riconciliata con il documento contabile.'
-          : 'Fattura registrata nell’elaborato; in attesa dell’importazione XML/CSV per i report contabili.'); await load();
-    } catch (err) { setError(err.message); }
+      setAnteprimaFattura(await workflowRequest('contabilita/fatture/importazione-singola/anteprima', {
+        method: 'POST', body: invoicePayload()
+      }));
+    } catch (err) { setErroreFattura(err.message); }
+    finally { setBusy(false); }
+  };
+
+  const registerInvoice = async () => {
+    if (!anteprimaFattura || anteprimaFattura.blocchi.length) return;
+    setBusy(true); setErroreFattura(''); setMessage(null);
+    try {
+      const form = invoicePayload();
+      form.append('confermaAvvisi', 'true');
+      const result = await workflowRequest('contabilita/fatture/importazione-singola/conferma', {
+        method: 'POST', body: form
+      });
+      if (result.importate !== 1) throw new Error(result.risultati?.[0]?.errore || 'Fattura non registrata.');
+      setSelected(null);
+      await load();
+      showMessage(`Fattura ${anteprimaFattura.numero} ${selectedRegistration ? 'sostituita' : 'registrata'} con XML e PDF.`);
+    } catch (err) { setErroreFattura(err.message); }
     finally { setBusy(false); }
   };
 
@@ -230,7 +242,7 @@ export default function ContabilitaElaborati({ tipo }) {
     {error && <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-red-800">{error}</div>}
     {message?.section === sezioneAttiva && message.period === `${anno}-${mese}` && message.tipo === tipo && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-800">{message.text}</div>}
     <div className="flex flex-wrap items-center gap-3"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" />{tipo === 'cliente' && <ImportaFattureArubaZip mese={mese} anno={anno} onChanged={async () => { setSezioneAttiva(1); await load(); }} />}</div>
-    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onInviata={markInvoiceSent} busy={busy} euro={euro} /> :
+    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} busy={busy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
     {selectedConsultant && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -258,15 +270,29 @@ export default function ContabilitaElaborati({ tipo }) {
       </form>
     </div>}
     {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <form onSubmit={registerInvoice} className="w-full max-w-lg space-y-3 rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl">
-        <h2 className="text-lg font-bold">Fattura Aruba · {selected.ragioneSociale}</h2>
-        <p className="text-sm text-slate-600">Totale tassato dell’elaborato: {euro(selected.importoTotale)}. Puoi correggere l’importo realmente fatturato.</p>
-        <label className="block text-sm">Numero fattura Aruba<input required className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900" value={numero} onChange={e => setNumero(e.target.value)} /></label>
-        <label className="block text-sm">Data fattura Aruba<input required type="date" className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900" value={dataFattura} onChange={e => setDataFattura(e.target.value)} /></label>
-        <label className="block text-sm">Importo realmente fatturato (€)<input required type="number" step="0.01" min="0" className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900" value={importo} onChange={e => setImporto(e.target.value)} /></label>
-        <label className="block text-sm">Allegato facoltativo (PDF/XML, massimo 10 MB)<input type="file" accept=".pdf,.xml,application/pdf,application/xml,text/xml" className="mt-1 w-full text-sm" onChange={e => setAllegato(e.target.files?.[0] || null)} /></label>
-        <div className="flex gap-2"><button disabled={busy} type="submit" className="rounded bg-indigo-700 px-4 py-2 text-white hover:bg-indigo-800">Conferma e registra</button>
-          <button type="button" className="rounded bg-slate-100 px-4 py-2 text-slate-800 hover:bg-slate-200" onClick={() => setSelected(null)}>Annulla</button></div>
+      <form onSubmit={analyzeInvoice} className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl">
+        <h2 className="text-lg font-bold">{selectedRegistration ? 'Sostituisci fattura Aruba' : 'Fattura Aruba'} · {selected.ragioneSociale}</h2>
+        {selectedRegistration && <p className="text-sm font-semibold text-amber-900">Fattura attuale: {selectedRegistration.numero} · {selectedRegistration.data} · {euro(selectedRegistration.importo)}</p>}
+        <p className="text-sm text-slate-600">Seleziona XML e PDF della stessa fattura. Numero, data e importo saranno letti dai file. {selectedRegistration && 'I documenti precedenti resteranno nello storico delle rettifiche.'}</p>
+        <p className="text-sm font-semibold">Importo previsto per il mese: {euro(Number(selected.importoTotale || 0) - Number(selected.importoRealmenteFatturato || 0) + Number(selectedRegistration?.importo || 0))}</p>
+        <label className="block text-sm font-medium">File XML<input required type="file" accept=".xml,application/xml,text/xml" className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm" onChange={e => { setXmlFattura(e.target.files?.[0] || null); setAnteprimaFattura(null); }} /></label>
+        <label className="block text-sm font-medium">File PDF<input required type="file" accept=".pdf,application/pdf" className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm" onChange={e => { setPdfFattura(e.target.files?.[0] || null); setAnteprimaFattura(null); }} /></label>
+        <p className="text-xs text-slate-500">Massimo 10 MB per file.</p>
+        {erroreFattura && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{erroreFattura}</p>}
+        {anteprimaFattura && <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+          <p className="font-bold">Dati letti dall’XML</p>
+          <p>Fattura {anteprimaFattura.numero || '—'} · {anteprimaFattura.data || '—'}</p>
+          <p>Cliente XML: {anteprimaFattura.clienteXml || '—'}</p>
+          {anteprimaFattura.abbinamentoFiscale && <p className="font-semibold text-emerald-800">Cliente verificato tramite {anteprimaFattura.abbinamentoFiscale}.</p>}
+          <p>Imponibile {euro(anteprimaFattura.imponibile)} · IVA {euro(anteprimaFattura.iva)}</p>
+          {anteprimaFattura.importoRitenuta > 0 && <p>Ritenuta {euro(anteprimaFattura.importoRitenuta)} · totale lordo {euro(anteprimaFattura.importoLordo)}</p>}
+          <p className="font-bold">Importo da registrare: {euro(anteprimaFattura.importo)}</p>
+          {anteprimaFattura.blocchi.map((blocco, index) => <p key={index} className="font-semibold text-red-800">{blocco}</p>)}
+          {anteprimaFattura.avvisi.map((avviso, index) => <p key={index} className="font-semibold text-amber-800">{avviso}</p>)}
+        </div>}
+        <div className="flex flex-wrap gap-2"><button disabled={busy || !xmlFattura || !pdfFattura} type="submit" className="rounded bg-indigo-700 px-4 py-2 text-white hover:bg-indigo-800 disabled:opacity-50">{busy ? 'Controllo...' : 'Leggi e controlla'}</button>
+          {anteprimaFattura && !anteprimaFattura.blocchi.length && <button disabled={busy} type="button" onClick={registerInvoice} className="rounded bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{busy ? 'Salvataggio...' : selectedRegistration ? 'Sostituisci XML e PDF' : 'Registra XML e PDF'}</button>}
+          <button type="button" disabled={busy} className="rounded bg-slate-100 px-4 py-2 text-slate-800 hover:bg-slate-200" onClick={() => setSelected(null)}>Annulla</button></div>
       </form>
     </div>}
   </div>;

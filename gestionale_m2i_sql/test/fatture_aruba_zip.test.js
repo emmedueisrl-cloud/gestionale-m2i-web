@@ -23,6 +23,14 @@ test('ZIP Aruba: con ritenuta confronta il pagamento netto con l’elaborato', a
   const pdfZip = new JSZip(); pdfZip.file('PDF/ritenuta.xml - FPR 605_26.pdf', Buffer.from('%PDF-1.4\nexample'));
   const pair = await readPair(await xmlZip.generateAsync({ type: 'nodebuffer' }),
     await pdfZip.generateAsync({ type: 'nodebuffer' }));
+  const combinedZip = new JSZip();
+  combinedZip.file('XML/ritenuta.xml', xml);
+  combinedZip.file('PDF/ritenuta.xml - FPR 605_26.pdf', Buffer.from('%PDF-1.4\nexample'));
+  const combined = await readPair(await combinedZip.generateAsync({ type: 'nodebuffer' }));
+  assert.equal(combined.invoices.length, 1);
+  assert.equal(combined.invoices[0].pdf?.name, 'ritenuta.xml - FPR 605_26.pdf');
+  assert.equal(combined.invoices[0].importoTotale, 181.72);
+  assert.equal(combined.pdfWithoutXml, 0);
   const invoice = pair.invoices[0];
   assert.equal(invoice.importoLordo, 187.88);
   assert.equal(invoice.importoRitenuta, 6.16);
@@ -114,6 +122,10 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
     table.increments('id'); table.text('categoria'); table.text('icona'); table.text('colore');
     table.text('descrizione'); table.text('eseguito_da');
   });
+  await db.schema.createTable('rettifiche_fatture_aruba', table => {
+    table.increments('id'); table.integer('registrazione_id'); table.text('precedente');
+    table.text('successivo'); table.text('fonte'); table.text('rettificata_at'); table.text('rettificata_da');
+  });
   await db('clienti').insert({ id: 'C1', ragione_sociale: 'Cliente Test', partita_iva: '12345678901' });
   await db('fatture_inviate_elaborati').insert({ cliente_id: 'C1', mese: 9, anno: 2026, inviata_at: '2026-10-08T00:00:00Z' });
   await db('righe_bloccate_elaborati').insert({ tipo: 'cliente', soggetto_id: 'C1',
@@ -126,16 +138,24 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   const pdfZip = new JSZip(); pdfZip.file('PDF/aruba_A.xml.p7m - FPR 1_26.pdf', Buffer.from('%PDF-1.4\nexample'));
   const args = { xmlZip: await xmlZip.generateAsync({ type: 'nodebuffer' }),
     pdfZip: await pdfZip.generateAsync({ type: 'nodebuffer' }), mese: 9, anno: 2026 };
+  let expectedTotal = 122;
   const workflow = { period: (_, mese, anno) => ({ mese: Number(mese), anno: Number(anno) }),
-    lockedRows: async () => [{ idCliente: 'C1' }] };
+    lockedRows: async () => [{ idCliente: 'C1', importoTotale: expectedTotal }] };
   const service = createArubaZipService(db, workflow);
   const preview = await service.preview(args);
   assert.equal(preview.fatture[0].stato, 'pronta');
   assert.equal(preview.fatture[0].selezionata, true);
+  const singleZip = new JSZip();
+  singleZip.file('XML/aruba_A.xml', invoiceXml('FPR 1/26', '122.00'));
+  singleZip.file('PDF/aruba_A.xml.p7m - FPR 1_26.pdf', Buffer.from('%PDF-1.4\nexample'));
+  const singleArgs = { xmlZip: await singleZip.generateAsync({ type: 'nodebuffer' }), mese: 9, anno: 2026 };
+  const singlePreview = await service.preview(singleArgs);
+  assert.equal(singlePreview.fatture[0].stato, 'pronta');
+  assert.equal(singlePreview.fatture[0].selezionata, true);
   const inverted = await service.preview({ ...args, xmlZip: args.pdfZip, pdfZip: args.xmlZip });
   assert.equal(inverted.archiviInvertiti, true);
   assert.equal(inverted.fatture[0].stato, 'pronta');
-  const imported = await service.importSelected({ ...args, selected: ['aruba_A'], userId: 'TEST' });
+  const imported = await service.importSelected({ ...singleArgs, selected: ['aruba_A'], userId: 'TEST' });
   assert.equal(imported.importate, 1);
   assert.equal(imported.risultati[0].esito, 'riconciliata');
   const registration = await db('fatture_aruba_elaborati').first();
@@ -192,4 +212,50 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
     selected: [{ id: 'extra_E', reviewed: true, extra: true }] });
   assert.equal(extraResult.importate, 1);
   assert.equal((await db('fatture_aruba_elaborati').where({ cliente_id: 'C2' }).first()).numero_fattura, 'FPR 3/26');
+
+  expectedTotal = 200;
+  const single = { mese: 9, anno: 2026, clienteId: 'C1',
+    xmlFile: { originalname: 'fattura.xml', buffer: Buffer.from(invoiceXml('FPR 9/26', '122.00')) },
+    pdfFile: { originalname: 'fattura.pdf', buffer: Buffer.from('%PDF-1.4\nexample') } };
+  const singleInvoice = await service.previewSingle(single);
+  assert.equal(singleInvoice.numero, 'FPR 9/26');
+  assert.equal(singleInvoice.importo, 122);
+  assert.deepEqual(singleInvoice.blocchi, []);
+  assert.ok(singleInvoice.avvisi.some(message => message.includes('Importo previsto residuo')));
+  await assert.rejects(service.importSingle(single), /Conferma gli avvisi/);
+  assert.equal((await service.importSingle({ ...single, confermaAvvisi: true })).importate, 1);
+  assert.equal((await db('fatture_aruba_elaborati').where({ cliente_id: 'C1', numero_fattura: 'FPR 9/26' }).first()).importo_totale, 122);
+  const wrongClient = await service.previewSingle({ ...single, clienteId: 'C2' });
+  assert.ok(wrongClient.blocchi.some(message => message.includes('Partita IVA')));
+  await assert.rejects(service.importSingle({ ...single, clienteId: 'C2' }), /Partita IVA/);
+
+  const oldRegistration = await db('fatture_aruba_elaborati').where({ cliente_id: 'C1', numero_fattura: 'FPR 9/26' }).first();
+  const oldOfficial = await db('fatture').where({ id: oldRegistration.fattura_id }).first();
+  const replacementXml = invoiceXml('FPR 10/26', '146.40')
+    .replace('<ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta>',
+      '<ImponibileImporto>120.00</ImponibileImporto><Imposta>26.40</Imposta>');
+  const replacement = { ...single, registrationId: oldRegistration.id,
+    xmlFile: { originalname: 'nuova.xml', buffer: Buffer.from(replacementXml) },
+    pdfFile: { originalname: 'nuova.pdf', buffer: Buffer.from('%PDF-1.4\nreplacement') } };
+  const replacementPreview = await service.previewSingle(replacement);
+  assert.deepEqual(replacementPreview.blocchi, []);
+  assert.equal(replacementPreview.numero, 'FPR 10/26');
+  assert.equal(replacementPreview.importo, 146.4);
+  const duplicatePreview = await service.previewSingle({ ...replacement,
+    xmlFile: { originalname: 'duplicata.xml', buffer: Buffer.from(invoiceXml('FPR 1/26', '122.00')) } });
+  assert.ok(duplicatePreview.blocchi.some(message => message.includes('Numero fattura già')));
+  await assert.rejects(service.replaceSingle(replacement), /Conferma gli avvisi/);
+  assert.equal((await service.replaceSingle({ ...replacement, confermaAvvisi: true })).importate, 1);
+  const changed = await db('fatture_aruba_elaborati').where({ id: oldRegistration.id }).first();
+  const changedOfficial = await db('fatture').where({ id: oldOfficial.id }).first();
+  assert.equal(changed.numero_fattura, 'FPR 10/26');
+  assert.equal(changed.importo_totale, 146.4);
+  assert.equal(changedOfficial.numero_fattura, 'FPR 10/26');
+  assert.equal(changedOfficial.importo_totale, 146.4);
+  assert.ok(fs.existsSync(path.join(dataDir, oldRegistration.allegato_path)));
+  assert.ok(fs.existsSync(path.join(dataDir, 'uploads', 'unknown', oldOfficial.allegato_fattura)));
+  assert.equal((await db('rettifiche_fatture_aruba').where({ registrazione_id: changed.id })).length, 1);
+  await receipts.register({ fatturaId: changedOfficial.id, data: todayInItaly(), importo: '10.00' });
+  await assert.rejects(service.previewSingle(replacement), /pagata|incassi/i);
+  await assert.rejects(service.replaceSingle({ ...replacement, confermaAvvisi: true }), /pagata|incassi/i);
 });
