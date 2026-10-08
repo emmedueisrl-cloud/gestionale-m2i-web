@@ -362,16 +362,16 @@ app.post('/api/contabilita/fatture/importazione-zip/conferma',
     mese: req.body?.mese, anno: req.body?.anno,
     selected: JSON.parse(req.body?.selected || '[]'), userId: req.authUser.id })));
 const arubaSingleUpload = multer({ storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 2, fields: 5, parts: 7 } });
+  limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 5, parts: 6 } });
 app.post('/api/contabilita/fatture/importazione-singola/anteprima',
-  arubaSingleUpload.fields([{ name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
-  handleWorkflow(req => arubaZip.previewSingle({ xmlFile: req.files?.xml?.[0], pdfFile: req.files?.pdf?.[0],
+  arubaSingleUpload.single('zip'),
+  handleWorkflow(req => arubaZip.previewSingle({ singleZip: req.file?.buffer,
     clienteId: req.body?.clienteId, mese: req.body?.mese, anno: req.body?.anno,
     registrationId: req.body?.registrazioneId || null })));
 app.post('/api/contabilita/fatture/importazione-singola/conferma',
-  arubaSingleUpload.fields([{ name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
+  arubaSingleUpload.single('zip'),
   handleWorkflow(req => (req.body?.registrazioneId ? arubaZip.replaceSingle : arubaZip.importSingle)({
-    xmlFile: req.files?.xml?.[0], pdfFile: req.files?.pdf?.[0],
+    singleZip: req.file?.buffer,
     clienteId: req.body?.clienteId, mese: req.body?.mese, anno: req.body?.anno,
     registrationId: req.body?.registrazioneId || null,
     confermaAvvisi: req.body?.confermaAvvisi === 'true', userId: req.authUser.id })));

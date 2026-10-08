@@ -217,15 +217,29 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   const single = { mese: 9, anno: 2026, clienteId: 'C1',
     xmlFile: { originalname: 'fattura.xml', buffer: Buffer.from(invoiceXml('FPR 9/26', '122.00')) },
     pdfFile: { originalname: 'fattura.pdf', buffer: Buffer.from('%PDF-1.4\nexample') } };
-  const singleInvoice = await service.previewSingle(single);
+  const singleRowZip = new JSZip();
+  singleRowZip.file('XML/aruba_single.xml', single.xmlFile.buffer);
+  singleRowZip.file('PDF/aruba_single.xml.p7m - FPR 9_26.pdf', single.pdfFile.buffer);
+  const singleFromZip = { mese: 9, anno: 2026, clienteId: 'C1',
+    singleZip: await singleRowZip.generateAsync({ type: 'nodebuffer' }) };
+  const singleInvoice = await service.previewSingle(singleFromZip);
   assert.equal(singleInvoice.numero, 'FPR 9/26');
   assert.equal(singleInvoice.importo, 122);
   assert.deepEqual(singleInvoice.blocchi, []);
   assert.ok(singleInvoice.avvisi.some(message => message.includes('Importo previsto residuo')));
-  await assert.rejects(service.importSingle(single), /Conferma gli avvisi/);
-  assert.equal((await service.importSingle({ ...single, confermaAvvisi: true })).importate, 1);
+  const noPdfZip = new JSZip(); noPdfZip.file('XML/aruba_single.xml', single.xmlFile.buffer);
+  await assert.rejects(service.previewSingle({ ...singleFromZip,
+    singleZip: await noPdfZip.generateAsync({ type: 'nodebuffer' }) }), /Nessun file PDF/);
+  const multiRowZip = new JSZip();
+  multiRowZip.file('XML/aruba_single.xml', single.xmlFile.buffer);
+  multiRowZip.file('XML/seconda.xml', invoiceXml('FPR 11/26', '122.00'));
+  multiRowZip.file('PDF/aruba_single.xml.p7m - FPR 9_26.pdf', single.pdfFile.buffer);
+  await assert.rejects(service.previewSingle({ ...singleFromZip,
+    singleZip: await multiRowZip.generateAsync({ type: 'nodebuffer' }) }), /una sola fattura XML/);
+  await assert.rejects(service.importSingle(singleFromZip), /Conferma gli avvisi/);
+  assert.equal((await service.importSingle({ ...singleFromZip, confermaAvvisi: true })).importate, 1);
   assert.equal((await db('fatture_aruba_elaborati').where({ cliente_id: 'C1', numero_fattura: 'FPR 9/26' }).first()).importo_totale, 122);
-  const wrongClient = await service.previewSingle({ ...single, clienteId: 'C2' });
+  const wrongClient = await service.previewSingle({ ...singleFromZip, clienteId: 'C2' });
   assert.ok(wrongClient.blocchi.some(message => message.includes('Partita IVA')));
   await assert.rejects(service.importSingle({ ...single, clienteId: 'C2' }), /Partita IVA/);
 
@@ -236,16 +250,24 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
       '<ImponibileImporto>120.00</ImponibileImporto><Imposta>26.40</Imposta>');
   const replacement = { ...single, registrationId: oldRegistration.id,
     xmlFile: { originalname: 'nuova.xml', buffer: Buffer.from(replacementXml) },
-    pdfFile: { originalname: 'nuova.pdf', buffer: Buffer.from('%PDF-1.4\nreplacement') } };
-  const replacementPreview = await service.previewSingle(replacement);
+    pdfFile: { originalname: 'IT01879020517A2026_gJLSY.xml.p7m - FPR 10_26 (2).pdf', buffer: Buffer.from('%PDF-1.4\nreplacement') } };
+  const replacementZip = new JSZip();
+  replacementZip.file('XML/IT01879020517A2026_gJLSY.xml', replacement.xmlFile.buffer);
+  replacementZip.file('PDF/IT01879020517A2026_gJLSY.xml.p7m - FPR 10_26 (2).pdf', replacement.pdfFile.buffer);
+  const replacementFromZip = { ...singleFromZip, registrationId: oldRegistration.id,
+    singleZip: await replacementZip.generateAsync({ type: 'nodebuffer' }) };
+  const replacementPreview = await service.previewSingle(replacementFromZip);
   assert.deepEqual(replacementPreview.blocchi, []);
   assert.equal(replacementPreview.numero, 'FPR 10/26');
   assert.equal(replacementPreview.importo, 146.4);
+  const wrongPdfNumber = await service.previewSingle({ ...replacement,
+    pdfFile: { ...replacement.pdfFile, originalname: 'IT01879020517A2026_gJLSY.xml.p7m - FPR 11_26 (2).pdf' } });
+  assert.ok(wrongPdfNumber.blocchi.some(message => message.includes('numero nel nome del PDF')));
   const duplicatePreview = await service.previewSingle({ ...replacement,
     xmlFile: { originalname: 'duplicata.xml', buffer: Buffer.from(invoiceXml('FPR 1/26', '122.00')) } });
   assert.ok(duplicatePreview.blocchi.some(message => message.includes('Numero fattura già')));
-  await assert.rejects(service.replaceSingle(replacement), /Conferma gli avvisi/);
-  assert.equal((await service.replaceSingle({ ...replacement, confermaAvvisi: true })).importate, 1);
+  await assert.rejects(service.replaceSingle(replacementFromZip), /Conferma gli avvisi/);
+  assert.equal((await service.replaceSingle({ ...replacementFromZip, confermaAvvisi: true })).importate, 1);
   const changed = await db('fatture_aruba_elaborati').where({ id: oldRegistration.id }).first();
   const changedOfficial = await db('fatture').where({ id: oldOfficial.id }).first();
   assert.equal(changed.numero_fattura, 'FPR 10/26');
@@ -256,6 +278,6 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   assert.ok(fs.existsSync(path.join(dataDir, 'uploads', 'unknown', oldOfficial.allegato_fattura)));
   assert.equal((await db('rettifiche_fatture_aruba').where({ registrazione_id: changed.id })).length, 1);
   await receipts.register({ fatturaId: changedOfficial.id, data: todayInItaly(), importo: '10.00' });
-  await assert.rejects(service.previewSingle(replacement), /pagata|incassi/i);
-  await assert.rejects(service.replaceSingle({ ...replacement, confermaAvvisi: true }), /pagata|incassi/i);
+  await assert.rejects(service.previewSingle(replacementFromZip), /pagata|incassi/i);
+  await assert.rejects(service.replaceSingle({ ...replacementFromZip, confermaAvvisi: true }), /pagata|incassi/i);
 });

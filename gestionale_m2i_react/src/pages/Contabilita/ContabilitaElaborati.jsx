@@ -27,8 +27,7 @@ export default function ContabilitaElaborati({ tipo }) {
   const [ccError, setCcError] = useState('');
   const [consultantNote, setConsultantNote] = useState('');
   const [consultantError, setConsultantError] = useState('');
-  const [xmlFattura, setXmlFattura] = useState(null);
-  const [pdfFattura, setPdfFattura] = useState(null);
+  const [zipFattura, setZipFattura] = useState(null);
   const [anteprimaFattura, setAnteprimaFattura] = useState(null);
   const [erroreFattura, setErroreFattura] = useState('');
   const [error, setError] = useState('');
@@ -58,8 +57,7 @@ export default function ContabilitaElaborati({ tipo }) {
   const openInvoice = (row, registration = null) => {
     setSelected(row);
     setSelectedRegistration(registration);
-    setXmlFattura(null);
-    setPdfFattura(null);
+    setZipFattura(null);
     setAnteprimaFattura(null);
     setErroreFattura('');
   };
@@ -79,13 +77,13 @@ export default function ContabilitaElaborati({ tipo }) {
     form.append('clienteId', selected.idCliente);
     form.append('mese', String(mese)); form.append('anno', String(anno));
     if (selectedRegistration) form.append('registrazioneId', String(selectedRegistration.id));
-    form.append('xml', xmlFattura); form.append('pdf', pdfFattura);
+    form.append('zip', zipFattura);
     return form;
   };
 
   const analyzeInvoice = async event => {
     event.preventDefault();
-    if (!xmlFattura || !pdfFattura) { setErroreFattura('Seleziona XML e PDF della stessa fattura.'); return; }
+    if (!zipFattura) { setErroreFattura('Seleziona lo ZIP Aruba con XML e PDF della fattura.'); return; }
     setBusy(true); setErroreFattura(''); setAnteprimaFattura(null);
     try {
       setAnteprimaFattura(await workflowRequest('contabilita/fatture/importazione-singola/anteprima', {
@@ -107,7 +105,7 @@ export default function ContabilitaElaborati({ tipo }) {
       if (result.importate !== 1) throw new Error(result.risultati?.[0]?.errore || 'Fattura non registrata.');
       setSelected(null);
       await load();
-      showMessage(`Fattura ${anteprimaFattura.numero} ${selectedRegistration ? 'sostituita' : 'registrata'} con XML e PDF.`);
+      showMessage(`Fattura ${anteprimaFattura.numero} ${selectedRegistration ? 'sostituita' : 'registrata'} dallo ZIP Aruba.`);
     } catch (err) { setErroreFattura(err.message); }
     finally { setBusy(false); }
   };
@@ -273,11 +271,10 @@ export default function ContabilitaElaborati({ tipo }) {
       <form onSubmit={analyzeInvoice} className="max-h-[90vh] w-full max-w-lg space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl">
         <h2 className="text-lg font-bold">{selectedRegistration ? 'Sostituisci fattura Aruba' : 'Fattura Aruba'} · {selected.ragioneSociale}</h2>
         {selectedRegistration && <p className="text-sm font-semibold text-amber-900">Fattura attuale: {selectedRegistration.numero} · {selectedRegistration.data} · {euro(selectedRegistration.importo)}</p>}
-        <p className="text-sm text-slate-600">Seleziona XML e PDF della stessa fattura. Numero, data e importo saranno letti dai file. {selectedRegistration && 'I documenti precedenti resteranno nello storico delle rettifiche.'}</p>
+        <p className="text-sm text-slate-600">Seleziona lo ZIP Aruba della fattura: il gestionale leggerà l’XML e allegherà il PDF. {selectedRegistration && 'I documenti precedenti resteranno nello storico delle rettifiche.'}</p>
         <p className="text-sm font-semibold">Importo previsto per il mese: {euro(Number(selected.importoTotale || 0) - Number(selected.importoRealmenteFatturato || 0) + Number(selectedRegistration?.importo || 0))}</p>
-        <label className="block text-sm font-medium">File XML<input required type="file" accept=".xml,application/xml,text/xml" className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm" onChange={e => { setXmlFattura(e.target.files?.[0] || null); setAnteprimaFattura(null); }} /></label>
-        <label className="block text-sm font-medium">File PDF<input required type="file" accept=".pdf,application/pdf" className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm" onChange={e => { setPdfFattura(e.target.files?.[0] || null); setAnteprimaFattura(null); }} /></label>
-        <p className="text-xs text-slate-500">Massimo 10 MB per file.</p>
+        <label className="block text-sm font-medium">ZIP Aruba (XML + PDF)<input required type="file" accept=".zip,application/zip" className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm" onChange={e => { setZipFattura(e.target.files?.[0] || null); setAnteprimaFattura(null); }} /></label>
+        <p className="text-xs text-slate-500">Massimo 20 MB per archivio.</p>
         {erroreFattura && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{erroreFattura}</p>}
         {anteprimaFattura && <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
           <p className="font-bold">Dati letti dall’XML</p>
@@ -290,8 +287,8 @@ export default function ContabilitaElaborati({ tipo }) {
           {anteprimaFattura.blocchi.map((blocco, index) => <p key={index} className="font-semibold text-red-800">{blocco}</p>)}
           {anteprimaFattura.avvisi.map((avviso, index) => <p key={index} className="font-semibold text-amber-800">{avviso}</p>)}
         </div>}
-        <div className="flex flex-wrap gap-2"><button disabled={busy || !xmlFattura || !pdfFattura} type="submit" className="rounded bg-indigo-700 px-4 py-2 text-white hover:bg-indigo-800 disabled:opacity-50">{busy ? 'Controllo...' : 'Leggi e controlla'}</button>
-          {anteprimaFattura && !anteprimaFattura.blocchi.length && <button disabled={busy} type="button" onClick={registerInvoice} className="rounded bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{busy ? 'Salvataggio...' : selectedRegistration ? 'Sostituisci XML e PDF' : 'Registra XML e PDF'}</button>}
+        <div className="flex flex-wrap gap-2"><button disabled={busy || !zipFattura} type="submit" className="rounded bg-indigo-700 px-4 py-2 text-white hover:bg-indigo-800 disabled:opacity-50">{busy ? 'Controllo...' : 'Leggi e controlla'}</button>
+          {anteprimaFattura && !anteprimaFattura.blocchi.length && <button disabled={busy} type="button" onClick={registerInvoice} className="rounded bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{busy ? 'Salvataggio...' : selectedRegistration ? 'Sostituisci fattura' : 'Registra fattura'}</button>}
           <button type="button" disabled={busy} className="rounded bg-slate-100 px-4 py-2 text-slate-800 hover:bg-slate-200" onClick={() => setSelected(null)}>Annulla</button></div>
       </form>
     </div>}

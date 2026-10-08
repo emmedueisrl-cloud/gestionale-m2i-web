@@ -124,6 +124,15 @@ async function readSingle(xmlFile, pdfFile) {
   return { invoices: [invoice], pdfs: new Map([[id, pdf]]), orphanPdfs: [], pdfWithoutXml: 0, swapped: false };
 }
 
+async function readSingleArchive(buffer) {
+  const pair = await readPair(buffer);
+  if (pair.invoices.length !== 1) throw new Error('Per la singola riga seleziona uno ZIP con una sola fattura XML.');
+  if (!pair.invoices[0].pdf || pair.orphanPdfs.length) {
+    throw new Error('Nello ZIP il PDF non corrisponde all’XML della fattura.');
+  }
+  return pair;
+}
+
 function classify(invoices, clients, monthlyRows, registrations, officialInvoices = [], selectedPeriod = null, separateDocuments = []) {
   const eligible = new Map(monthlyRows.map(row => [String(row.idCliente), row]));
   const fiscalCandidates = invoice => clients.filter(client =>
@@ -196,7 +205,10 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
       }
       if (invoice.pdf) {
         const label = /\s+-\s+(.+)\.pdf$/i.exec(invoice.pdf.name)?.[1]?.replace(/_/g, '/').trim();
-        if (label && nameKey(label) !== nameKey(invoice.numero)) addIssue('pdf_numero', 'Il numero nel nome del PDF differisce dall’XML.');
+        const labelWithoutCopySuffix = label?.replace(/\s+\([1-9]\d*\)$/, '');
+        if (label && nameKey(label) !== nameKey(invoice.numero) && nameKey(labelWithoutCopySuffix) !== nameKey(invoice.numero)) {
+          addIssue('pdf_numero', 'Il numero nel nome del PDF differisce dall’XML.');
+        }
       }
     }
     return { ...invoice, client, matchedBy, stato, motivo, importoPrevisto: remaining, issues };
@@ -234,9 +246,10 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
 }
 
 function createArubaZipService(knex, workflow) {
-  async function analyze({ xmlZip, pdfZip, xmlFile, pdfFile, mese, anno, registrationId }) {
+  async function analyze({ xmlZip, pdfZip, singleZip, xmlFile, pdfFile, mese, anno, registrationId }) {
     const period = workflow.period('cliente', mese, anno);
-    const pair = xmlFile || pdfFile ? await readSingle(xmlFile, pdfFile) : await readPair(xmlZip, pdfZip);
+    const pair = singleZip ? await readSingleArchive(singleZip)
+      : xmlFile || pdfFile ? await readSingle(xmlFile, pdfFile) : await readPair(xmlZip, pdfZip);
     const replaced = registrationId ? await knex('fatture_aruba_elaborati').where({ id: registrationId }).first() : null;
     if (registrationId && (!replaced || Number(replaced.mese) !== period.mese || Number(replaced.anno) !== period.anno)) {
       throw new Error('Fattura da sostituire non trovata nel mese scelto.');
@@ -467,7 +480,7 @@ function createArubaZipService(knex, workflow) {
       throw new Error('Conferma gli avvisi prima di sostituire la fattura.');
     }
     if (!process.env.DATA_DIR) throw new Error('DATA_DIR richiesto per conservare XML e PDF.');
-    const parsed = await readSingle(args.xmlFile, args.pdfFile);
+    const parsed = args.singleZip ? await readSingleArchive(args.singleZip) : await readSingle(args.xmlFile, args.pdfFile);
     const item = parsed.invoices[0];
     if (item.parseError || item.tipoDocumento !== 'TD01') throw new Error(item.parseError || 'Tipo documento non valido.');
     const pdfRelative = path.join('uploads', 'fatture_aruba', `${crypto.randomUUID()}.pdf`);
