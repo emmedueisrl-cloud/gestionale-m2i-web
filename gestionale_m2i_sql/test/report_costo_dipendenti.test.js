@@ -6,10 +6,20 @@ const { createEmployeeCostReport } = require('../report_costo_dipendenti');
 test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', async t => {
   const db = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
   t.after(() => db.destroy());
+  await db.schema.createTable('dipendenti', table => { table.text('id').primary(); });
+  await db.schema.createTable('buste_paga', table => {
+    table.text('id').primary(); table.text('dipendente_id'); table.text('mese'); table.text('anno');
+    table.decimal('importo_netto', 14, 2);
+  });
+  await db('dipendenti').insert([{ id: 'D1' }, { id: 'D2' }, { id: 'D3' }]);
+  await db('buste_paga').insert([
+    { id: 'B1', dipendente_id: 'D1', mese: '9', anno: '2026', importo_netto: 1200 },
+    { id: 'B2', dipendente_id: 'D2', mese: '9', anno: '2026', importo_netto: 800 }
+  ]);
   let rows = [
-    { nettoBusta: 1200, stipendioNetto: 1300, cc: 100, oreLavorate: 100,
+    { idDipendente: 'D1', nettoBusta: 9999, stipendioNetto: 1300, cc: 100, oreLavorate: 100,
       dettaglioFPM: { Ferie: 8, Assenza: 4 } },
-    { nettoBusta: null, stipendioNetto: 800, cc: 50, oreLavorate: 100,
+    { idDipendente: 'D2', nettoBusta: null, stipendioNetto: 900, cc: 50, oreLavorate: 100,
       dettaglioFPM: { Malattia: 10, 'Permesso Retribuito': 2 } }
   ];
   const clientRows = [
@@ -35,6 +45,9 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withoutF24.rimanenzaTotale, null);
   const saved = await report.saveF24({ mese: 9, anno: 2026, importo: '850,00' });
   assert.equal(saved.totaleNetti, 2000);
+  assert.equal(saved.buste, 2);
+  assert.equal(saved.busteSenzaElaborato, 0);
+  assert.equal(saved.nettiMancanti, 0);
   assert.equal(saved.totaleCc, 150);
   assert.equal(saved.f24, 850);
   assert.equal(saved.oreTotali, 200);
@@ -64,7 +77,11 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withExtraClients.clientiDettaglio.find(row => row.id === 'C5').rimanenza, -100);
   assert.equal(withExtraClients.imponibileDettaglio, 4120);
   assert.equal(withExtraClients.rimanenzaTotale, 1270);
-  assert.equal(saved.nettiProvvisori, 1);
+  await db('buste_paga').insert({ id: 'B3', dipendente_id: 'D3', mese: '9', anno: '2026', importo_netto: 1157 });
+  const withUnmatchedPayroll = await report.get(9, 2026);
+  assert.equal(withUnmatchedPayroll.totaleNetti, 3157);
+  assert.equal(withUnmatchedPayroll.busteSenzaElaborato, 1);
+  assert.equal(withUnmatchedPayroll.costoOrario, null);
   assert.equal((await report.get(9, 2026)).f24, 850);
   await report.saveF24({ mese: 9, anno: 2026, importo: '900.50' });
   assert.equal((await report.get(9, 2026)).f24, 900.5);

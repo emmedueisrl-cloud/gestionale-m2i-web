@@ -106,7 +106,7 @@ export default function ReportContabilita() {
       <section aria-label="Calcolo costo orario dipendenti" className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ['Totale netti dipendenti', euro(report.totaleNetti)],
+            ['Netti busta · Per ufficio paghe', euro(report.totaleNetti)],
             ['Totale CC', euro(report.totaleCc)],
             ['F24 salvato', report.f24 == null ? 'Da inserire' : euro(report.f24)],
             ['Ore lavorate totali', `${ore(report.oreTotali)} h`]
@@ -121,8 +121,8 @@ export default function ReportContabilita() {
           <p className="mt-2 text-sm text-indigo-900">({euro(report.totaleNetti)} netti + {euro(report.totaleCc)} CC + {report.f24 == null ? 'F24 da inserire' : euro(report.f24)}) ÷ {ore(report.oreTotali)} ore</p>
           {report.costoTotale != null && <p className="mt-1 text-sm text-indigo-900">Costo totale: {euro(report.costoTotale)} · {report.dipendenti} dipendenti</p>}
         </div>
-        {report.nettiProvvisori > 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Per {report.nettiProvvisori} dipendenti il calcolo usa il netto dell’elaborato: il costo orario è provvisorio finché non sono disponibili tutti i netti busta.</p>}
-        {report.nettiMancanti > 0 && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-900">Manca il netto di {report.nettiMancanti} dipendenti. Il costo orario sarà disponibile quando tutti i netti saranno presenti.</p>}
+        {report.nettiMancanti > 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{report.nettiMancanti} dipendenti dell’elaborato non hanno una busta paga nel mese. Il costo orario sarà disponibile quando tutte le buste saranno presenti.</p>}
+        {report.busteSenzaElaborato > 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{report.busteSenzaElaborato} buste paga non corrispondono ai dipendenti nelle righe elaborate del mese. Sono incluse nel totale netti; il costo orario richiede anche le loro ore.</p>}
         {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore lavorate nel mese: non è possibile dividere il costo.</p>}
       </section>
 
