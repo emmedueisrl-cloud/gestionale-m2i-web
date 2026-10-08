@@ -349,6 +349,11 @@ app.get('/api/contabilita/report/costo-dipendenti/:anno/:mese', handleWorkflow(r
   employeeCostReport.get(req.params.mese, req.params.anno)));
 app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/f24', handleWorkflow(req =>
   employeeCostReport.saveF24({ mese: req.params.mese, anno: req.params.anno, importo: req.body?.importo })));
+app.post('/api/contabilita/report/costo-dipendenti/:anno/:mese/rettifiche', handleWorkflow(req =>
+  employeeCostReport.addAdjustment({ mese: req.params.mese, anno: req.params.anno,
+    voce: req.body?.voce, operazione: req.body?.operazione, valore: req.body?.valore, nota: req.body?.nota })));
+app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/rettifiche/:id', handleWorkflow(req =>
+  employeeCostReport.deleteAdjustment({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });

@@ -45,6 +45,12 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withoutF24.clientiDettaglio[0].costoDipendenti, null);
   assert.equal(withoutF24.imponibileDettaglio, 3920);
   assert.equal(withoutF24.rimanenzaTotale, null);
+  const f24OnlyAdjustment = await report.addAdjustment({ mese: 9, anno: 2026, voce: 'f24',
+    operazione: 'aggiungi', valore: '100', nota: 'F24 stimato nel report' });
+  assert.equal(f24OnlyAdjustment.valoriBase.f24, null);
+  assert.equal(f24OnlyAdjustment.f24, 100);
+  assert.equal(f24OnlyAdjustment.costoOrario, 11.25);
+  await report.deleteAdjustment({ mese: 9, anno: 2026, id: f24OnlyAdjustment.rettifiche[0].id });
   const saved = await report.saveF24({ mese: 9, anno: 2026, importo: '850,00' });
   assert.equal(saved.totaleNetti, 2000);
   assert.equal(saved.buste, 2);
@@ -55,10 +61,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(saved.imponibileClienti, 3920);
   assert.equal(saved.clientiConOre, 2);
   assert.equal(saved.clientiEsclusiZeroOre, 1);
-  assert.equal(saved.oreLavorateEffettive, 176);
-  assert.equal(saved.oreFeriePermessiMalattia, 20);
-  assert.equal(saved.oreTariffaClienti, 196);
-  assert.equal(saved.tariffaMediaClienti, 20);
+  assert.equal(saved.tariffaMediaClienti, 19.6);
   assert.deepEqual(saved.clientiDettaglio.map(row => row.id), ['C1', 'C2']);
   assert.deepEqual(saved.clientiDettaglio[0], {
     id: 'C1', cliente: 'Cliente Verde', ore: 120, imponibile: 3000,
@@ -70,6 +73,38 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(saved.clientiDettaglio[1].rimanenza, 170);
   assert.equal(saved.imponibileDettaglio, 3920);
   assert.equal(saved.rimanenzaTotale, 1370);
+  let adjusted;
+  for (const [voce, operazione, valore, nota] of [
+    ['totaleNetti', 'aggiungi', '100', 'Conguaglio'],
+    ['totaleNetti', 'aggiungi', '20', 'Seconda nota'],
+    ['totaleCc', 'togli', '20', 'Correzione CC'],
+    ['f24', 'aggiungi', '50', 'Quota F24'],
+    ['oreTotali', 'aggiungi', '10', 'Ore integrative'],
+    ['imponibileClienti', 'aggiungi', '200', 'Ricavo stimato']
+  ]) adjusted = await report.addAdjustment({ mese: 9, anno: 2026, voce, operazione, valore, nota });
+  assert.equal(adjusted.rettifiche.length, 6);
+  assert.deepEqual(adjusted.rettifiche.filter(item => item.voce === 'totaleNetti').map(item => item.nota),
+    ['Conguaglio', 'Seconda nota']);
+  assert.equal(adjusted.totaleNetti, 2120);
+  assert.equal(adjusted.totaleCc, 130);
+  assert.equal(adjusted.f24, 900);
+  assert.equal(adjusted.oreTotali, 210);
+  assert.equal(adjusted.imponibileClienti, 4120);
+  assert.equal(adjusted.costoTotale, 3150);
+  assert.equal(adjusted.costoOrario, 15);
+  assert.equal(adjusted.tariffaMediaClienti, 19.62);
+  assert.equal(adjusted.imponibileDettaglio, 3920);
+  assert.equal(adjusted.valoriBase.f24, 850);
+  assert.equal((await db('buste_paga').where({ mese: '9', anno: '2026' }).sum({ totale: 'importo_netto' }).first()).totale, 2000);
+  assert.equal((await db('report_f24_dipendenti').where({ mese: 9, anno: 2026 }).first()).importo_cent, 85000);
+  assert.deepEqual((await report.get(10, 2026)).rettifiche, []);
+  await assert.rejects(report.addAdjustment({ mese: 9, anno: 2026, voce: 'totaleNetti', operazione: 'aggiungi', valore: '10', nota: '' }), /nota/i);
+  await assert.rejects(report.deleteAdjustment({ mese: 10, anno: 2026, id: adjusted.rettifiche[0].id }), /non trovata/i);
+  for (const item of adjusted.rettifiche) await report.deleteAdjustment({ mese: 9, anno: 2026, id: item.id });
+  const restored = await report.get(9, 2026);
+  assert.deepEqual(restored.rettifiche, []);
+  assert.equal(restored.costoOrario, saved.costoOrario);
+  assert.equal(restored.tariffaMediaClienti, saved.tariffaMediaClienti);
   clientRows.push({ idCliente: 'C4', ragioneSociale: 'Mezzora', oreLavorate: 0.5, imponibile: 50 });
   clientRows.push({ idCliente: 'C5', ragioneSociale: 'In perdita', oreLavorate: 20, imponibile: 200 });
   const withExtraClients = await report.get(9, 2026);
@@ -86,6 +121,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withMonthlyHours.oreTotali, 220);
   assert.equal(withMonthlyHours.totaleCc, 150);
   assert.equal(withMonthlyHours.costoOrario, 18.9);
+  assert.equal(withMonthlyHours.tariffaMediaClienti, 18.95);
   monthlyRows = rows;
   assert.equal((await report.get(9, 2026)).f24, 850);
   await report.saveF24({ mese: 9, anno: 2026, importo: '900.50' });

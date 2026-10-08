@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { workflowRequest } from '../../api/workflowElaborati';
 import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 
@@ -6,6 +7,10 @@ const mesi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
   'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const ore = value => Number(value || 0).toLocaleString('it-IT', { maximumFractionDigits: 2 });
+const adjustmentLabels = {
+  totaleNetti: 'Netti buste paga · Totale mese', totaleCc: 'Totale CC',
+  f24: 'F24 salvato', oreTotali: 'Ore totali', imponibileClienti: 'Imponibile clienti con ore'
+};
 const columns = [
   { key: 'cliente', label: 'Cliente' },
   { key: 'ore', label: 'Ore cliente', type: 'hours' },
@@ -14,10 +19,14 @@ const columns = [
   { key: 'differenzaOraria', label: 'Differenza oraria', type: 'hourly' },
   { key: 'imponibile', label: 'Imponibile fattura', type: 'money' },
   { key: 'costoDipendenti', label: 'Costo dipendenti', type: 'money' },
-  { key: 'rimanenza', label: 'Rimanenza', type: 'money' }
+  { key: 'rimanenza', label: 'Rimanenza', type: 'money' },
+  { key: 'percentualeGuadagno', label: 'Guadagno su imponibile (%)', type: 'percentage' }
 ];
 const formatCell = (value, type) => value == null ? '—' : type === 'hours' ? `${ore(value)} h`
-  : type === 'hourly' ? `${euro(value)} / h` : type === 'money' ? euro(value) : value;
+  : type === 'hourly' ? `${euro(value)} / h` : type === 'money' ? euro(value)
+    : type === 'percentage' ? `${Number(value).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : value;
+const percentageGain = row => row.rimanenza == null || Number(row.imponibile) <= 0
+  ? null : (Number(row.rimanenza) / Number(row.imponibile)) * 100;
 const remainderColors = [
   { share: 0, rgb: [252, 165, 165] },
   { share: 0.4, rgb: [253, 186, 116] },
@@ -34,6 +43,27 @@ const remainderColor = row => {
   return `rgb(${start.rgb.map((value, index) => Math.round(value + (end.rgb[index] - value) * progress)).join(', ')})`;
 };
 
+function AdjustableCard({ field, label, value, adjustments, onEdit, onDelete, deletingId, hours = false }) {
+  const notes = adjustments.filter(item => item.voce === field);
+  return <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="flex items-start justify-between gap-3">
+      <p className="text-sm font-semibold text-slate-600">{label}</p>
+      <button type="button" onClick={() => onEdit(field)} aria-label={`Rettifica ${label}`} title={`Rettifica ${label}`} className="rounded-lg p-2 text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">
+        <Pencil size={18} aria-hidden="true" />
+      </button>
+    </div>
+    <p className="mt-2 text-2xl font-bold">{value}</p>
+    {notes.length > 0 && <ul className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
+      {notes.map(item => <li key={item.id} className="flex items-start justify-between gap-2">
+        <span className="min-w-0 break-words"><strong className={item.valore < 0 ? 'text-red-700' : 'text-emerald-700'}>{item.valore < 0 ? '−' : '+'}{hours ? `${ore(Math.abs(item.valore))} h` : euro(Math.abs(item.valore))}</strong> · {item.nota}</span>
+        <button type="button" disabled={deletingId === item.id} onClick={() => onDelete(item.id)} aria-label={`Elimina rettifica: ${item.nota}`} title="Elimina rettifica" className="shrink-0 rounded p-1 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50">
+          <Trash2 size={16} aria-hidden="true" />
+        </button>
+      </li>)}
+    </ul>}
+  </div>;
+}
+
 export default function ReportContabilita() {
   const [initial] = useState(mesePredefinitoElaborati);
   const [mese, setMese] = useState(initial.mese);
@@ -45,12 +75,20 @@ export default function ReportContabilita() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [sort, setSort] = useState({ key: 'cliente', direction: 'asc' });
+  const [adjustmentField, setAdjustmentField] = useState(null);
+  const [adjustmentOperation, setAdjustmentOperation] = useState('aggiungi');
+  const [adjustmentValue, setAdjustmentValue] = useState('');
+  const [adjustmentNote, setAdjustmentNote] = useState('');
+  const [adjustmentError, setAdjustmentError] = useState('');
+  const [adjustmentSaving, setAdjustmentSaving] = useState(false);
+  const [deletingAdjustmentId, setDeletingAdjustmentId] = useState(null);
 
   useEffect(() => {
     let current = true;
     setLoading(true); setReport(null); setError(''); setMessage('');
+    setAdjustmentField(null);
     workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}`)
-      .then(data => { if (current) { setReport(data); setF24Input(data.f24 == null ? '' : String(data.f24).replace('.', ',')); } })
+      .then(data => { if (current) { setReport(data); setF24Input(data.valoriBase.f24 == null ? '' : String(data.valoriBase.f24).replace('.', ',')); } })
       .catch(cause => { if (current) setError(cause.message); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
@@ -64,14 +102,41 @@ export default function ReportContabilita() {
         method: 'PUT', body: JSON.stringify({ importo: f24Input })
       });
       setReport(data);
-      setF24Input(String(data.f24).replace('.', ','));
+      setF24Input(String(data.valoriBase.f24).replace('.', ','));
       setMessage('Importo F24 salvato per il mese selezionato.');
     } catch (cause) { setError(cause.message); }
     finally { setSaving(false); }
   };
 
-  const f24Modificato = report?.f24 != null && f24Input.replace(',', '.') !== String(report.f24);
-  const sortedClients = useMemo(() => [...(report?.clientiDettaglio || [])].sort((a, b) => {
+  const openAdjustment = field => {
+    setAdjustmentField(field); setAdjustmentOperation('aggiungi');
+    setAdjustmentValue(''); setAdjustmentNote(''); setAdjustmentError('');
+  };
+  const saveAdjustment = async event => {
+    event.preventDefault();
+    setAdjustmentSaving(true); setAdjustmentError('');
+    try {
+      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/rettifiche`, {
+        method: 'POST', body: JSON.stringify({ voce: adjustmentField, operazione: adjustmentOperation,
+          valore: adjustmentValue, nota: adjustmentNote })
+      });
+      setReport(data); setAdjustmentField(null);
+      setMessage('Rettifica salvata nel Report.');
+    } catch (cause) { setAdjustmentError(cause.message); }
+    finally { setAdjustmentSaving(false); }
+  };
+  const deleteAdjustment = async id => {
+    setDeletingAdjustmentId(id); setError(''); setMessage('');
+    try {
+      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/rettifiche/${id}`, { method: 'DELETE' });
+      setReport(data); setMessage('Rettifica eliminata dal Report.');
+    } catch (cause) { setError(cause.message); }
+    finally { setDeletingAdjustmentId(null); }
+  };
+
+  const f24Modificato = report?.valoriBase?.f24 != null && f24Input.replace(',', '.') !== String(report.valoriBase.f24);
+  const sortedClients = useMemo(() => (report?.clientiDettaglio || [])
+    .map(row => ({ ...row, percentualeGuadagno: percentageGain(row) })).sort((a, b) => {
     const first = a[sort.key], second = b[sort.key];
     if (first == null || second == null) return first == null && second == null ? 0 : first == null ? 1 : -1;
     const comparison = sort.key === 'cliente'
@@ -82,6 +147,8 @@ export default function ReportContabilita() {
   }), [report, sort]);
   const changeSort = key => setSort(current => ({ key,
     direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
+  const adjustmentIsHours = adjustmentField === 'oreTotali';
+  const adjustmentDisplay = value => value == null ? 'Da inserire' : adjustmentIsHours ? `${ore(value)} h` : euro(value);
 
   return <main className="space-y-6 bg-white pt-8 text-slate-900">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -116,14 +183,13 @@ export default function ReportContabilita() {
       <section aria-label="Calcolo costo orario dipendenti" className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ['Netti buste paga · Totale mese', euro(report.totaleNetti)],
-            ['Totale CC', euro(report.totaleCc)],
-            ['F24 salvato', report.f24 == null ? 'Da inserire' : euro(report.f24)],
-            ['Ore totali', `${ore(report.oreTotali)} h`]
-          ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-600">{label}</p>
-            <p className="mt-2 text-2xl font-bold">{value}</p>
-          </div>)}
+            ['totaleNetti', euro(report.totaleNetti)],
+            ['totaleCc', euro(report.totaleCc)],
+            ['f24', report.f24 == null ? 'Da inserire' : euro(report.f24)],
+            ['oreTotali', `${ore(report.oreTotali)} h`]
+          ].map(([field, value]) => <AdjustableCard key={field} field={field} label={adjustmentLabels[field]}
+            value={value} hours={field === 'oreTotali'} adjustments={report.rettifiche || []}
+            onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />)}
         </div>
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
           <p className="text-sm font-semibold text-indigo-900">Costo medio orario dipendente</p>
@@ -136,31 +202,23 @@ export default function ReportContabilita() {
       <section aria-label="Calcolo tariffa media clienti" className="space-y-4 border-t border-slate-200 pt-6">
         <div>
           <h2 className="text-xl font-bold">Tariffa media clienti</h2>
-          <p className="mt-1 text-sm text-slate-600">Somma degli imponibili dei clienti con almeno un’ora, divisa per le ore lavorate, ferie, permessi e malattia dei dipendenti.</p>
+          <p className="mt-1 text-sm text-slate-600">Somma degli imponibili dei clienti con ore, divisa per le ore totali dei dipendenti mostrate sopra.</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            ['Imponibile clienti con ore', euro(report.imponibileClienti)],
-            ['Ore lavorate dipendenti', `${ore(report.oreLavorateEffettive)} h`],
-            ['Ferie, permessi e malattia', `${ore(report.oreFeriePermessiMalattia)} h`],
-            ['Ore totali per la tariffa', `${ore(report.oreTariffaClienti)} h`]
-          ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-slate-600">{label}</p>
-            <p className="mt-2 text-2xl font-bold">{value}</p>
-          </div>)}
-        </div>
+        <AdjustableCard field="imponibileClienti" label={adjustmentLabels.imponibileClienti}
+          value={euro(report.imponibileClienti)} adjustments={report.rettifiche || []}
+          onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
           <p className="text-sm font-semibold text-emerald-900">Tariffa media clienti</p>
           <p className="mt-2 text-4xl font-bold text-emerald-950">{report.tariffaMediaClienti == null ? '—' : `${euro(report.tariffaMediaClienti)} / h`}</p>
-          <p className="mt-2 text-sm text-emerald-900">{euro(report.imponibileClienti)} ÷ {ore(report.oreTariffaClienti)} ore · {report.clientiConOre} clienti inclusi · {report.clientiEsclusiZeroOre} clienti con zero ore esclusi</p>
+          <p className="mt-2 text-sm text-emerald-900">{euro(report.imponibileClienti)} ÷ {ore(report.oreTotali)} ore · {report.clientiConOre} clienti inclusi · {report.clientiEsclusiZeroOre} clienti con zero ore esclusi</p>
         </div>
-        {report.oreTariffaClienti <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore utili nel mese: non è possibile calcolare la tariffa media.</p>}
+        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile calcolare la tariffa media.</p>}
       </section>
 
       <section aria-label="Redditività per cliente" className="space-y-4 border-t border-slate-200 pt-6">
         <div>
           <h2 className="text-xl font-bold">Clienti con almeno un’ora lavorata</h2>
-          <p className="mt-1 text-sm text-slate-600">La rimanenza è l’imponibile meno il costo orario dipendente moltiplicato per le ore del cliente. Le righe passano dal rosso all’arancione e poi al verde quando cresce la percentuale di imponibile rimasta.</p>
+          <p className="mt-1 text-sm text-slate-600">La rimanenza è l’imponibile meno il costo orario dipendente moltiplicato per le ore del cliente. Il guadagno percentuale è la rimanenza divisa per l’imponibile. Le righe passano dal rosso all’arancione e poi al verde quando questa percentuale cresce.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
@@ -177,7 +235,7 @@ export default function ReportContabilita() {
           </div>
         </div>
         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm">
-          <table className="w-full min-w-[1380px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1510px] border-collapse text-left text-sm">
             <thead className="bg-slate-100 text-slate-900"><tr>{columns.map(column =>
               <th key={column.key} scope="col" aria-sort={sort.key === column.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-3 py-3">
                 <button type="button" onClick={() => changeSort(column.key)} className="flex w-full items-center justify-between gap-2 text-left font-semibold hover:text-indigo-700" aria-label={`Ordina per ${column.label}`}>
@@ -187,7 +245,7 @@ export default function ReportContabilita() {
             <tbody>
               {!sortedClients.length && <tr><td colSpan={columns.length} className="px-4 py-6 text-center text-slate-600">Nessun cliente con almeno un’ora lavorata nel mese.</td></tr>}
               {sortedClients.map(row => <tr key={row.id} style={{ backgroundColor: remainderColor(row) }} className="border-b border-slate-300 last:border-b-0">
-                {columns.map(column => <td key={column.key} className={`px-3 py-3 ${column.key === 'cliente' ? 'font-semibold' : 'whitespace-nowrap tabular-nums'} ${column.key === 'rimanenza' ? 'font-bold' : ''}`}>
+                {columns.map(column => <td key={column.key} className={`px-3 py-3 ${column.key === 'cliente' ? 'font-semibold' : 'whitespace-nowrap tabular-nums'} ${['rimanenza', 'percentualeGuadagno'].includes(column.key) ? 'font-bold' : ''}`}>
                   {formatCell(row[column.key], column.type)}
                 </td>)}
               </tr>)}
@@ -197,5 +255,33 @@ export default function ReportContabilita() {
         {report.costoOrario == null && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Inserisci l’F24 e verifica le ore totali per vedere costo, differenze e rimanenza dei clienti.</p>}
       </section>
     </>}
+    {report && adjustmentField && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="report-rettifica-title" className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="report-rettifica-title" className="text-xl font-bold">Rettifica · {adjustmentLabels[adjustmentField]}</h2>
+          <button type="button" onClick={() => setAdjustmentField(null)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold hover:bg-slate-200">Chiudi</button>
+        </div>
+        <p className="mt-3 text-sm text-slate-600">Valore originale: {adjustmentDisplay(report.valoriBase[adjustmentField])} · Nel Report: {adjustmentDisplay(report[adjustmentField])}</p>
+        <p className="mt-1 text-sm text-slate-600">La rettifica modifica solo questo Report per {mesi[mese - 1]} {anno}.</p>
+        {adjustmentField === 'imponibileClienti' && <p className="mt-1 text-sm text-slate-600">Questa rettifica aggiorna la tariffa media complessiva; gli importi dei singoli clienti restano quelli delle loro fatture.</p>}
+        <form onSubmit={saveAdjustment} className="mt-5 space-y-4">
+          <fieldset>
+            <legend className="mb-2 text-sm font-semibold">Operazione</legend>
+            <div className="flex gap-5">
+              <label className="flex items-center gap-2"><input type="radio" name="report-operazione" checked={adjustmentOperation === 'aggiungi'} onChange={() => setAdjustmentOperation('aggiungi')} /> Aggiungi</label>
+              <label className="flex items-center gap-2"><input type="radio" name="report-operazione" checked={adjustmentOperation === 'togli'} onChange={() => setAdjustmentOperation('togli')} /> Togli</label>
+            </div>
+          </fieldset>
+          <label className="block text-sm font-semibold">{adjustmentIsHours ? 'Ore' : 'Importo (€)'}
+            <input type="text" inputMode="decimal" value={adjustmentValue} onChange={event => setAdjustmentValue(event.target.value)} placeholder={adjustmentIsHours ? 'Es. 2,5' : 'Es. 100,00'} autoFocus className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base" />
+          </label>
+          <label className="block text-sm font-semibold">Nota
+            <textarea value={adjustmentNote} onChange={event => setAdjustmentNote(event.target.value)} maxLength={500} rows={3} placeholder="Motivo della rettifica" className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base" />
+          </label>
+          {adjustmentError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{adjustmentError}</p>}
+          <button type="submit" disabled={adjustmentSaving || !adjustmentValue.trim() || !adjustmentNote.trim()} className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{adjustmentSaving ? 'Salvataggio...' : 'Salva rettifica'}</button>
+        </form>
+      </div>
+    </div>}
   </main>;
 }
