@@ -11,10 +11,21 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     table.text('id').primary(); table.text('dipendente_id'); table.text('mese'); table.text('anno');
     table.decimal('importo_netto', 14, 2);
   });
+  await db.schema.createTable('registro_ore', table => {
+    table.integer('mese'); table.integer('anno'); table.text('dipendente_id'); table.text('cliente_id');
+    table.decimal('ore_totali', 10, 2); table.text('causale_assenza');
+  });
   await db('dipendenti').insert([{ id: 'D1' }, { id: 'D2' }, { id: 'D3' }]);
   await db('buste_paga').insert([
     { id: 'B1', dipendente_id: 'D1', mese: '9', anno: '2026', importo_netto: 1200 },
     { id: 'B2', dipendente_id: 'D2', mese: '9', anno: '2026', importo_netto: 800 }
+  ]);
+  await db('registro_ore').insert([
+    { mese: 9, anno: 2026, dipendente_id: 'D1', cliente_id: 'C1', ore_totali: 60 },
+    { mese: 9, anno: 2026, dipendente_id: 'D1', cliente_id: 'C2', ore_totali: 20, causale_assenza: 'Extra' },
+    { mese: 9, anno: 2026, dipendente_id: 'D2', cliente_id: 'C1', ore_totali: 30 },
+    { mese: 9, anno: 2026, dipendente_id: 'D2', cliente_id: 'C2', ore_totali: 20 },
+    { mese: 9, anno: 2026, dipendente_id: 'D1', cliente_id: 'C1', ore_totali: 5, causale_assenza: 'Malattia' }
   ]);
   let rows = [
     { idDipendente: 'D1', nettoBusta: 9999, stipendioNetto: 1300, cc: 100, oreLavorate: 100,
@@ -45,6 +56,8 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withoutF24.clientiDettaglio[0].costoDipendenti, null);
   assert.equal(withoutF24.imponibileDettaglio, 3920);
   assert.equal(withoutF24.rimanenzaTotale, null);
+  assert.equal(withoutF24.dipendentiDettaglio[0].stipendio, 1300);
+  assert.equal(withoutF24.dipendentiDettaglio[0].costoOrario, null);
   const f24OnlyAdjustment = await report.addAdjustment({ mese: 9, anno: 2026, voce: 'f24',
     operazione: 'aggiungi', valore: '100', nota: 'F24 stimato nel report' });
   assert.equal(f24OnlyAdjustment.valoriBase.f24, null);
@@ -73,6 +86,73 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(saved.clientiDettaglio[1].rimanenza, 170);
   assert.equal(saved.imponibileDettaglio, 3920);
   assert.equal(saved.rimanenzaTotale, 1370);
+  const withF24c = await report.saveF24c({ mese: 9, anno: 2026, importo: '400,00' });
+  assert.equal(withF24c.f24c, 400);
+  assert.deepEqual(withF24c.dipendentiDettaglio.map(row => [row.ore, row.stipendio, row.costoOrario, row.valoreClienti, row.resa]), [
+    [100, 1300, 15, 1868, 368],
+    [100, 850, 10.5, 1118, 68]
+  ]);
+  const pairedFromEmployee = await report.savePairedHours({ mese: 9, anno: 2026, origine: 'dipendente',
+    soggettoId: 'D1', valore: '90', abbinamenti: [{ id: 'C1', ore: '5' }, { id: 'C2', ore: '5' }], nota: 'Ore ridotte' });
+  assert.equal(pairedFromEmployee.oreTotali, 190);
+  assert.equal(pairedFromEmployee.dipendentiDettaglio[0].ore, 90);
+  assert.deepEqual(pairedFromEmployee.clientiDettaglio.map(row => row.ore), [115, 45]);
+  assert.equal(pairedFromEmployee.abbinamentiOre.find(row => row.dipendenteId === 'D1' && row.clienteId === 'C1').ore, 55);
+  assert.equal(pairedFromEmployee.rettificheOreAbbinate.length, 1);
+  const pairedFromClient = await report.savePairedHours({ mese: 9, anno: 2026, origine: 'cliente',
+    soggettoId: 'C1', valore: '110', abbinamenti: [{ id: 'D2', ore: '5' }], nota: 'Cliente ridotto' });
+  assert.equal(pairedFromClient.oreTotali, 185);
+  assert.equal(pairedFromClient.clientiDettaglio[0].ore, 110);
+  assert.deepEqual(pairedFromClient.dipendentiDettaglio.map(row => row.ore), [90, 95]);
+  assert.notEqual(pairedFromClient.dipendentiDettaglio[0].resa, withF24c.dipendentiDettaglio[0].resa);
+  await assert.rejects(report.savePairedHours({ mese: 9, anno: 2026, origine: 'cliente',
+    soggettoId: 'C1', valore: '100', abbinamenti: [{ id: 'D2', ore: '9' }], nota: 'Errore' }), /somma/i);
+  await assert.rejects(report.savePairedHours({ mese: 9, anno: 2026, origine: 'dipendente',
+    soggettoId: 'D1', valore: '30', abbinamenti: [{ id: 'C2', ore: '60' }], nota: 'Errore' }), /più ore/i);
+  const firstPairedId = pairedFromEmployee.rettificheOreAbbinate[0].id;
+  const secondPairedId = pairedFromClient.rettificheOreAbbinate[1].id;
+  const editedPairedNote = await report.updatePairedHoursNote({ mese: 9, anno: 2026, id: firstPairedId, nota: 'Nota corretta' });
+  assert.equal(editedPairedNote.rettificheOreAbbinate[0].nota, 'Nota corretta');
+  await report.deletePairedHours({ mese: 9, anno: 2026, id: firstPairedId });
+  const restoredPaired = await report.deletePairedHours({ mese: 9, anno: 2026, id: secondPairedId });
+  assert.equal(restoredPaired.oreTotali, 200);
+  assert.deepEqual(restoredPaired.clientiDettaglio.map(row => row.ore), [120, 50]);
+  assert.deepEqual(restoredPaired.dipendentiDettaglio.map(row => row.ore), [100, 100]);
+  assert.equal((await db('registro_ore').where({ dipendente_id: 'D1', cliente_id: 'C1' }).sum({ ore: 'ore_totali' }).first()).ore, 65);
+  const changedEmployeeHours = await report.saveEmployeeAdjustment({ mese: 9, anno: 2026,
+    dipendenteId: 'D1', voce: 'ore', valore: '110', nota: 'Ore complessive corrette' });
+  assert.equal(changedEmployeeHours.oreTotali, 210);
+  assert.equal(changedEmployeeHours.dipendentiDettaglio[0].ore, 110);
+  assert.equal(changedEmployeeHours.rettificheDipendenti[0].differenza, 10);
+  assert.equal(changedEmployeeHours.costoOrario, 14.29);
+  const changedEmployeeNet = await report.saveEmployeeAdjustment({ mese: 9, anno: 2026,
+    dipendenteId: 'D1', voce: 'netto', valore: '1250', nota: 'Netto corretto' });
+  assert.equal(changedEmployeeNet.totaleNetti, 2050);
+  assert.equal(changedEmployeeNet.costoTotale, 3050);
+  assert.equal(changedEmployeeNet.dipendentiDettaglio[0].nettoBusta, 1250);
+  assert.equal(changedEmployeeNet.dipendentiDettaglio[0].stipendio, 1350);
+  assert.equal(changedEmployeeNet.dipendentiDettaglio[0].resa, 308.48);
+  const editedEmployeeNote = await report.saveEmployeeAdjustment({ mese: 9, anno: 2026,
+    dipendenteId: 'D1', voce: 'netto', valore: '1250', nota: 'Nota aggiornata' });
+  assert.equal(editedEmployeeNote.rettificheDipendenti.length, 2);
+  assert.equal(editedEmployeeNote.rettificheDipendenti.find(item => item.voce === 'netto').nota, 'Nota aggiornata');
+  const zeroEmployeeHours = await report.saveEmployeeAdjustment({ mese: 9, anno: 2026,
+    dipendenteId: 'D1', voce: 'ore', valore: '0', nota: 'Nessuna ora nel Report' });
+  assert.equal(zeroEmployeeHours.oreTotali, 100);
+  assert.deepEqual(zeroEmployeeHours.dipendentiDettaglio.map(row => row.id), ['D2']);
+  assert.equal(zeroEmployeeHours.rettificheDipendenti.find(item => item.voce === 'ore').nota, 'Nessuna ora nel Report');
+  assert.deepEqual((await report.get(10, 2026)).rettificheDipendenti, []);
+  assert.equal((await db('buste_paga').where({ id: 'B1' }).first()).importo_netto, 1200);
+  assert.equal(rows[0].oreLavorate, 100);
+  await assert.rejects(report.saveEmployeeAdjustment({ mese: 9, anno: 2026,
+    dipendenteId: 'D1', voce: 'ore', valore: '-1', nota: 'Non valido' }), /valido/i);
+  await report.deleteEmployeeAdjustment({ mese: 9, anno: 2026, dipendenteId: 'D1', voce: 'ore' });
+  const restoredEmployee = await report.deleteEmployeeAdjustment({ mese: 9, anno: 2026, dipendenteId: 'D1', voce: 'netto' });
+  assert.equal(restoredEmployee.oreTotali, 200);
+  assert.equal(restoredEmployee.totaleNetti, 2000);
+  assert.deepEqual(restoredEmployee.rettificheDipendenti, []);
+  assert.equal((await report.get(10, 2026)).f24c, null);
+  assert.equal((await db('report_f24_dipendenti').where({ mese: 9, anno: 2026 }).first()).importo_cent, 85000);
   let adjusted;
   for (const [voce, operazione, valore, nota] of [
     ['totaleNetti', 'aggiungi', '100', 'Conguaglio'],
@@ -111,7 +191,10 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(changedHours.costoOrario, 16.67);
   assert.equal(changedHours.clientiDettaglio[0].ore, 100);
   assert.equal(changedHours.clientiDettaglio[0].rimanenza, 1333);
+  assert.equal(changedHours.dipendentiDettaglio[0].resa, 645.78);
   assert.equal(changedHours.rettificheClienti[0].differenza, -20);
+  await assert.rejects(report.savePairedHours({ mese: 9, anno: 2026, origine: 'cliente',
+    soggettoId: 'C1', valore: '95', abbinamenti: [{ id: 'D1', ore: '5' }], nota: 'Vecchia rettifica' }), /vecchie rettifiche/i);
   const changedAmount = await report.saveClientAdjustment({ mese: 9, anno: 2026,
     clienteId: 'C1', voce: 'imponibile', valore: '3200', nota: 'Imponibile corretto' });
   assert.equal(changedAmount.imponibileClienti, 4120);
@@ -163,6 +246,20 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   await assert.rejects(report.saveF24({ mese: 9, anno: 2026, importo: '12,345' }), /F24/);
   rows = rows.map(row => ({ ...row, oreLavorate: 0, dettaglioFPM: {} }));
   monthlyRows = rows;
-  assert.equal((await report.get(9, 2026)).costoOrario, null);
+  const withZeroHours = await report.get(9, 2026);
+  assert.equal(withZeroHours.costoOrario, null);
+  assert.deepEqual(withZeroHours.dipendentiDettaglio, []);
   assert.equal((await report.get(9, 2026)).tariffaMediaClienti, null);
+  rows.push({ idDipendente: 'D4', cc: 40, oreLavorate: 50 });
+  monthlyRows = rows;
+  const withOneEmployee = await report.get(9, 2026);
+  assert.deepEqual(withOneEmployee.dipendentiDettaglio.map(row => row.id), ['D4']);
+  const withoutPayslip = withOneEmployee.dipendentiDettaglio[0];
+  assert.equal(withoutPayslip.nettoBusta, 0);
+  assert.equal(withoutPayslip.stipendio, 40);
+  await db('registro_ore').insert({ mese: 9, anno: 2026, dipendente_id: 'D4',
+    cliente_id: 'C_SCONOSCIUTO', ore_totali: 5 });
+  const missingTariff = (await report.get(9, 2026)).dipendentiDettaglio.find(row => row.id === 'D4');
+  assert.equal(missingTariff.resa, null);
+  assert.deepEqual(missingTariff.clientiSenzaTariffa, ['C_SCONOSCIUTO']);
 });

@@ -349,17 +349,36 @@ app.get('/api/contabilita/report/costo-dipendenti/:anno/:mese', handleWorkflow(r
   employeeCostReport.get(req.params.mese, req.params.anno)));
 app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/f24', handleWorkflow(req =>
   employeeCostReport.saveF24({ mese: req.params.mese, anno: req.params.anno, importo: req.body?.importo })));
+app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/f24c', handleWorkflow(req =>
+  employeeCostReport.saveF24c({ mese: req.params.mese, anno: req.params.anno, importo: req.body?.importo })));
 app.post('/api/contabilita/report/costo-dipendenti/:anno/:mese/rettifiche', handleWorkflow(req =>
   employeeCostReport.addAdjustment({ mese: req.params.mese, anno: req.params.anno,
     voce: req.body?.voce, operazione: req.body?.operazione, valore: req.body?.valore, nota: req.body?.nota })));
 app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/rettifiche/:id', handleWorkflow(req =>
   employeeCostReport.deleteAdjustment({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
 app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/clienti/:clienteId/:voce', handleWorkflow(req =>
+  req.params.voce === 'ore' ? Promise.reject(new Error('Le ore vanno modificate con gli abbinamenti tra clienti e dipendenti.')) :
   employeeCostReport.saveClientAdjustment({ mese: req.params.mese, anno: req.params.anno,
     clienteId: req.params.clienteId, voce: req.params.voce, valore: req.body?.valore, nota: req.body?.nota })));
 app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/clienti/:clienteId/:voce', handleWorkflow(req =>
   employeeCostReport.deleteClientAdjustment({ mese: req.params.mese, anno: req.params.anno,
     clienteId: req.params.clienteId, voce: req.params.voce })));
+app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/dipendenti/:dipendenteId/:voce', handleWorkflow(req =>
+  req.params.voce === 'ore' ? Promise.reject(new Error('Le ore vanno modificate con gli abbinamenti tra clienti e dipendenti.')) :
+  employeeCostReport.saveEmployeeAdjustment({ mese: req.params.mese, anno: req.params.anno,
+    dipendenteId: req.params.dipendenteId, voce: req.params.voce, valore: req.body?.valore, nota: req.body?.nota })));
+app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/dipendenti/:dipendenteId/:voce', handleWorkflow(req =>
+  employeeCostReport.deleteEmployeeAdjustment({ mese: req.params.mese, anno: req.params.anno,
+    dipendenteId: req.params.dipendenteId, voce: req.params.voce })));
+app.post('/api/contabilita/report/costo-dipendenti/:anno/:mese/ore-abbinate', handleWorkflow(req =>
+  employeeCostReport.savePairedHours({ mese: req.params.mese, anno: req.params.anno,
+    origine: req.body?.origine, soggettoId: req.body?.soggettoId, valore: req.body?.valore,
+    abbinamenti: req.body?.abbinamenti, nota: req.body?.nota })));
+app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/ore-abbinate/:id/nota', handleWorkflow(req =>
+  employeeCostReport.updatePairedHoursNote({ mese: req.params.mese, anno: req.params.anno,
+    id: req.params.id, nota: req.body?.nota })));
+app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/ore-abbinate/:id', handleWorkflow(req =>
+  employeeCostReport.deletePairedHours({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
