@@ -105,6 +105,38 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.deepEqual(restored.rettifiche, []);
   assert.equal(restored.costoOrario, saved.costoOrario);
   assert.equal(restored.tariffaMediaClienti, saved.tariffaMediaClienti);
+  const changedHours = await report.saveClientAdjustment({ mese: 9, anno: 2026,
+    clienteId: 'C1', voce: 'ore', valore: '100', nota: 'Ore corrette' });
+  assert.equal(changedHours.oreTotali, 180);
+  assert.equal(changedHours.costoOrario, 16.67);
+  assert.equal(changedHours.clientiDettaglio[0].ore, 100);
+  assert.equal(changedHours.clientiDettaglio[0].rimanenza, 1333);
+  assert.equal(changedHours.rettificheClienti[0].differenza, -20);
+  const changedAmount = await report.saveClientAdjustment({ mese: 9, anno: 2026,
+    clienteId: 'C1', voce: 'imponibile', valore: '3200', nota: 'Imponibile corretto' });
+  assert.equal(changedAmount.imponibileClienti, 4120);
+  assert.equal(changedAmount.imponibileDettaglio, 4120);
+  assert.equal(changedAmount.tariffaMediaClienti, 22.89);
+  assert.equal(changedAmount.clientiDettaglio[0].imponibile, 3200);
+  assert.equal(changedAmount.clientiDettaglio[0].rimanenza, 1533);
+  assert.equal(changedAmount.rettificheClienti.find(item => item.voce === 'imponibile').differenza, 200);
+  const zeroHours = await report.saveClientAdjustment({ mese: 9, anno: 2026,
+    clienteId: 'C1', voce: 'ore', valore: '0', nota: 'Nessuna ora' });
+  assert.equal(zeroHours.oreTotali, 80);
+  assert.equal(zeroHours.imponibileClienti, 920);
+  assert.equal(zeroHours.clientiDettaglio[0].ore, 0);
+  assert.equal(zeroHours.clientiDettaglio[0].tariffaOraria, null);
+  const editedNote = await report.saveClientAdjustment({ mese: 9, anno: 2026,
+    clienteId: 'C1', voce: 'ore', valore: '95', nota: 'Nota modificata' });
+  assert.equal(editedNote.oreTotali, 175);
+  assert.equal(editedNote.rettificheClienti.filter(item => item.voce === 'ore').length, 1);
+  assert.equal(editedNote.rettificheClienti.find(item => item.voce === 'ore').nota, 'Nota modificata');
+  assert.deepEqual((await report.get(10, 2026)).rettificheClienti, []);
+  assert.equal(clientRows[0].oreLavorate, 120);
+  assert.equal(clientRows[0].imponibile, 3000);
+  await report.deleteClientAdjustment({ mese: 9, anno: 2026, clienteId: 'C1', voce: 'ore' });
+  await report.deleteClientAdjustment({ mese: 9, anno: 2026, clienteId: 'C1', voce: 'imponibile' });
+  assert.equal((await report.get(9, 2026)).tariffaMediaClienti, saved.tariffaMediaClienti);
   clientRows.push({ idCliente: 'C4', ragioneSociale: 'Mezzora', oreLavorate: 0.5, imponibile: 50 });
   clientRows.push({ idCliente: 'C5', ragioneSociale: 'In perdita', oreLavorate: 20, imponibile: 200 });
   const withExtraClients = await report.get(9, 2026);

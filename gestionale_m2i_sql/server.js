@@ -354,6 +354,12 @@ app.post('/api/contabilita/report/costo-dipendenti/:anno/:mese/rettifiche', hand
     voce: req.body?.voce, operazione: req.body?.operazione, valore: req.body?.valore, nota: req.body?.nota })));
 app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/rettifiche/:id', handleWorkflow(req =>
   employeeCostReport.deleteAdjustment({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
+app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/clienti/:clienteId/:voce', handleWorkflow(req =>
+  employeeCostReport.saveClientAdjustment({ mese: req.params.mese, anno: req.params.anno,
+    clienteId: req.params.clienteId, voce: req.params.voce, valore: req.body?.valore, nota: req.body?.nota })));
+app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/clienti/:clienteId/:voce', handleWorkflow(req =>
+  employeeCostReport.deleteClientAdjustment({ mese: req.params.mese, anno: req.params.anno,
+    clienteId: req.params.clienteId, voce: req.params.voce })));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });

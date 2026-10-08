@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Info, Pencil, Trash2 } from 'lucide-react';
 import { workflowRequest } from '../../api/workflowElaborati';
 import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 
@@ -7,6 +7,7 @@ const mesi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
   'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const ore = value => Number(value || 0).toLocaleString('it-IT', { maximumFractionDigits: 2 });
+const shortClientName = value => String(value || '').trim().split(/\s+/).slice(0, 4).join(' ');
 const adjustmentLabels = {
   totaleNetti: 'Netti buste paga · Totale mese', totaleCc: 'Totale CC',
   f24: 'F24 salvato', oreTotali: 'Ore totali', imponibileClienti: 'Imponibile clienti con ore'
@@ -43,8 +44,11 @@ const remainderColor = row => {
   return `rgb(${start.rgb.map((value, index) => Math.round(value + (end.rgb[index] - value) * progress)).join(', ')})`;
 };
 
-function AdjustableCard({ field, label, value, adjustments, onEdit, onDelete, deletingId, hours = false }) {
-  const notes = adjustments.filter(item => item.voce === field);
+function AdjustableCard({ field, label, value, adjustments, clientAdjustments = [], onEdit, onDelete, deletingId, hours = false }) {
+  const clientField = field === 'oreTotali' ? 'ore' : field === 'imponibileClienti' ? 'imponibile' : null;
+  const notes = [...adjustments.filter(item => item.voce === field),
+    ...clientAdjustments.filter(item => item.voce === clientField).map(item => ({
+      ...item, valore: item.differenza, nota: `${item.cliente}: ${item.nota}` }))];
   return <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-3">
       <p className="text-sm font-semibold text-slate-600">{label}</p>
@@ -54,9 +58,9 @@ function AdjustableCard({ field, label, value, adjustments, onEdit, onDelete, de
     </div>
     <p className="mt-2 text-2xl font-bold">{value}</p>
     {notes.length > 0 && <ul className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
-      {notes.map(item => <li key={item.id} className="flex items-start justify-between gap-2">
+      {notes.map(item => <li key={item.clienteId ? `${item.clienteId}:${item.voce}` : item.id} className="flex items-start justify-between gap-2">
         <span className="min-w-0 break-words"><strong className={item.valore < 0 ? 'text-red-700' : 'text-emerald-700'}>{item.valore < 0 ? '−' : '+'}{hours ? `${ore(Math.abs(item.valore))} h` : euro(Math.abs(item.valore))}</strong> · {item.nota}</span>
-        <button type="button" disabled={deletingId === item.id} onClick={() => onDelete(item.id)} aria-label={`Elimina rettifica: ${item.nota}`} title="Elimina rettifica" className="shrink-0 rounded p-1 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50">
+        <button type="button" disabled={deletingId === (item.clienteId ? `${item.clienteId}:${item.voce}` : `global:${item.id}`)} onClick={() => onDelete(item)} aria-label={`Elimina rettifica: ${item.nota}`} title="Elimina rettifica" className="shrink-0 rounded p-1 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50">
           <Trash2 size={16} aria-hidden="true" />
         </button>
       </li>)}
@@ -82,11 +86,17 @@ export default function ReportContabilita() {
   const [adjustmentError, setAdjustmentError] = useState('');
   const [adjustmentSaving, setAdjustmentSaving] = useState(false);
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState(null);
+  const [clientCell, setClientCell] = useState(null);
+  const [clientValue, setClientValue] = useState('');
+  const [clientNote, setClientNote] = useState('');
+  const [clientError, setClientError] = useState('');
+  const [clientSaving, setClientSaving] = useState(false);
 
   useEffect(() => {
     let current = true;
     setLoading(true); setReport(null); setError(''); setMessage('');
     setAdjustmentField(null);
+    setClientCell(null);
     workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}`)
       .then(data => { if (current) { setReport(data); setF24Input(data.valoriBase.f24 == null ? '' : String(data.valoriBase.f24).replace('.', ',')); } })
       .catch(cause => { if (current) setError(cause.message); })
@@ -125,13 +135,38 @@ export default function ReportContabilita() {
     } catch (cause) { setAdjustmentError(cause.message); }
     finally { setAdjustmentSaving(false); }
   };
-  const deleteAdjustment = async id => {
-    setDeletingAdjustmentId(id); setError(''); setMessage('');
+  const deleteAdjustment = async item => {
+    const key = item.clienteId ? `${item.clienteId}:${item.voce}` : `global:${item.id}`;
+    setDeletingAdjustmentId(key); setError(''); setMessage('');
     try {
-      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/rettifiche/${id}`, { method: 'DELETE' });
+      const path = item.clienteId
+        ? `contabilita/report/costo-dipendenti/${anno}/${mese}/clienti/${encodeURIComponent(item.clienteId)}/${item.voce}`
+        : `contabilita/report/costo-dipendenti/${anno}/${mese}/rettifiche/${item.id}`;
+      const data = await workflowRequest(path, { method: 'DELETE' });
       setReport(data); setMessage('Rettifica eliminata dal Report.');
-    } catch (cause) { setError(cause.message); }
+      if (clientCell?.clienteId === item.clienteId && clientCell?.voce === item.voce) setClientCell(null);
+    } catch (cause) {
+      if (item.clienteId && clientCell) setClientError(cause.message);
+      else setError(cause.message);
+    }
     finally { setDeletingAdjustmentId(null); }
+  };
+
+  const openClientCell = (row, voce) => {
+    const existing = report.rettificheClienti?.find(item => item.clienteId === row.id && item.voce === voce);
+    setClientCell({ clienteId: row.id, cliente: row.cliente, voce });
+    setClientValue(String(existing?.valore ?? (voce === 'ore' ? row.ore : row.imponibile)).replace('.', ','));
+    setClientNote(existing?.nota || ''); setClientError('');
+  };
+  const saveClientCell = async event => {
+    event.preventDefault(); setClientSaving(true); setClientError('');
+    try {
+      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/clienti/${encodeURIComponent(clientCell.clienteId)}/${clientCell.voce}`, {
+        method: 'PUT', body: JSON.stringify({ valore: clientValue, nota: clientNote })
+      });
+      setReport(data); setClientCell(null); setMessage('Rettifica del cliente salvata nel Report.');
+    } catch (cause) { setClientError(cause.message); }
+    finally { setClientSaving(false); }
   };
 
   const f24Modificato = report?.valoriBase?.f24 != null && f24Input.replace(',', '.') !== String(report.valoriBase.f24);
@@ -149,6 +184,8 @@ export default function ReportContabilita() {
     direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
   const adjustmentIsHours = adjustmentField === 'oreTotali';
   const adjustmentDisplay = value => value == null ? 'Da inserire' : adjustmentIsHours ? `${ore(value)} h` : euro(value);
+  const clientCellAdjustment = clientCell && report?.rettificheClienti?.find(item =>
+    item.clienteId === clientCell.clienteId && item.voce === clientCell.voce);
 
   return <main className="space-y-6 bg-white pt-8 text-slate-900">
     <header className="flex flex-wrap items-end justify-between gap-4">
@@ -189,6 +226,7 @@ export default function ReportContabilita() {
             ['oreTotali', `${ore(report.oreTotali)} h`]
           ].map(([field, value]) => <AdjustableCard key={field} field={field} label={adjustmentLabels[field]}
             value={value} hours={field === 'oreTotali'} adjustments={report.rettifiche || []}
+            clientAdjustments={report.rettificheClienti || []}
             onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />)}
         </div>
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
@@ -202,10 +240,11 @@ export default function ReportContabilita() {
       <section aria-label="Calcolo tariffa media clienti" className="space-y-4 border-t border-slate-200 pt-6">
         <div>
           <h2 className="text-xl font-bold">Tariffa media clienti</h2>
-          <p className="mt-1 text-sm text-slate-600">Somma degli imponibili dei clienti con ore, divisa per le ore totali dei dipendenti mostrate sopra.</p>
+          <p className="mt-1 text-sm text-slate-600">Somma degli imponibili dei clienti con ore, divisa per le ore totali mostrate sopra, comprese le rettifiche del Report.</p>
         </div>
         <AdjustableCard field="imponibileClienti" label={adjustmentLabels.imponibileClienti}
           value={euro(report.imponibileClienti)} adjustments={report.rettifiche || []}
+          clientAdjustments={report.rettificheClienti || []}
           onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
           <p className="text-sm font-semibold text-emerald-900">Tariffa media clienti</p>
@@ -217,7 +256,7 @@ export default function ReportContabilita() {
 
       <section aria-label="Redditività per cliente" className="space-y-4 border-t border-slate-200 pt-6">
         <div>
-          <h2 className="text-xl font-bold">Clienti con almeno un’ora lavorata</h2>
+          <h2 className="text-xl font-bold">Clienti con almeno un’ora lavorata o rettificati</h2>
           <p className="mt-1 text-sm text-slate-600">La rimanenza è l’imponibile meno il costo orario dipendente moltiplicato per le ore del cliente. Il guadagno percentuale è la rimanenza divisa per l’imponibile. Le righe passano dal rosso all’arancione e poi al verde quando questa percentuale cresce.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
@@ -235,18 +274,23 @@ export default function ReportContabilita() {
           </div>
         </div>
         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm">
-          <table className="w-full min-w-[1510px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1350px] table-fixed border-collapse text-left text-sm">
+            <colgroup>{[13, 8, 11, 11, 10, 12, 13, 11, 11].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
             <thead className="bg-slate-100 text-slate-900"><tr>{columns.map(column =>
-              <th key={column.key} scope="col" aria-sort={sort.key === column.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-3 py-3">
-                <button type="button" onClick={() => changeSort(column.key)} className="flex w-full items-center justify-between gap-2 text-left font-semibold hover:text-indigo-700" aria-label={`Ordina per ${column.label}`}>
-                  {column.label}<span aria-hidden="true" className="text-slate-500">{sort.key === column.key ? sort.direction === 'asc' ? '↑' : '↓' : '↕'}</span>
+              <th key={column.key} scope="col" aria-sort={sort.key === column.key ? sort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-2 py-3 align-top">
+                <button type="button" onClick={() => changeSort(column.key)} className="flex w-full items-start justify-between gap-1 text-left font-semibold hover:text-indigo-700" aria-label={`Ordina per ${column.label}`}>
+                  <span className="min-w-0 whitespace-normal break-words leading-tight">{column.label}</span><span aria-hidden="true" className="shrink-0 text-slate-500">{sort.key === column.key ? sort.direction === 'asc' ? '↑' : '↓' : '↕'}</span>
                 </button>
               </th>)}</tr></thead>
             <tbody>
               {!sortedClients.length && <tr><td colSpan={columns.length} className="px-4 py-6 text-center text-slate-600">Nessun cliente con almeno un’ora lavorata nel mese.</td></tr>}
               {sortedClients.map(row => <tr key={row.id} style={{ backgroundColor: remainderColor(row) }} className="border-b border-slate-300 last:border-b-0">
-                {columns.map(column => <td key={column.key} className={`px-3 py-3 ${column.key === 'cliente' ? 'font-semibold' : 'whitespace-nowrap tabular-nums'} ${['rimanenza', 'percentualeGuadagno'].includes(column.key) ? 'font-bold' : ''}`}>
-                  {formatCell(row[column.key], column.type)}
+                {columns.map(column => <td key={column.key} className={`px-2 py-3 ${column.key === 'cliente' ? 'break-words font-semibold' : 'whitespace-nowrap tabular-nums'} ${['rimanenza', 'percentualeGuadagno'].includes(column.key) ? 'font-bold' : ''}`}>
+                  {column.key === 'cliente' ? <span title={row.cliente}>{shortClientName(row.cliente)}</span>
+                    : ['ore', 'imponibile'].includes(column.key) ? <span className="inline-flex items-center gap-1">
+                      {formatCell(row[column.key], column.type)}
+                      <button type="button" onClick={() => openClientCell(row, column.key)} title={`Rettifica ${column.label} · ${row.cliente}`} aria-label={`Rettifica ${column.label} per ${row.cliente}`} className={`rounded-full p-0.5 hover:bg-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700 ${report.rettificheClienti?.some(item => item.clienteId === row.id && item.voce === column.key) ? 'text-indigo-800' : 'text-slate-600'}`}><Info size={17} aria-hidden="true" /></button>
+                    </span> : formatCell(row[column.key], column.type)}
                 </td>)}
               </tr>)}
             </tbody>
@@ -255,6 +299,29 @@ export default function ReportContabilita() {
         {report.costoOrario == null && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Inserisci l’F24 e verifica le ore totali per vedere costo, differenze e rimanenza dei clienti.</p>}
       </section>
     </>}
+    {report && clientCell && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="report-cliente-rettifica-title" className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="report-cliente-rettifica-title" className="text-xl font-bold">{clientCell.voce === 'ore' ? 'Ore cliente' : 'Imponibile fattura'} · {clientCell.cliente}</h2>
+          <button type="button" onClick={() => setClientCell(null)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold hover:bg-slate-200">Chiudi</button>
+        </div>
+        <p className="mt-3 text-sm text-slate-600">Valore originale: {clientCell.voce === 'ore' ? `${ore(clientCellAdjustment?.valoreBase ?? report.clientiDettaglio.find(row => row.id === clientCell.clienteId)?.ore)} h` : euro(clientCellAdjustment?.valoreBase ?? report.clientiDettaglio.find(row => row.id === clientCell.clienteId)?.imponibile)}</p>
+        <p className="mt-1 text-sm text-slate-600">La modifica vale solo per questo cliente nel Report di {mesi[mese - 1]} {anno}. Puoi mantenere una nota, modificarla o eliminare la rettifica.</p>
+        <form onSubmit={saveClientCell} className="mt-5 space-y-4">
+          <label className="block text-sm font-semibold">{clientCell.voce === 'ore' ? 'Ore nel Report' : 'Imponibile nel Report (€)'}
+            <input type="text" inputMode="decimal" value={clientValue} onChange={event => setClientValue(event.target.value)} autoFocus className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base" />
+          </label>
+          <label className="block text-sm font-semibold">Nota
+            <textarea value={clientNote} onChange={event => setClientNote(event.target.value)} maxLength={500} rows={3} placeholder="Motivo della modifica" className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-base" />
+          </label>
+          {clientError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{clientError}</p>}
+          <div className="flex flex-wrap gap-3">
+            <button type="submit" disabled={clientSaving || !clientValue.trim() || !clientNote.trim()} className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{clientSaving ? 'Salvataggio...' : 'Salva modifica'}</button>
+            {clientCellAdjustment && <button type="button" disabled={deletingAdjustmentId === `${clientCell.clienteId}:${clientCell.voce}`} onClick={() => deleteAdjustment(clientCellAdjustment)} className="rounded-lg bg-red-50 px-4 py-2 font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50">Elimina rettifica</button>}
+          </div>
+        </form>
+      </div>
+    </div>}
     {report && adjustmentField && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div role="dialog" aria-modal="true" aria-labelledby="report-rettifica-title" className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-3">
@@ -263,7 +330,7 @@ export default function ReportContabilita() {
         </div>
         <p className="mt-3 text-sm text-slate-600">Valore originale: {adjustmentDisplay(report.valoriBase[adjustmentField])} · Nel Report: {adjustmentDisplay(report[adjustmentField])}</p>
         <p className="mt-1 text-sm text-slate-600">La rettifica modifica solo questo Report per {mesi[mese - 1]} {anno}.</p>
-        {adjustmentField === 'imponibileClienti' && <p className="mt-1 text-sm text-slate-600">Questa rettifica aggiorna la tariffa media complessiva; gli importi dei singoli clienti restano quelli delle loro fatture.</p>}
+        {adjustmentField === 'imponibileClienti' && <p className="mt-1 text-sm text-slate-600">Questa rettifica complessiva non viene attribuita ai singoli clienti. Per modificarne uno usa la “i” nella tabella.</p>}
         <form onSubmit={saveAdjustment} className="mt-5 space-y-4">
           <fieldset>
             <legend className="mb-2 text-sm font-semibold">Operazione</legend>
