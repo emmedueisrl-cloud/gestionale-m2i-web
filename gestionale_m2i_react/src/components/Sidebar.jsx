@@ -28,7 +28,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
     { type: 'item', label: '📋 Database Clienti', path: '/admin/clienti/lista' },
     { type: 'item', label: '🔒 Elaborato Mensile Clienti', path: '/admin/elaborati/clienti' },
     { type: 'item', label: '💵 Sconti/Maggiorazioni Clienti', path: '/admin/clienti/regolazioni' },
-    { type: 'item', label: '🧾 Gestione Fatture', path: '/admin/fatture' },
+    { type: 'item', label: '🧾 Gestione Fatture', path: '/contabilita/incassi-insoluti' },
     { type: 'item', label: '📋 Contabilità elaborati', path: '/contabilita/clienti' },
     { type: 'item', label: '📦 Magazzino', path: '/admin/magazzino' },
     { type: 'item', label: '📅 Appuntamenti e Preventivi', path: '/admin/preventivi' },
