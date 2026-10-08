@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, UserRound, X } from 'lucide-react';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
+import { notePostAppuntamento } from '../../utils/noteAppuntamento';
 
 const API = `${import.meta.env.VITE_API_URL || ''}/api/appuntamenti-preventivi`;
 const emptyForm = { dataOra: '', nominativo: '', referente: '', telefono: '', email: '', incaricato: '', luogo: '', note: '', stato: 'Programmato', esito: '' };
@@ -257,6 +258,7 @@ export default function AppuntamentiPreventivi() {
     {items.map(a => {
       const data = formatDate(a.dataOra);
       const aperto = dettagliAperti === a.id;
+      const notePost = notePostAppuntamento(a.note, a.noteStoriche);
       const inLavorazione = ['Programmato', 'Da svolgere', 'Passato'].includes(a.stato);
       return <article key={a.id} id={`appuntamento-${a.id}`} className={`rounded-xl border bg-slate-800 shadow-sm ${aperto ? 'border-indigo-500/50' : 'border-slate-700'}`}>
         <div className="grid grid-cols-2 items-center gap-3 p-4 text-sm text-slate-100 lg:h-[76px] lg:grid-cols-[100px_170px_90px_210px_190px_150px_350px] lg:gap-2.5 lg:overflow-hidden">
@@ -291,8 +293,8 @@ export default function AppuntamentiPreventivi() {
           {a.note ? <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-slate-900/60 px-3 py-2 text-sm text-slate-200">{a.note}</p> : <p className="mt-2 text-sm text-slate-500">Nessuna nota nella scheda appuntamento.</p>}
           <div className="mt-5 space-y-2 border-t border-slate-700 pt-4">
             <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Note post appuntamento</h4>
-            {a.noteStoriche?.filter(note => note.tipo !== 'scheda').map(note => <div key={note.id} className="rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{new Date(note.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>Autore: {note.autore || 'Marketing'}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p></div>)}
-            {!a.noteStoriche?.some(note => note.tipo !== 'scheda') && <p className="text-sm text-slate-500">Nessuna nota post appuntamento.</p>}
+            {notePost.map(note => <div key={note.id} className="rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{new Date(note.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>Autore: {note.autore || 'Marketing'}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p></div>)}
+            {notePost.length === 0 && <p className="text-sm text-slate-500">Nessuna nota post appuntamento.</p>}
           </div>
           <form onSubmit={event => salvaNota(event, a.id)} className="pt-4"><label className="block text-sm font-semibold text-slate-300">Aggiungi nota post appuntamento<textarea required maxLength={2000} rows={3} value={notaTesto} onChange={event => setNotaTesto(event.target.value)} placeholder="Scrivi una nota post appuntamento…" className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-slate-100" /></label><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-400">Data, ora e autore verranno registrati automaticamente.</span><button type="submit" disabled={saving || !notaTesto.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">Salva nota</button></div>{notaError && <p role="alert" className="mt-2 text-sm text-red-300">{notaError}</p>}</form>
         </div>

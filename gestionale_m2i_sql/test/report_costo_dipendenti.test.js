@@ -92,6 +92,10 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     [100, 1300, 15, 1868, 368],
     [100, 850, 10.5, 1118, 68]
   ]);
+  assert.deepEqual(withF24c.dipendentiDettaglio[0].dettaglioClientiResa.map(row => [row.clienteId, row.ore, row.tariffaOraria, row.valore]), [
+    ['C1', 60, 25, 1500], ['C2', 20, 18.4, 368]
+  ]);
+  assert.equal(withF24c.dipendentiDettaglio[0].dettaglioClientiResa.reduce((sum, row) => sum + row.valore, 0), withF24c.dipendentiDettaglio[0].valoreClienti);
   const pairedFromEmployee = await report.savePairedHours({ mese: 9, anno: 2026, origine: 'dipendente',
     soggettoId: 'D1', valore: '90', abbinamenti: [{ id: 'C1', ore: '5' }, { id: 'C2', ore: '5' }], nota: 'Ore ridotte' });
   assert.equal(pairedFromEmployee.oreTotali, 190);
@@ -262,6 +266,8 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   const missingTariff = (await report.get(9, 2026)).dipendentiDettaglio.find(row => row.id === 'D4');
   assert.equal(missingTariff.resa, null);
   assert.deepEqual(missingTariff.clientiSenzaTariffa, ['C_SCONOSCIUTO']);
+  assert.deepEqual(missingTariff.dettaglioClientiResa.map(row => [row.clienteId, row.ore, row.tariffaOraria, row.valore]),
+    [['C_SCONOSCIUTO', 5, null, null]]);
 });
 
 test('il Report ripartisce il costo della malattia in F24C senza duplicarlo', async t => {

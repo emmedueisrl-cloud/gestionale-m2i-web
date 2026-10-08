@@ -212,15 +212,22 @@ function createEmployeeCostReport(knex, workflow) {
       const clientHours = employeeClientHours.get(id) || new Map();
       let valoreClientiCent = 0, oreClienti = 0;
       const clientiSenzaTariffa = [];
+      const dettaglioClientiResa = [];
       for (const [clientId, hours] of clientHours) {
         if (hours <= 0) continue;
         oreClienti += hours;
         const tariffaCent = clientTariffs.get(clientId);
+        const cliente = adjustedClientsById.get(clientId)?.ragioneSociale || clientId;
         if (tariffaCent == null) {
-          clientiSenzaTariffa.push(adjustedClientsById.get(clientId)?.ragioneSociale || clientId);
+          clientiSenzaTariffa.push(cliente);
+          dettaglioClientiResa.push({ clienteId: clientId, cliente, ore: Math.round(hours * 100) / 100,
+            tariffaOraria: null, valore: null });
           continue;
         }
-        valoreClientiCent += Math.round(hours * tariffaCent);
+        const valoreCent = Math.round(hours * tariffaCent);
+        valoreClientiCent += valoreCent;
+        dettaglioClientiResa.push({ clienteId: clientId, cliente, ore: Math.round(hours * 100) / 100,
+          tariffaOraria: tariffaCent / 100, valore: valoreCent / 100 });
       }
       const costoOrarioDipendenteCent = f24cWithIllnessCent == null || employeeAllocationHours <= 0 ? null :
         Math.round(f24cWithIllnessCent / employeeAllocationHours + stipendioCent / oreDipendente);
@@ -233,7 +240,7 @@ function createEmployeeCostReport(knex, workflow) {
         oreMalattia: row.illnessHoursCent / 100, quotaMalattia: row.illnessCostCent / 100,
         nettoBusta: nettoCent / 100, cc: ccDipendenteCent / 100,
         stipendio: stipendioCent / 100, oreClienti: Math.round(oreClienti * 100) / 100,
-        valoreClienti: valoreClientiCent / 100,
+        valoreClienti: valoreClientiCent / 100, dettaglioClientiResa,
         costoOrario: costoOrarioDipendenteCent == null ? null : costoOrarioDipendenteCent / 100,
         costoDipendente: costoDipendenteCent == null ? null : costoDipendenteCent / 100,
         resa: resaCent == null ? null : resaCent / 100, clientiSenzaTariffa };

@@ -458,7 +458,7 @@ export default function ReportContabilita() {
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold">Ore per ripartizione</p><p className="mt-1 text-xl font-bold">{ore(report.oreRipartizioneDipendenti)} h</p><p className="mt-1 text-xs text-slate-600">{ore(report.oreTotali)} h totali − {ore(report.oreMalattia)} h malattia</p></div>
         </div>
         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm">
-          <table className="w-full min-w-[1100px] table-fixed border-collapse text-left text-sm">
+          <table className="w-full min-w-[1250px] table-fixed border-collapse text-left text-sm">
             <colgroup><col className="w-[22%]" /><col className="w-[13%]" /><col className="w-[18%]" /><col className="w-[26%]" /><col className="w-[21%]" /></colgroup>
             <thead className="bg-slate-100 text-slate-900"><tr>
               {employeeColumns.map(column => <th key={column.key} scope="col" aria-sort={employeeSort.key === column.key ? employeeSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-3 py-3">
@@ -488,8 +488,18 @@ export default function ReportContabilita() {
                 </td>
                 <td className={`px-3 py-3 font-bold tabular-nums ${row.resa == null ? 'text-slate-500' : row.resa >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>
                   {row.resa == null ? '—' : `${row.resa > 0 ? '+' : ''}${euro(row.resa)}`}
-                  {row.resa != null && <span className="mt-0.5 block text-xs font-normal text-slate-600">{ore(row.oreClienti)} h clienti: {euro(row.valoreClienti)} − {euro(row.costoDipendente)} costo</span>}
-                  {row.clientiSenzaTariffa?.length > 0 && <span className="mt-0.5 block whitespace-normal text-xs font-normal text-amber-800">Tariffa mancante: {row.clientiSenzaTariffa.join(', ')}</span>}
+                  <div className="mt-2 space-y-1 border-t border-slate-300 pt-2 text-xs font-normal text-slate-700">
+                    <p className="font-semibold">Valore prodotto per cliente</p>
+                    {!row.dettaglioClientiResa?.length && <p>Nessuna ora presso clienti.</p>}
+                    <ul className="max-h-48 space-y-2 overflow-y-auto">{row.dettaglioClientiResa?.map(cliente => <li key={cliente.clienteId} className="whitespace-normal break-words">
+                      <span className="block font-medium">{cliente.cliente}</span>
+                      <span className={cliente.valore == null ? 'text-amber-800' : ''}>{ore(cliente.ore)} h × {cliente.tariffaOraria == null ? 'tariffa mancante' : `${euro(cliente.tariffaOraria)} / h = ${euro(cliente.valore)}`}</span>
+                    </li>)}</ul>
+                    <p className="border-t border-slate-200 pt-1">Totale clienti: {euro(row.valoreClienti)}</p>
+                    <p>− Costo dipendente: {row.costoDipendente == null ? '—' : euro(row.costoDipendente)}</p>
+                    <p className="font-semibold">= Resa: {row.resa == null ? '—' : `${row.resa > 0 ? '+' : ''}${euro(row.resa)}`}</p>
+                    {row.clientiSenzaTariffa?.length > 0 && <p className="text-amber-800">Resa non calcolabile finché manca una tariffa cliente.</p>}
+                  </div>
                 </td>
               </tr>)}
             </tbody>
