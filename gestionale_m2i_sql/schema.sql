@@ -232,7 +232,8 @@ CREATE TABLE appuntamenti_note (
     testo TEXT NOT NULL,
     creata_il TEXT NOT NULL,
     autore TEXT NOT NULL DEFAULT '',
-    visibile_pubblico INTEGER NOT NULL DEFAULT 1
+    visibile_pubblico INTEGER NOT NULL DEFAULT 1,
+    tipo TEXT NOT NULL DEFAULT 'post'
 );
 CREATE INDEX idx_appuntamenti_note_appuntamento ON appuntamenti_note(appuntamento_id);
 

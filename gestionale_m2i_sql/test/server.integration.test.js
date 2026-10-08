@@ -189,6 +189,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     }
     const noteDirette = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idAppuntamento).noteStoriche;
     assert.deepEqual(noteDirette.map(note => note.testo), ['Prima nota interna', 'Seconda nota interna']);
+    assert.deepEqual(noteDirette.map(note => note.tipo), ['post', 'post']);
     const impegniInAgenda = await new Promise((resolve, reject) => {
       const db = new sqlite3.Database(path.join(temporaryDir, 'gestionale.db'));
       db.get('SELECT COUNT(*) AS totale FROM agenda_caposquadra', (error, row) => db.close(() => error ? reject(error) : resolve(row.totale)));
@@ -273,6 +274,9 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(elencoPubblico[0].schedaPdf, undefined);
     assert.equal(elencoPubblico[0].noteStoriche.length, 1);
     assert.equal(elencoPubblico[0].noteStoriche[0].testo, 'Richiesta pubblica');
+    assert.equal(elencoPubblico[0].noteStoriche[0].tipo, 'scheda');
+    assert.equal(schedaSalvata.note, 'Richiesta pubblica');
+    assert.equal(schedaSalvata.noteStoriche[0].tipo, 'scheda');
     assert.match(elencoPubblico[0].noteStoriche[0].creataIl, /^\d{4}-\d\d-\d\dT\d\d:\d\d:/);
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}/stato`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ stato: 'Esitato', esito: 'Preventivo da preparare' }) })).status, 400);
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}/accetta`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ tipoCommerciale: 'manuale', commercialeNome: 'Lucia Verdi' }) })).status, 200);
@@ -372,6 +376,8 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(pendingMarketingNotes.find(item => item.testo === 'Prima nota dopo l’esito')?.azienda, 'Richiesta commerciale esterno');
     const noteMarketing = (await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idMarketingManuale)?.noteStoriche;
     assert.deepEqual(noteMarketing.map(note => note.testo), ['Prima nota dopo l’esito', 'Seconda nota dopo l’esito']);
+    const noteComplete = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idMarketingManuale).noteStoriche;
+    assert.deepEqual(noteComplete.map(note => [note.tipo, note.autore]), [['post', 'local-test@example.invalid'], ['post', 'Marketing'], ['post', 'Marketing']]);
     assert.equal((await publicAction(idMarketingManuale, 'rifissa', { dataOra: '2099-01-08T10:00', testo: '   ' })).status, 400);
     const secondaRichiesta = await publicAction(idMarketingManuale, 'rifissa', { dataOra: '2099-01-08T10:00', testo: 'Da incontrare per il secondo sopralluogo' });
     assert.equal(secondaRichiesta.status, 201);
@@ -385,6 +391,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(nuoveRichieste.find(item => item.id === idSecondoAppuntamento)?.telefono, '333 765 4321');
     assert.equal(nuoveRichieste.find(item => item.id === idSecondoAppuntamento)?.email, 'marketing@example.com');
     assert.equal(nuoveRichieste.find(item => item.id === idSecondoAppuntamento)?.noteStoriche[0].testo, 'Da incontrare per il secondo sopralluogo');
+    assert.equal(nuoveRichieste.find(item => item.id === idSecondoAppuntamento)?.noteStoriche[0].tipo, 'scheda');
     assert.equal(nuoveRichieste.find(item => item.id === idMarketingManuale)?.stato, 'Esitato');
     assert.equal((await publicAction(idMarketingManuale, 'rifissa', { dataOra: '2099-01-09T10:00', testo: 'Richiesta duplicata' })).status, 400);
     assert.equal((await publicAction(idSecondoAppuntamento, 'rifissa', { dataOra: '2099-01-09T10:00', testo: 'Non ancora' })).status, 400);

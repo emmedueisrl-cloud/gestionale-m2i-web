@@ -23,6 +23,13 @@ const columns = [
   { key: 'rimanenza', label: 'Rimanenza', type: 'money' },
   { key: 'percentualeGuadagno', label: 'Guadagno su imponibile (%)', type: 'percentage' }
 ];
+const employeeColumns = [
+  { key: 'dipendente', label: 'Dipendente' },
+  { key: 'ore', label: 'Ore totali' },
+  { key: 'stipendio', label: 'Stipendio' },
+  { key: 'costoOrario', label: 'Costo orario' },
+  { key: 'resa', label: 'Resa' }
+];
 const formatCell = (value, type) => value == null ? '—' : type === 'hours' ? `${ore(value)} h`
   : type === 'hourly' ? `${euro(value)} / h` : type === 'money' ? euro(value)
     : type === 'percentage' ? `${Number(value).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : value;
@@ -86,6 +93,7 @@ export default function ReportContabilita() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [sort, setSort] = useState({ key: 'cliente', direction: 'asc' });
+  const [employeeSort, setEmployeeSort] = useState({ key: 'dipendente', direction: 'asc' });
   const [adjustmentField, setAdjustmentField] = useState(null);
   const [adjustmentOperation, setAdjustmentOperation] = useState('aggiungi');
   const [adjustmentValue, setAdjustmentValue] = useState('');
@@ -271,6 +279,17 @@ export default function ReportContabilita() {
   }), [report, sort]);
   const changeSort = key => setSort(current => ({ key,
     direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
+  const sortedEmployees = useMemo(() => [...(report?.dipendentiDettaglio || [])].sort((a, b) => {
+    const first = a[employeeSort.key], second = b[employeeSort.key];
+    if (first == null || second == null) return first == null && second == null ? 0 : first == null ? 1 : -1;
+    const comparison = employeeSort.key === 'dipendente'
+      ? String(first).localeCompare(String(second), 'it', { sensitivity: 'base' })
+      : Number(first) - Number(second);
+    return (employeeSort.direction === 'asc' ? 1 : -1) * comparison ||
+      a.dipendente.localeCompare(b.dipendente, 'it', { sensitivity: 'base' });
+  }), [report, employeeSort]);
+  const changeEmployeeSort = key => setEmployeeSort(current => ({ key,
+    direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
   const adjustmentIsHours = adjustmentField === 'oreTotali';
   const adjustmentDisplay = value => value == null ? 'Da inserire' : adjustmentIsHours ? `${ore(value)} h` : euro(value);
   const clientCellAdjustment = clientCell && report?.rettificheClienti?.find(item =>
@@ -421,14 +440,18 @@ export default function ReportContabilita() {
           <p className="text-sm text-indigo-900">Salvato solo nel Report · {report.f24c == null ? 'Da inserire' : euro(report.f24c)}</p>
         </form>
         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm">
-          <table className="w-full min-w-[850px] table-fixed border-collapse text-left text-sm">
-            <colgroup><col className="w-[28%]" /><col className="w-[16%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[20%]" /></colgroup>
+          <table className="w-full min-w-[1100px] table-fixed border-collapse text-left text-sm">
+            <colgroup><col className="w-[22%]" /><col className="w-[13%]" /><col className="w-[18%]" /><col className="w-[26%]" /><col className="w-[21%]" /></colgroup>
             <thead className="bg-slate-100 text-slate-900"><tr>
-              {['Dipendente', 'Ore totali', 'Stipendio', 'Costo orario', 'Resa'].map(label => <th key={label} scope="col" className="border-b border-slate-300 px-3 py-3 font-semibold">{label}</th>)}
+              {employeeColumns.map(column => <th key={column.key} scope="col" aria-sort={employeeSort.key === column.key ? employeeSort.direction === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-3 py-3">
+                <button type="button" onClick={() => changeEmployeeSort(column.key)} aria-label={`Ordina per ${column.label}`} className="flex w-full items-start justify-between gap-1 text-left font-semibold hover:text-indigo-700">
+                  <span className="min-w-0 whitespace-normal leading-tight">{column.label}</span><span aria-hidden="true" className="shrink-0 text-slate-500">{employeeSort.key === column.key ? employeeSort.direction === 'asc' ? '↑' : '↓' : '↕'}</span>
+                </button>
+              </th>)}
             </tr></thead>
             <tbody>
-              {!report.dipendentiDettaglio?.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-600">Nessun dipendente nell’elaborato del mese.</td></tr>}
-              {(report.dipendentiDettaglio || []).map((row, index) => <tr key={row.id} className={`border-b border-slate-200 last:border-b-0 ${index % 2 ? 'bg-slate-50' : 'bg-white'}`}>
+              {!sortedEmployees.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-600">Nessun dipendente nell’elaborato del mese.</td></tr>}
+              {sortedEmployees.map((row, index) => <tr key={row.id} className={`border-b border-slate-200 last:border-b-0 ${index % 2 ? 'bg-slate-50' : 'bg-white'}`}>
                 <td className="px-3 py-3 font-semibold">{row.dipendente}</td>
                 <td className="px-3 py-3 tabular-nums"><span className="inline-flex items-center gap-1">{ore(row.ore)} h
                   <button type="button" onClick={() => openEmployeeCell(row, 'ore')} title={`Rettifica ore totali · ${row.dipendente}`} aria-label={`Rettifica ore totali per ${row.dipendente}`} className={`rounded-full p-0.5 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700 ${(report.rettificheDipendenti?.some(item => item.dipendenteId === row.id && item.voce === 'ore') || report.rettificheOreAbbinate?.some(item => item.abbinamenti.some(pair => pair.dipendenteId === row.id))) ? 'text-indigo-800' : 'text-slate-600'}`}><Info size={17} aria-hidden="true" /></button>
@@ -440,7 +463,10 @@ export default function ReportContabilita() {
                   </span>
                   <span className="block text-xs text-slate-600">+ {euro(row.cc)} CC</span>
                 </td>
-                <td className="px-3 py-3 font-semibold tabular-nums">{row.costoOrario == null ? '—' : `${euro(row.costoOrario)} / h`}</td>
+                <td className="px-3 py-3 font-semibold tabular-nums">
+                  {row.costoOrario == null ? '—' : `${euro(row.costoOrario)} / h`}
+                  {row.costoOrario != null && <span className="mt-1 block whitespace-normal text-xs font-normal leading-snug text-slate-600">({euro(report.f24c)} F24C ÷ {ore(report.oreTotali)} h totali) + ({euro(row.stipendio)} stipendio ÷ {ore(row.ore)} h dipendente)</span>}
+                </td>
                 <td className={`px-3 py-3 font-bold tabular-nums ${row.resa == null ? 'text-slate-500' : row.resa >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>
                   {row.resa == null ? '—' : `${row.resa > 0 ? '+' : ''}${euro(row.resa)}`}
                   {row.resa != null && <span className="mt-0.5 block text-xs font-normal text-slate-600">{ore(row.oreClienti)} h clienti: {euro(row.valoreClienti)} − {euro(row.costoDipendente)} costo</span>}

@@ -93,11 +93,12 @@ async function ensureTable() {
       table.string('creata_il', 24).notNullable();
       table.string('autore', 254).notNullable().defaultTo('');
       table.boolean('visibile_pubblico').notNullable().defaultTo(true);
+      table.string('tipo', 20).notNullable().defaultTo('post');
     });
     const noteEsistenti = await knex('appuntamenti_preventivi').where('origine_pubblica', true).whereNot('note', '').select('id', 'note', 'created_at');
     for (const item of noteEsistenti) {
       const timestamp = new Date(`${String(item.created_at).replace(' ', 'T').replace(/Z$/, '')}Z`);
-      await knex('appuntamenti_note').insert({ appuntamento_id: item.id, testo: item.note, creata_il: Number.isNaN(timestamp.getTime()) ? new Date().toISOString() : timestamp.toISOString() });
+      await knex('appuntamenti_note').insert({ appuntamento_id: item.id, testo: item.note, creata_il: Number.isNaN(timestamp.getTime()) ? new Date().toISOString() : timestamp.toISOString(), tipo: 'scheda' });
     }
   }
   if (!await knex.schema.hasColumn('appuntamenti_note', 'autore')) {
@@ -105,6 +106,16 @@ async function ensureTable() {
   }
   if (!await knex.schema.hasColumn('appuntamenti_note', 'visibile_pubblico')) {
     await knex.schema.alterTable('appuntamenti_note', table => table.boolean('visibile_pubblico').notNullable().defaultTo(true));
+  }
+  if (!await knex.schema.hasColumn('appuntamenti_note', 'tipo')) {
+    await knex.schema.alterTable('appuntamenti_note', table => table.string('tipo', 20).notNullable().defaultTo('post'));
+    // Solo la prima nota senza autore di una scheda Marketing era la copia della nota iniziale.
+    await knex.raw(`UPDATE appuntamenti_note SET tipo = 'scheda' WHERE id IN (
+      SELECT MIN(n.id) FROM appuntamenti_note n
+      JOIN appuntamenti_preventivi ap ON ap.id = n.appuntamento_id
+      WHERE ap.origine_pubblica = 1 AND ap.note <> '' AND n.autore = ''
+      GROUP BY n.appuntamento_id
+    )`);
   }
   await knex.raw('CREATE UNIQUE INDEX IF NOT EXISTS idx_appuntamenti_preventivi_agenda ON appuntamenti_preventivi(agenda_impegno_id)');
   if (!await knex.schema.hasColumn('preventivi', 'appuntamento_id')) {
@@ -207,7 +218,7 @@ async function attachNotes(rows, publicOnly = false) {
   const query = knex('appuntamenti_note').whereIn('appuntamento_id', rows.map(row => row.id));
   if (publicOnly) query.where('visibile_pubblico', true);
   const notes = await query
-    .select('id', 'appuntamento_id as appuntamentoId', 'testo', 'creata_il as creataIl', 'autore')
+    .select('id', 'appuntamento_id as appuntamentoId', 'testo', 'creata_il as creataIl', 'autore', 'tipo')
     .orderBy('creata_il', 'asc').orderBy('id', 'asc');
   const byAppointment = new Map(rows.map(row => [row.id, []]));
   for (const note of notes) byAppointment.get(note.appuntamentoId)?.push(note);
@@ -351,7 +362,7 @@ async function createPublic(body, file) {
   try {
     const id = await knex.transaction(async trx => {
       const [appointmentId] = await trx('appuntamenti_preventivi').insert(data);
-      if (data.note) await trx('appuntamenti_note').insert({ appuntamento_id: appointmentId, testo: data.note, creata_il: new Date().toISOString() });
+      if (data.note) await trx('appuntamenti_note').insert({ appuntamento_id: appointmentId, testo: data.note, creata_il: new Date().toISOString(), tipo: 'scheda' });
       await marketingNotifications.record(trx, { appointmentId, type: 'appuntamento', company: data.nominativo });
       return appointmentId;
     });
@@ -374,9 +385,9 @@ async function addPublicNote(id, body) {
     const appointment = await trx('appuntamenti_preventivi').where({ id, origine_pubblica: true }).first('id', 'nominativo');
     if (!appointment) return null;
     const creataIl = new Date().toISOString();
-    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore: 'Marketing', visibile_pubblico: true });
+    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore: 'Marketing', visibile_pubblico: true, tipo: 'post' });
     await marketingNotifications.record(trx, { appointmentId: appointment.id, type: 'nota', company: appointment.nominativo, text: testo });
-    return { id: noteId, appuntamentoId: appointment.id, testo, creataIl, autore: 'Marketing' };
+    return { id: noteId, appuntamentoId: appointment.id, testo, creataIl, autore: 'Marketing', tipo: 'post' };
   });
 }
 
@@ -388,8 +399,8 @@ async function addInternalNote(id, body, author) {
     const appointment = await trx('appuntamenti_preventivi').where('id', id).first('id');
     if (!appointment) return null;
     const creataIl = new Date().toISOString();
-    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore, visibile_pubblico: false });
-    return { id: noteId, appuntamentoId: appointment.id, testo, creataIl, autore };
+    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore, visibile_pubblico: false, tipo: 'post' });
+    return { id: noteId, appuntamentoId: appointment.id, testo, creataIl, autore, tipo: 'post' };
   });
 }
 
@@ -420,7 +431,7 @@ async function rebookPublic(id, body) {
       numero_appuntamento: nextNumber,
       appuntamento_precedente_id: previous.id
     });
-    await trx('appuntamenti_note').insert({ appuntamento_id: newId, testo, creata_il: new Date().toISOString() });
+    await trx('appuntamenti_note').insert({ appuntamento_id: newId, testo, creata_il: new Date().toISOString(), tipo: 'scheda' });
     await marketingNotifications.record(trx, { appointmentId: newId, type: 'appuntamento', company: previous.nominativo });
     return { id: newId, stato: STATO_RICHIESTO_MARKETING, numeroAppuntamento: nextNumber, appuntamentoPrecedenteId: previous.id };
   });
