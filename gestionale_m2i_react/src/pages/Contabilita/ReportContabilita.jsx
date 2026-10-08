@@ -18,10 +18,20 @@ const columns = [
 ];
 const formatCell = (value, type) => value == null ? '—' : type === 'hours' ? `${ore(value)} h`
   : type === 'hourly' ? `${euro(value)} / h` : type === 'money' ? euro(value) : value;
+const remainderColors = [
+  { share: 0, rgb: [252, 165, 165] },
+  { share: 0.4, rgb: [253, 186, 116] },
+  { share: 0.7, rgb: [187, 247, 208] },
+  { share: 1, rgb: [134, 239, 172] }
+];
 const remainderColor = row => {
   if (row.rimanenza == null) return undefined;
   const share = row.imponibile > 0 ? Math.max(0, Math.min(1, row.rimanenza / row.imponibile)) : 0;
-  return `hsl(${Math.round(125 * share)} 80% 87%)`;
+  const upper = remainderColors.findIndex(stop => share <= stop.share);
+  if (upper <= 0) return `rgb(${remainderColors[0].rgb.join(', ')})`;
+  const start = remainderColors[upper - 1], end = remainderColors[upper];
+  const progress = (share - start.share) / (end.share - start.share);
+  return `rgb(${start.rgb.map((value, index) => Math.round(value + (end.rgb[index] - value) * progress)).join(', ')})`;
 };
 
 export default function ReportContabilita() {
@@ -106,24 +116,21 @@ export default function ReportContabilita() {
       <section aria-label="Calcolo costo orario dipendenti" className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ['Netti busta · Per ufficio paghe', euro(report.totaleNetti)],
+            ['Netti buste paga · Totale mese', euro(report.totaleNetti)],
             ['Totale CC', euro(report.totaleCc)],
             ['F24 salvato', report.f24 == null ? 'Da inserire' : euro(report.f24)],
-            ['Ore lavorate totali', `${ore(report.oreTotali)} h`]
+            ['Ore totali', `${ore(report.oreTotali)} h`]
           ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-sm font-semibold text-slate-600">{label}</p>
             <p className="mt-2 text-2xl font-bold">{value}</p>
           </div>)}
         </div>
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
-          <p className="text-sm font-semibold text-indigo-900">Costo effettivo orario dipendente</p>
+          <p className="text-sm font-semibold text-indigo-900">Costo medio orario dipendente</p>
           <p className="mt-2 text-4xl font-bold text-indigo-950">{report.costoOrario == null ? '—' : `${euro(report.costoOrario)} / h`}</p>
           <p className="mt-2 text-sm text-indigo-900">({euro(report.totaleNetti)} netti + {euro(report.totaleCc)} CC + {report.f24 == null ? 'F24 da inserire' : euro(report.f24)}) ÷ {ore(report.oreTotali)} ore</p>
-          {report.costoTotale != null && <p className="mt-1 text-sm text-indigo-900">Costo totale: {euro(report.costoTotale)} · {report.dipendenti} dipendenti</p>}
         </div>
-        {report.nettiMancanti > 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{report.nettiMancanti} dipendenti dell’elaborato non hanno una busta paga nel mese. Il costo orario sarà disponibile quando tutte le buste saranno presenti.</p>}
-        {report.busteSenzaElaborato > 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{report.busteSenzaElaborato} buste paga non corrispondono ai dipendenti nelle righe elaborate del mese. Sono incluse nel totale netti; il costo orario richiede anche le loro ore.</p>}
-        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore lavorate nel mese: non è possibile dividere il costo.</p>}
+        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile dividere il costo.</p>}
       </section>
 
       <section aria-label="Calcolo tariffa media clienti" className="space-y-4 border-t border-slate-200 pt-6">
@@ -153,12 +160,16 @@ export default function ReportContabilita() {
       <section aria-label="Redditività per cliente" className="space-y-4 border-t border-slate-200 pt-6">
         <div>
           <h2 className="text-xl font-bold">Clienti con almeno un’ora lavorata</h2>
-          <p className="mt-1 text-sm text-slate-600">La rimanenza è l’imponibile meno il costo orario dipendente moltiplicato per le ore del cliente. Il colore va dal rosso al verde in base alla quota di imponibile rimasta.</p>
+          <p className="mt-1 text-sm text-slate-600">La rimanenza è l’imponibile meno il costo orario dipendente moltiplicato per le ore del cliente. Le righe passano dal rosso all’arancione e poi al verde quando cresce la percentuale di imponibile rimasta.</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
             <p className="text-sm font-semibold text-sky-900">Totale imponibili dei clienti in tabella</p>
             <p className="mt-2 text-3xl font-bold text-sky-950">{euro(report.imponibileDettaglio)}</p>
+          </div>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
+            <p className="text-sm font-semibold text-indigo-900">Totale costo personale incluse BP, CC e F24</p>
+            <p className="mt-2 text-3xl font-bold text-indigo-950">{report.costoTotale == null ? '—' : euro(report.costoTotale)}</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
             <p className="text-sm font-semibold text-emerald-900">Totale rimanenze</p>
@@ -183,7 +194,7 @@ export default function ReportContabilita() {
             </tbody>
           </table>
         </div>
-        {report.costoOrario == null && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Inserisci l’F24 e completa i netti dei dipendenti per vedere costo, differenze e rimanenza dei clienti.</p>}
+        {report.costoOrario == null && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Inserisci l’F24 e verifica le ore totali per vedere costo, differenze e rimanenza dei clienti.</p>}
       </section>
     </>}
   </main>;

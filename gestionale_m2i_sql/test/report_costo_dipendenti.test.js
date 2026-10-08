@@ -22,6 +22,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     { idDipendente: 'D2', nettoBusta: null, stipendioNetto: 900, cc: 50, oreLavorate: 100,
       dettaglioFPM: { Malattia: 10, 'Permesso Retribuito': 2 } }
   ];
+  let monthlyRows = rows;
   const clientRows = [
     { idCliente: 'C1', ragioneSociale: 'Cliente Verde', oreLavorate: 120, imponibile: 3000 },
     { idCliente: 'C2', ragioneSociale: 'Cliente Rosso', oreLavorate: 50, imponibile: 920 },
@@ -34,6 +35,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
       return { mese: m, anno: y };
     },
     accountingRows: async () => rows,
+    monthlyEmployeeRows: async () => monthlyRows,
     lockedRows: async () => clientRows
   };
   const report = createEmployeeCostReport(db, workflow);
@@ -46,8 +48,6 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   const saved = await report.saveF24({ mese: 9, anno: 2026, importo: '850,00' });
   assert.equal(saved.totaleNetti, 2000);
   assert.equal(saved.buste, 2);
-  assert.equal(saved.busteSenzaElaborato, 0);
-  assert.equal(saved.nettiMancanti, 0);
   assert.equal(saved.totaleCc, 150);
   assert.equal(saved.f24, 850);
   assert.equal(saved.oreTotali, 200);
@@ -80,8 +80,13 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   await db('buste_paga').insert({ id: 'B3', dipendente_id: 'D3', mese: '9', anno: '2026', importo_netto: 1157 });
   const withUnmatchedPayroll = await report.get(9, 2026);
   assert.equal(withUnmatchedPayroll.totaleNetti, 3157);
-  assert.equal(withUnmatchedPayroll.busteSenzaElaborato, 1);
-  assert.equal(withUnmatchedPayroll.costoOrario, null);
+  assert.equal(withUnmatchedPayroll.costoOrario, 20.79);
+  monthlyRows = rows.map(row => ({ ...row, oreLavorate: row.oreLavorate + 10 }));
+  const withMonthlyHours = await report.get(9, 2026);
+  assert.equal(withMonthlyHours.oreTotali, 220);
+  assert.equal(withMonthlyHours.totaleCc, 150);
+  assert.equal(withMonthlyHours.costoOrario, 18.9);
+  monthlyRows = rows;
   assert.equal((await report.get(9, 2026)).f24, 850);
   await report.saveF24({ mese: 9, anno: 2026, importo: '900.50' });
   assert.equal((await report.get(9, 2026)).f24, 900.5);
@@ -89,6 +94,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   await assert.rejects(report.saveF24({ mese: 9, anno: 2026, importo: '-1' }), /F24/);
   await assert.rejects(report.saveF24({ mese: 9, anno: 2026, importo: '12,345' }), /F24/);
   rows = rows.map(row => ({ ...row, oreLavorate: 0, dettaglioFPM: {} }));
+  monthlyRows = rows;
   assert.equal((await report.get(9, 2026)).costoOrario, null);
   assert.equal((await report.get(9, 2026)).tariffaMediaClienti, null);
 });

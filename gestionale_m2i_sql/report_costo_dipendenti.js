@@ -13,8 +13,9 @@ function createEmployeeCostReport(knex, workflow) {
 
   async function get(mese, anno) {
     const period = workflow.period('dipendente', mese, anno);
-    const [rows, clientRows, payrollRows, f24] = await Promise.all([
+    const [rows, monthlyRows, clientRows, payrollRows, f24] = await Promise.all([
       workflow.accountingRows('dipendente', period.mese, period.anno),
+      workflow.monthlyEmployeeRows(period.mese, period.anno),
       workflow.lockedRows('cliente', period.mese, period.anno),
       knex('buste_paga as b').join('dipendenti as d', 'b.dipendente_id', 'd.id')
         .select('b.dipendente_id', 'b.importo_netto')
@@ -22,21 +23,16 @@ function createEmployeeCostReport(knex, workflow) {
       knex('report_f24_dipendenti').where({ mese: period.mese, anno: period.anno }).first()
     ]);
     const nettiCent = payrollRows.reduce((sum, row) => sum + Math.round(Number(row.importo_netto) * 100), 0);
-    const payrollEmployeeIds = new Set(payrollRows.map(row => String(row.dipendente_id)));
-    const elaboratedEmployeeIds = new Set(rows.map(row => String(row.idDipendente)));
-    const nettiMancanti = rows.filter(row => !payrollEmployeeIds.has(String(row.idDipendente))).length;
-    const busteSenzaElaborato = payrollRows.filter(row => !elaboratedEmployeeIds.has(String(row.dipendente_id))).length;
-    let ccCent = 0, oreTotali = 0;
+    const ccCent = rows.reduce((sum, row) => sum + Math.round(Number(row.cc || 0) * 100), 0);
+    const oreTotali = Math.round(monthlyRows.reduce((sum, row) => sum + Number(row.oreLavorate || 0), 0) * 100) / 100;
     let oreLavorateEffettive = 0, oreFeriePermessiMalattia = 0;
     for (const row of rows) {
-      ccCent += Math.round(Number(row.cc || 0) * 100);
       const employeeHours = Number(row.oreLavorate || 0);
       const absences = Object.entries(row.dettaglioFPM || {});
       const allAbsenceHours = absences.reduce((sum, [, hours]) => sum + Number(hours || 0), 0);
       oreLavorateEffettive += Math.max(0, employeeHours - allAbsenceHours);
       oreFeriePermessiMalattia += absences.reduce((sum, [cause, hours]) =>
         sum + (/ferie|permess|malatt/i.test(cause) ? Number(hours || 0) : 0), 0);
-      oreTotali += employeeHours;
     }
     const clientiConOre = clientRows.filter(row => Number(row.oreLavorate || 0) > 0);
     const imponibileClientiCent = clientiConOre.reduce((sum, row) =>
@@ -44,7 +40,7 @@ function createEmployeeCostReport(knex, workflow) {
     const oreTariffaClienti = oreLavorateEffettive + oreFeriePermessiMalattia;
     const f24Cent = f24?.importo_cent ?? null;
     const costoCent = f24Cent == null ? null : nettiCent + ccCent + f24Cent;
-    const costoOrarioCent = costoCent == null || oreTotali <= 0 || nettiMancanti || busteSenzaElaborato ? null :
+    const costoOrarioCent = costoCent == null || oreTotali <= 0 ? null :
       Math.round(costoCent / oreTotali);
     const clientiDettaglio = clientRows.filter(row => Number(row.oreLavorate || 0) >= 1).map(row => {
       const oreCliente = Math.round(Number(row.oreLavorate) * 100) / 100;
@@ -66,11 +62,11 @@ function createEmployeeCostReport(knex, workflow) {
     const rimanenzaTotaleCent = costoOrarioCent == null ? null :
       clientiDettaglio.reduce((sum, row) => sum + Math.round(row.rimanenza * 100), 0);
     return {
-      mese: period.mese, anno: period.anno, dipendenti: rows.length,
-      buste: payrollRows.length, busteSenzaElaborato,
+      mese: period.mese, anno: period.anno, dipendenti: monthlyRows.length,
+      buste: payrollRows.length,
       totaleNetti: nettiCent / 100, totaleCc: ccCent / 100,
       f24: f24Cent == null ? null : f24Cent / 100,
-      oreTotali: Math.round(oreTotali * 100) / 100,
+      oreTotali,
       costoTotale: costoCent == null ? null : costoCent / 100,
       costoOrario: costoOrarioCent == null ? null : costoOrarioCent / 100,
       imponibileClienti: imponibileClientiCent / 100,
@@ -83,8 +79,7 @@ function createEmployeeCostReport(knex, workflow) {
         Math.round(imponibileClientiCent / oreTariffaClienti) / 100 : null,
       imponibileDettaglio: imponibileDettaglioCent / 100,
       rimanenzaTotale: rimanenzaTotaleCent == null ? null : rimanenzaTotaleCent / 100,
-      clientiDettaglio,
-      nettiMancanti
+      clientiDettaglio
     };
   }
 

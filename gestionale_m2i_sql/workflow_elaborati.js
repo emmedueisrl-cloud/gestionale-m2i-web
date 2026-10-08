@@ -240,6 +240,11 @@ async function lockedRows(tipo, mese, anno, connection = knex) {
   return rows.map(r => JSON.parse(r.snapshot));
 }
 
+async function monthlyEmployeeRows(mese, anno) {
+  const p = period('dipendente', mese, anno);
+  return (await elaborati.ottieniElaboratoMensile(p.mese, p.anno)).dati;
+}
+
 async function status(tipo, mese, anno) {
   const p = period(tipo, mese, anno);
   const locked = await knex('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id');
@@ -487,4 +492,4 @@ async function registerPayment({ mese, anno, dipendenteId, userId, confermaStori
   return { id };
 }
 
-module.exports = { initialize, lockRow, unlockRow, lockedRows, status, missingCount, accountingRows, saveConsultantNote, saveOfficePayrollNote, saveCcAmount, markOfficePayrollPaid, markInvoiceSent, registerInvoice, registerPayment, period };
+module.exports = { initialize, lockRow, unlockRow, lockedRows, monthlyEmployeeRows, status, missingCount, accountingRows, saveConsultantNote, saveOfficePayrollNote, saveCcAmount, markOfficePayrollPaid, markInvoiceSent, registerInvoice, registerPayment, period };
