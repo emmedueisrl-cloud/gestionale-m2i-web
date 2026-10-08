@@ -1261,7 +1261,29 @@ app.delete('/api/emails/:id', emailCtrl.deleteEmail);
 app.post('/api/buste-paga/invia-email', emailCtrl.sendBustaPagaEmail);
 // --- PREVENTIVI ROUTES ---
 const preventiviCtrl = require('./controllers/preventiviController');
+const preventiviProforme = require('./preventivi_proforme');
 app.get('/api/preventivi', preventiviCtrl.getAllPreventivi);
+app.get('/api/preventivi-proforme', async (req, res) => {
+  try { res.json(await preventiviProforme.list()); }
+  catch { res.status(500).json({ error: 'Impossibile caricare le proforme.' }); }
+});
+app.post('/api/preventivi-proforme', async (req, res) => {
+  try { res.status(201).json(await preventiviProforme.create(req.body)); }
+  catch (error) { res.status(400).json({ error: error.code?.startsWith('SQLITE_CONSTRAINT') ? 'Esiste già una proforma con questo nome.' : error.message }); }
+});
+app.put('/api/preventivi-proforme/:id', async (req, res) => {
+  try {
+    const result = await preventiviProforme.update(req.params.id, req.body);
+    if (!result) return res.status(404).json({ error: 'Proforma non trovata.' });
+    res.json(result);
+  } catch (error) { res.status(400).json({ error: error.code?.startsWith('SQLITE_CONSTRAINT') ? 'Esiste già una proforma con questo nome.' : error.message }); }
+});
+app.delete('/api/preventivi-proforme/:id', async (req, res) => {
+  try {
+    if (!await preventiviProforme.remove(req.params.id)) return res.status(404).json({ error: 'Proforma non trovata.' });
+    res.status(204).end();
+  } catch { res.status(500).json({ error: 'Impossibile eliminare la proforma.' }); }
+});
 app.get('/api/clienti/:id/preventivi', preventiviCtrl.getPreventiviByCliente);
 app.post('/api/preventivi/generate', preventiviCtrl.generatePreventivo);
 app.delete('/api/preventivi/:id', preventiviCtrl.eliminaPreventivo);
@@ -1283,6 +1305,18 @@ app.post('/api/appuntamenti-preventivi/:id/note', async (req, res) => {
     if (!note) return res.status(404).json({ error: 'Appuntamento non trovato.' });
     res.status(201).json(note);
   } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.delete('/api/appuntamenti-preventivi/:id/note-scheda', async (req, res) => {
+  try {
+    if (!await appuntamentiPreventivi.removeAppointmentNote(req.params.id)) return res.status(404).json({ error: 'Nota della scheda non trovata.' });
+    res.status(204).end();
+  } catch (error) { res.status(500).json({ error: 'Impossibile eliminare la nota della scheda.' }); }
+});
+app.delete('/api/appuntamenti-preventivi/:id/note/:noteId', async (req, res) => {
+  try {
+    if (!await appuntamentiPreventivi.removePostNote(req.params.id, req.params.noteId)) return res.status(404).json({ error: 'Nota non trovata.' });
+    res.status(204).end();
+  } catch (error) { res.status(500).json({ error: 'Impossibile eliminare la nota.' }); }
 });
 app.get('/api/riferimenti-aziendali', async (req, res) => {
   try { res.json(await riferimentiAziendali.get()); }
@@ -1389,6 +1423,7 @@ Promise.resolve().then(async () => {
   await riferimentiAziendali.ensureTable();
   await publicAppuntamenti.initialize();
   await preventiviCtrl.ensurePreventiviIds();
+  await preventiviProforme.ensureTable();
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
   await workflowElaborati.initialize();

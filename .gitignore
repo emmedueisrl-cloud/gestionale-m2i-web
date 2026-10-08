@@ -73,6 +73,7 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/registro_ore_state.js
 !/gestionale_m2i_sql/autodiagnosi.js
 !/gestionale_m2i_sql/public_appuntamenti.js
+!/gestionale_m2i_sql/preventivi_proforme.js
 !/gestionale_m2i_sql/incassi_insoluti.js
 !/gestionale_m2i_sql/consulente_email.js
 !/gestionale_m2i_sql/tabella_contabilita_export.js

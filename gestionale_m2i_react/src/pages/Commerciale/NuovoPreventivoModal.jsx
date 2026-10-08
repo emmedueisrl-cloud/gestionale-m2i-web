@@ -9,6 +9,8 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
   const [isCliente, setIsCliente] = useState(false);
   const [clienti, setClienti] = useState([]);
   const [appuntamenti, setAppuntamenti] = useState([]);
+  const [proforme, setProforme] = useState([]);
+  const [proformaId, setProformaId] = useState('');
   const [searchCliente, setSearchCliente] = useState('');
   
   const [formData, setFormData] = useState({
@@ -17,10 +19,15 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
     oggetto: 'Preventivo per pulizie ordinarie',
     indirizzo_locali: appuntamento?.luogo || '',
     appuntamento_id: appuntamento?.id || '',
+    titolo_documento: 'PREVENTIVO N° {{numero}}',
+    riga_data: 'Roma, {{data}}',
+    destinatario_label: 'Spett.le',
+    oggetto_label: 'Oggetto:',
     tipo_prezzo: 'Mensile',
     costo_mensile: '',
     commerciale: '',
-    servizi_inclusi: 'Spazzatura e lavaggio pavimenti; spolveratura superfici; pulizia servizi igienici; vuotatura cestini e, all’occorrenza, sostituzione dei relativi sacchetti.'
+    servizi_inclusi: 'Spazzatura e lavaggio pavimenti; spolveratura superfici; pulizia servizi igienici; vuotatura cestini e, all’occorrenza, sostituzione dei relativi sacchetti.',
+    testo_corpo: ''
   });
 
   const [loading, setLoading] = useState(false);
@@ -41,6 +48,16 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
       .then(response => response.ok ? response.json() : [])
       .then(setAppuntamenti)
       .catch(() => setAppuntamenti([]));
+    fetch(`${API_URL}/preventivi-proforme`, { credentials: 'same-origin' })
+      .then(response => response.ok ? response.json() : Promise.reject(new Error('Impossibile caricare le proforme.')))
+      .then(items => {
+        setProforme(items);
+        if (items.length) {
+          setProformaId(String(items[0].id));
+          setFormData(previous => ({ ...previous, titolo_documento: items[0].titolo_documento, riga_data: items[0].riga_data, destinatario_label: items[0].destinatario_label, oggetto_label: items[0].oggetto_label, oggetto: items[0].oggetto, servizi_inclusi: items[0].servizi_inclusi, testo_corpo: items[0].testo_corpo }));
+        }
+      })
+      .catch(err => setAlertModal({ isOpen: true, type: 'error', title: 'Proforme non disponibili', content: err.message, primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) } }));
   }, []);
 
   const handleChange = (e) => {
@@ -74,11 +91,12 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
       if (res.ok) {
         onSuccess();
       } else {
+        const result = await res.json().catch(() => ({}));
         setAlertModal({
           isOpen: true,
           type: 'error',
           title: 'Errore',
-          content: 'Errore durante la generazione del preventivo',
+          content: result.error || 'Errore durante la generazione del preventivo',
           primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
         });
       }
@@ -98,7 +116,7 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4">
-      <div className="bg-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border border-slate-700 flex flex-col max-h-[90vh]">
+      <div className="bg-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden border border-slate-700 flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-700 bg-slate-900/50 shrink-0">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <FileText className="text-indigo-400" size={24} /> Crea Nuovo Preventivo
@@ -110,6 +128,23 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
         
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 overflow-y-auto flex-1 space-y-6">
+            <label className="block text-sm font-semibold text-slate-300">Proforma di testo
+              <select value={proformaId} onChange={event => {
+                const id = event.target.value;
+                setProformaId(id);
+                const selected = proforme.find(item => String(item.id) === id);
+                if (selected) setFormData(previous => ({ ...previous, titolo_documento: selected.titolo_documento, riga_data: selected.riga_data, destinatario_label: selected.destinatario_label, oggetto_label: selected.oggetto_label, oggetto: selected.oggetto, servizi_inclusi: selected.servizi_inclusi, testo_corpo: selected.testo_corpo }));
+              }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white">
+                <option value="">Testo personalizzato</option>
+                {proforme.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}
+              </select>
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-300">Titolo documento<input required maxLength={200} name="titolo_documento" value={formData.titolo_documento} onChange={handleChange} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" /></label>
+              <label className="block text-sm font-semibold text-slate-300">Riga data<input required maxLength={200} name="riga_data" value={formData.riga_data} onChange={handleChange} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" /></label>
+              <label className="block text-sm font-semibold text-slate-300">Intestazione destinatario<input required maxLength={100} name="destinatario_label" value={formData.destinatario_label} onChange={handleChange} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" /></label>
+              <label className="block text-sm font-semibold text-slate-300">Etichetta oggetto<input required maxLength={100} name="oggetto_label" value={formData.oggetto_label} onChange={handleChange} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" /></label>
+            </div>
             <label className="block text-sm font-semibold text-slate-300">Collega a un appuntamento (facoltativo)
               <select value={formData.appuntamento_id} onChange={event => {
                 const id = event.target.value;
@@ -265,6 +300,12 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
                   rows="3"
                   className="w-full p-3 bg-slate-900/50 border border-slate-700 text-white rounded-xl focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-600 resize-none" 
                 />
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-2"><FileText className="text-slate-400" size={16} /> Testo del preventivo</label>
+                <textarea name="testo_corpo" value={formData.testo_corpo} onChange={handleChange} required maxLength={20000} rows={15} className="w-full rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-sm text-white focus:border-indigo-500 focus:outline-none" />
+                <p className="mt-2 text-xs text-slate-400">Puoi modificare il testo per questo preventivo senza cambiare la proforma salvata. Segnaposto: {'{{cliente}}'}, {'{{indirizzo}}'}, {'{{oggetto}}'}, {'{{servizi}}'}, {'{{tipo_prezzo}}'}, {'{{costo}}'}, {'{{numero}}'}, {'{{data}}'}.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

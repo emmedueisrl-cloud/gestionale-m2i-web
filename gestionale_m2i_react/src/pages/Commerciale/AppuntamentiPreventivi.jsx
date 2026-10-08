@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, UserRound, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, Trash2, UserRound, X } from 'lucide-react';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { notePostAppuntamento } from '../../utils/noteAppuntamento';
@@ -115,6 +115,18 @@ export default function AppuntamentiPreventivi() {
       const nota = await request(`${API}/${id}/note`, { method: 'POST', body: JSON.stringify({ testo: notaTesto }) });
       setAppuntamenti(previous => previous.map(item => item.id === id ? { ...item, noteStoriche: [...(item.noteStoriche || []), nota] } : item));
       setNotaTesto('');
+    } catch (err) { setNotaError(err.message); }
+    finally { setSaving(false); }
+  };
+
+  const eliminaNota = async (appointmentId, noteId = null) => {
+    if (!window.confirm(noteId === null ? 'Eliminare la nota della scheda appuntamento?' : 'Eliminare questa nota post appuntamento?')) return;
+    setSaving(true);
+    setNotaError('');
+    try {
+      await request(noteId === null ? `${API}/${appointmentId}/note-scheda` : `${API}/${appointmentId}/note/${noteId}`, { method: 'DELETE' });
+      if (noteId === null) await load();
+      else setAppuntamenti(previous => previous.map(item => item.id === appointmentId ? { ...item, noteStoriche: item.noteStoriche.filter(note => note.id !== noteId) } : item));
     } catch (err) { setNotaError(err.message); }
     finally { setSaving(false); }
   };
@@ -290,10 +302,10 @@ export default function AppuntamentiPreventivi() {
         {a.attivita && <p className="mt-3 break-words text-sm text-slate-300"><strong>Attività:</strong> {a.attivita}</p>}
         <div className="mt-4 border-t border-slate-700 pt-3">
           <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Note appuntamento</h4>
-          {a.note ? <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-slate-900/60 px-3 py-2 text-sm text-slate-200">{a.note}</p> : <p className="mt-2 text-sm text-slate-500">Nessuna nota nella scheda appuntamento.</p>}
+          {a.note ? <div className="mt-2 flex items-start justify-between gap-3 rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><p className="whitespace-pre-wrap break-words text-slate-200">{a.note}</p><button type="button" onClick={() => eliminaNota(a.id)} disabled={saving} className="shrink-0 rounded p-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50" title="Elimina nota appuntamento" aria-label="Elimina nota appuntamento"><Trash2 size={16} /></button></div> : <p className="mt-2 text-sm text-slate-500">Nessuna nota nella scheda appuntamento.</p>}
           <div className="mt-5 space-y-2 border-t border-slate-700 pt-4">
             <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Note post appuntamento</h4>
-            {notePost.map(note => <div key={note.id} className="rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{new Date(note.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>Autore: {note.autore || 'Marketing'}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p></div>)}
+            {notePost.map(note => <div key={note.id} className="flex items-start justify-between gap-3 rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><div><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{new Date(note.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>Autore: {note.autore || 'Marketing'}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p></div><button type="button" onClick={() => eliminaNota(a.id, note.id)} disabled={saving} className="shrink-0 rounded p-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50" title="Elimina nota post appuntamento" aria-label={`Elimina nota di ${note.autore || 'Marketing'} del ${new Date(note.creataIl).toLocaleDateString('it-IT')}`}><Trash2 size={16} /></button></div>)}
             {notePost.length === 0 && <p className="text-sm text-slate-500">Nessuna nota post appuntamento.</p>}
           </div>
           <form onSubmit={event => salvaNota(event, a.id)} className="pt-4"><label className="block text-sm font-semibold text-slate-300">Aggiungi nota post appuntamento<textarea required maxLength={2000} rows={3} value={notaTesto} onChange={event => setNotaTesto(event.target.value)} placeholder="Scrivi una nota post appuntamento…" className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-slate-100" /></label><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-400">Data, ora e autore verranno registrati automaticamente.</span><button type="submit" disabled={saving || !notaTesto.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">Salva nota</button></div>{notaError && <p role="alert" className="mt-2 text-sm text-red-300">{notaError}</p>}</form>

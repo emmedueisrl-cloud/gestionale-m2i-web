@@ -3,6 +3,7 @@ import { Plus, FileText, Search, Download, Trash2, CalendarDays, Upload, X } fro
 import { Link, useSearchParams } from 'react-router-dom';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import AppuntamentiPreventivi from './AppuntamentiPreventivi';
+import ProformePreventivoModal from './ProformePreventivoModal';
 
 const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
 
@@ -83,6 +84,7 @@ const Preventivi = () => {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [proformeOpen, setProformeOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -166,6 +168,7 @@ const Preventivi = () => {
         
         <div className="flex flex-wrap gap-2">
         <button type="button" className="flex items-center gap-2 rounded-xl border border-indigo-500/50 bg-indigo-500/15 px-5 py-3 font-bold text-indigo-100 hover:bg-indigo-500/25" onClick={() => setUploadOpen(true)}><Upload size={18} /> Carica preventivo già fatto</button>
+        <button type="button" className="flex items-center gap-2 rounded-xl border border-indigo-500/50 bg-indigo-500/15 px-5 py-3 font-bold text-indigo-100 hover:bg-indigo-500/25" onClick={() => setProformeOpen(true)}><FileText size={18} /> Proforme di testo</button>
         <button 
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-sm shrink-0" 
           onClick={() => setIsModalOpen(true)}
@@ -246,6 +249,7 @@ const Preventivi = () => {
         />
       )}
       {uploadOpen && <CaricaPreventivoModal onClose={() => setUploadOpen(false)} onSuccess={() => { setUploadOpen(false); setMessage('Preventivo caricato.'); fetchPreventivi(); }} />}
+      {proformeOpen && <ProformePreventivoModal onClose={() => setProformeOpen(false)} />}
       </section>}
     </div>
   );

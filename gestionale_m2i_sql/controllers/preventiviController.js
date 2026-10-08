@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const pdfmake = require('pdfmake');
+const { DEFAULT_CONTENT, renderBody } = require('../preventivi_proforme');
 
 // Configurazione font per pdfmake
 const fonts = {
@@ -56,8 +57,17 @@ exports.generatePreventivo = async (req, res) => {
       costo_mensile,
       tipo_prezzo,
       commerciale,
-      appuntamento_id
+      appuntamento_id,
+      testo_corpo,
+      titolo_documento,
+      riga_data,
+      destinatario_label,
+      oggetto_label
     } = req.body;
+    const corpo = testo_corpo === undefined ? DEFAULT_CONTENT.testo_corpo : testo_corpo;
+    if (typeof corpo !== 'string' || !corpo.trim() || corpo.length > 20000) return res.status(400).json({ error: 'Testo del preventivo non valido (massimo 20000 caratteri).' });
+    if ([titolo_documento, riga_data, destinatario_label, oggetto_label].some(value => value !== undefined && (typeof value !== 'string' || value.length > 200))) return res.status(400).json({ error: 'Testo dell’intestazione non valido.' });
+    if (typeof ragione_sociale_prospect !== 'string' || !ragione_sociale_prospect.trim()) return res.status(400).json({ error: 'Inserisci il cliente o prospect.' });
     const appointmentId = appuntamento_id == null || appuntamento_id === '' ? null : Number(appuntamento_id);
     if (appointmentId !== null && (!Number.isSafeInteger(appointmentId) || appointmentId <= 0 || !await knex('appuntamenti_preventivi').where('id', appointmentId).first('id'))) {
       return res.status(400).json({ error: 'Appuntamento non valido.' });
@@ -87,7 +97,22 @@ exports.generatePreventivo = async (req, res) => {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    const labelCosto = tipo_prezzo === 'Orario' ? 'Costo del servizio orario ' : 'Costo del servizio mensile ';
+    const dataItaliana = new Date().toLocaleDateString('it-IT');
+    const valoriTesto = {
+      cliente: ragione_sociale_prospect,
+      indirizzo: indirizzo_locali || '',
+      oggetto: oggetto || DEFAULT_CONTENT.oggetto,
+      servizi: servizi_inclusi || DEFAULT_CONTENT.servizi_inclusi,
+      tipo_prezzo: tipo_prezzo === 'Orario' ? 'orario' : 'mensile',
+      costo: `€ ${Number(costo_mensile).toLocaleString('it-IT', { minimumFractionDigits: 2 })}`,
+      numero: numero_preventivo,
+      data: dataItaliana
+    };
+    const testoCompilato = renderBody(corpo, valoriTesto);
+    const titoloCompilato = renderBody(titolo_documento || DEFAULT_CONTENT.titolo_documento, valoriTesto);
+    const dataCompilata = renderBody(riga_data || DEFAULT_CONTENT.riga_data, valoriTesto);
+    const destinatarioCompilato = renderBody(destinatario_label || DEFAULT_CONTENT.destinatario_label, valoriTesto);
+    const oggettoCompilato = renderBody(oggetto_label || DEFAULT_CONTENT.oggetto_label, valoriTesto);
 
     // Costruisci il docDefinition per pdfmake
     const docDefinition = {
@@ -100,111 +125,32 @@ exports.generatePreventivo = async (req, res) => {
       content: [
         {
           columns: [
-            {
-              image: path.join(__dirname, '..', 'public', 'images', 'logo-m2i.png'),
-              width: 130,
-              alignment: 'left'
-            },
+            { image: path.join(__dirname, '..', 'public', 'images', 'logo-m2i.png'), width: 130, alignment: 'left' },
             {
               text: [
-                { text: `PREVENTIVO N° ${numero_preventivo}\n`, fontSize: 14, bold: true, color: '#004aad' },
-                { text: `Roma, ${new Date().toLocaleDateString('it-IT')}`, fontSize: 10, italics: true, color: '#555' }
+                { text: `${titoloCompilato}\n`, fontSize: 14, bold: true, color: '#004aad' },
+                { text: dataCompilata, fontSize: 10, italics: true, color: '#555' }
               ],
-              alignment: 'right',
-              margin: [0, 10, 0, 0]
+              alignment: 'right', margin: [0, 10, 0, 0]
             }
           ],
           margin: [0, 0, 0, 15]
         },
         {
           text: [
-            { text: 'Spett.le\n', italics: true, fontSize: 10, color: '#555' },
+            { text: `${destinatarioCompilato}\n`, italics: true, fontSize: 10, color: '#555' },
             { text: `${ragione_sociale_prospect}\n`, bold: true, fontSize: 12 },
             { text: indirizzo_locali || '', fontSize: 10, color: '#555' }
           ],
-          alignment: 'right',
-          margin: [0, 0, 0, 20]
+          alignment: 'right', margin: [0, 0, 0, 20]
         },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: '#004aad' }], margin: [0, 0, 0, 5] },
         {
-          canvas: [
-            { type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: '#004aad' }
-          ],
-          margin: [0, 0, 0, 5]
+          text: [{ text: `${oggettoCompilato} `, bold: true, color: '#004aad' }, { text: oggetto || DEFAULT_CONTENT.oggetto }],
+          margin: [0, 5, 0, 5], fontSize: 14
         },
-        {
-          text: [
-            { text: 'Oggetto: ', bold: true, color: '#004aad' },
-            { text: oggetto || 'Preventivo per pulizie ordinarie' }
-          ],
-          margin: [0, 5, 0, 5],
-          fontSize: 14
-        },
-        {
-          canvas: [
-            { type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: '#004aad' }
-          ],
-          margin: [0, 0, 0, 20]
-        },
-        {
-          text: 'In riferimento alla Vostra gradita richiesta, Vi sottoponiamo la Nostra migliore offerta, unitamente alle seguenti condizioni commerciali:',
-          margin: [0, 0, 0, 20]
-        },
-        {
-          ul: [
-            {
-              text: [
-                'Il presente preventivo ha ad oggetto l’esecuzione del servizio di pulizia (a titolo esemplificativo ma non esaustivo):\n',
-                { text: servizi_inclusi, italics: true },
-                '\n\n',
-                { text: `dei locali siti in: ${indirizzo_locali || ''}`, bold: true }
-              ],
-              margin: [0, 0, 0, 20]
-            },
-            {
-              text: [
-                labelCosto,
-                { text: '(IVA IN REVERSE CHARGE*) : ', fontSize: 10 },
-                { text: `€ ${Number(costo_mensile).toLocaleString('it-IT', {minimumFractionDigits: 2})}`, bold: true, fontSize: 14 }
-              ],
-              margin: [0, 0, 0, 15]
-            },
-            {
-              text: 'Modalità di pagamento: La M2I entro il 5 del mese successivo a quello di riferimento invierà fattura mensile per il servizio prestato. Il pagamento avverrà entro il 15 del mese successivo a quello di riferimento.',
-              margin: [0, 0, 0, 15]
-            },
-            {
-              text: 'Si avvisa che la prima fattura emessa avrà decorrenza dal primo giorno di effettivo servizio e sarà calcolata pro-rata fino a fine mese.',
-              margin: [0, 0, 0, 15]
-            },
-            {
-              text: 'Attrezzature e prodotti per la pulizia sono a carico della M2I.',
-              margin: [0, 0, 0, 15]
-            },
-            {
-              text: 'La M2I S.r.l., nell’espletamento del servizio, è coperta da polizza assicurativa N° 2021/03/2430364 sottoscritta con REALE MUTUA per il risarcimento di eventuali danni a persone e/o cose.',
-              margin: [0, 0, 0, 15]
-            },
-            {
-              text: 'Il contratto prevede un periodo di prova di 30 giorni decorrenti dalla data di sottoscrizione ed avrà durata di 90 giorni. Sarà rinnovato tacitamente, salvo disdetta di una delle parti da inviarsi tramite raccomandata o tramite pec almeno 30 giorni prima della scadenza.',
-              margin: [0, 0, 0, 20]
-            }
-          ]
-        },
-        {
-          text: '* NB: Il costo pattuito è esente IVA, in quanto il servizio offerto rientra tra le operazioni assoggettate al reverse charge ai sensi dell’art. 17 del D.P.R. 633/1972.',
-          italics: true,
-          fontSize: 10,
-          margin: [0, 0, 0, 30]
-        },
-        {
-          text: 'Certi di aver fatto cosa gradita, Porgiamo i Nostri più cordiali saluti.',
-          margin: [0, 0, 0, 10]
-        },
-        {
-          text: 'M2I S.r.l.',
-          bold: true,
-          margin: [0, 0, 0, 0]
-        }
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: '#004aad' }], margin: [0, 0, 0, 20] },
+        ...testoCompilato.split(/\n\s*\n/).filter(Boolean).map(paragrafo => ({ text: paragrafo.trim(), margin: [0, 0, 0, 14] }))
       ],
       footer: function(currentPage, pageCount) {
         return {

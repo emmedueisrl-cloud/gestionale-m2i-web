@@ -404,6 +404,35 @@ async function addInternalNote(id, body, author) {
   });
 }
 
+async function removePostNote(id, noteId) {
+  return knex('appuntamenti_note')
+    .where({ appuntamento_id: id, id: noteId, tipo: 'post' })
+    .del();
+}
+
+async function removeAppointmentNote(id) {
+  return knex.transaction(async trx => {
+    const appointment = await trx('appuntamenti_preventivi').where('id', id).first('note', 'agenda_impegno_id');
+    if (!appointment) return false;
+    const initialNote = String(appointment.note || '').trim();
+    if (!initialNote) return false;
+
+    await trx('appuntamenti_preventivi').where('id', id).update({ note: '' });
+    const schedaNotesRemoved = await trx('appuntamenti_note').where({ appuntamento_id: id, tipo: 'scheda' }).del();
+    // Alcune schede storiche hanno anche una copia della nota iniziale marcata come post.
+    if (!schedaNotesRemoved) {
+      const normalize = text => String(text || '').trim().replace(/\s+/g, ' ');
+      const legacyNotes = await trx('appuntamenti_note').where({ appuntamento_id: id, tipo: 'post' }).orderBy('id', 'asc').select('id', 'testo');
+      const legacyCopy = legacyNotes.find(note => normalize(note.testo) === normalize(initialNote));
+      if (legacyCopy) await trx('appuntamenti_note').where('id', legacyCopy.id).del();
+    }
+    if (appointment.agenda_impegno_id) {
+      await trx('agenda_caposquadra').where('id', appointment.agenda_impegno_id).update({ note: '' });
+    }
+    return true;
+  });
+}
+
 async function rebookPublic(id, body) {
   const dataOra = validateDataOra(body?.dataOra);
   const testo = validatePublicNote(body);
@@ -512,4 +541,4 @@ async function removeForAgenda(trx, agendaIds) {
   if (scollegati.length) await trx('appuntamenti_preventivi').whereIn('id', scollegati).update({ agenda_impegno_id: null });
 }
 
-module.exports = { ensureTable, list, listPublic, promoteToMarketing, acceptMarketing, reschedule, conclude, create, createPublic, addPublicNote, addInternalNote, rebookPublic, update, updateStatus, remove, syncFromAgenda, removeForAgenda };
+module.exports = { ensureTable, list, listPublic, promoteToMarketing, acceptMarketing, reschedule, conclude, create, createPublic, addPublicNote, addInternalNote, removePostNote, removeAppointmentNote, rebookPublic, update, updateStatus, remove, syncFromAgenda, removeForAgenda };
