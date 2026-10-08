@@ -25,7 +25,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     { mese: 9, anno: 2026, dipendente_id: 'D1', cliente_id: 'C2', ore_totali: 20, causale_assenza: 'Extra' },
     { mese: 9, anno: 2026, dipendente_id: 'D2', cliente_id: 'C1', ore_totali: 30 },
     { mese: 9, anno: 2026, dipendente_id: 'D2', cliente_id: 'C2', ore_totali: 20 },
-    { mese: 9, anno: 2026, dipendente_id: 'D1', cliente_id: 'C1', ore_totali: 5, causale_assenza: 'Malattia' }
+    { mese: 9, anno: 2026, dipendente_id: 'D1', cliente_id: 'C1', ore_totali: 5, causale_assenza: 'Ferie' }
   ]);
   let rows = [
     { idDipendente: 'D1', nettoBusta: 9999, stipendioNetto: 1300, cc: 100, oreLavorate: 100,
@@ -262,4 +262,61 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   const missingTariff = (await report.get(9, 2026)).dipendentiDettaglio.find(row => row.id === 'D4');
   assert.equal(missingTariff.resa, null);
   assert.deepEqual(missingTariff.clientiSenzaTariffa, ['C_SCONOSCIUTO']);
+});
+
+test('il Report ripartisce il costo della malattia in F24C senza duplicarlo', async t => {
+  const db = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
+  t.after(() => db.destroy());
+  await db.schema.createTable('dipendenti', table => { table.text('id').primary(); });
+  await db.schema.createTable('buste_paga', table => {
+    table.text('id').primary(); table.text('dipendente_id'); table.text('mese'); table.text('anno');
+    table.decimal('importo_netto', 14, 2);
+  });
+  await db.schema.createTable('registro_ore', table => {
+    table.integer('mese'); table.integer('anno'); table.text('dipendente_id'); table.text('cliente_id');
+    table.decimal('ore_totali', 10, 2); table.text('causale_assenza');
+  });
+  await db('dipendenti').insert([{ id: 'E1' }, { id: 'E2' }, { id: 'E3' }]);
+  await db('buste_paga').insert([
+    { id: 'P1', dipendente_id: 'E1', mese: '9', anno: '2026', importo_netto: 1000 },
+    { id: 'P2', dipendente_id: 'E2', mese: '9', anno: '2026', importo_netto: 800 },
+    { id: 'P3', dipendente_id: 'E3', mese: '9', anno: '2026', importo_netto: 100 }
+  ]);
+  await db('registro_ore').insert([
+    { mese: 9, anno: 2026, dipendente_id: 'E1', cliente_id: 'C1', ore_totali: 90, causale_assenza: 'Ordinario' },
+    { mese: 9, anno: 2026, dipendente_id: 'E1', ore_totali: 10, causale_assenza: 'Malattia' },
+    { mese: 9, anno: 2026, dipendente_id: 'E2', cliente_id: 'C1', ore_totali: 100, causale_assenza: 'Ordinario' },
+    { mese: 9, anno: 2026, dipendente_id: 'E3', ore_totali: 10, causale_assenza: 'Malattia' }
+  ]);
+  const employees = [
+    { idDipendente: 'E1', cognomeNome: 'Primo', oreLavorate: 100, cc: 100 },
+    { idDipendente: 'E2', cognomeNome: 'Secondo', oreLavorate: 100, cc: 50 },
+    { idDipendente: 'E3', cognomeNome: 'Terzo', oreLavorate: 10, cc: 0 }
+  ];
+  const workflow = {
+    period: (_, mese, anno) => ({ mese: Number(mese), anno: Number(anno) }),
+    accountingRows: async () => employees,
+    monthlyEmployeeRows: async () => employees,
+    lockedRows: async () => [{ idCliente: 'C1', ragioneSociale: 'Cliente', oreLavorate: 190, imponibile: 3800 }]
+  };
+  const report = createEmployeeCostReport(db, workflow);
+  await report.initialize();
+  const result = await report.saveF24c({ mese: 9, anno: 2026, importo: '400' });
+  assert.equal(result.oreTotali, 210);
+  assert.equal(result.oreMalattia, 20);
+  assert.equal(result.oreRipartizioneDipendenti, 190);
+  assert.equal(result.costoMalattia, 200);
+  assert.equal(result.f24c, 400);
+  assert.equal(result.f24cConMalattia, 600);
+  assert.deepEqual(result.dipendentiDettaglio.map(row => row.id), ['E1', 'E2']);
+  assert.deepEqual(result.dipendentiDettaglio.map(row => [row.ore, row.oreMalattia, row.quotaMalattia, row.stipendio, row.costoOrario]), [
+    [90, 10, 100, 1000, 14.27], [100, 0, 0, 850, 11.66]
+  ]);
+  assert.equal(result.dipendentiDettaglio.reduce((sum, row) => sum + row.costoDipendente, 0), 2450);
+  const corrected = await report.saveEmployeeAdjustment({ mese: 9, anno: 2026,
+    dipendenteId: 'E1', voce: 'netto', valore: '1100', nota: 'Rettifica solo Report' });
+  assert.equal(corrected.costoMalattia, 210);
+  assert.equal(corrected.f24cConMalattia, 610);
+  assert.equal(corrected.dipendentiDettaglio[0].stipendio, 1090);
+  assert.equal((await db('buste_paga').where({ id: 'P1' }).first()).importo_netto, 1000);
 });

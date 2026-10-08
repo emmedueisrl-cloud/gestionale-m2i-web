@@ -102,6 +102,12 @@ function createEmployeeCostReport(knex, workflow) {
       const id = String(row.dipendente_id);
       payrollByEmployee.set(id, (payrollByEmployee.get(id) || 0) + Math.round(Number(row.importo_netto || 0) * 100));
     }
+    const illnessHoursByEmployee = new Map();
+    for (const row of hoursByClient) {
+      if (!String(row.causale_assenza || '').toLowerCase().includes('malatt')) continue;
+      const id = String(row.dipendente_id);
+      illnessHoursByEmployee.set(id, (illnessHoursByEmployee.get(id) || 0) + Math.round(Number(row.ore_totali || 0) * 100));
+    }
     const employeeAdjustmentMap = new Map(employeeAdjustments.map(row => [`${row.dipendente_id}:${row.voce}`, row]));
     const pairedEmployeeDeltas = new Map(), pairedClientDeltas = new Map();
     for (const item of pairedHours) {
@@ -114,10 +120,15 @@ function createEmployeeCostReport(knex, workflow) {
       const id = String(row.idDipendente);
       const baseHoursCent = Math.round(Number(row.oreLavorate || 0) * 100);
       const baseNetCent = payrollByEmployee.get(id) || 0;
-      return { ...row, baseHoursCent, baseNetCent,
-        reportHoursCent: Number(employeeAdjustmentMap.get(`${id}:ore`)?.valore_cent ?? baseHoursCent) + (pairedEmployeeDeltas.get(id) || 0),
-        reportNetCent: Number(employeeAdjustmentMap.get(`${id}:netto`)?.valore_cent ?? baseNetCent) };
+      const reportHoursCent = Number(employeeAdjustmentMap.get(`${id}:ore`)?.valore_cent ?? baseHoursCent) + (pairedEmployeeDeltas.get(id) || 0);
+      const reportNetCent = Number(employeeAdjustmentMap.get(`${id}:netto`)?.valore_cent ?? baseNetCent);
+      const illnessHoursCent = Math.min(Math.max(reportHoursCent, 0), illnessHoursByEmployee.get(id) || 0);
+      const illnessCostCent = reportHoursCent > 0 ? Math.round(reportNetCent * illnessHoursCent / reportHoursCent) : 0;
+      return { ...row, baseHoursCent, baseNetCent, reportHoursCent, reportNetCent,
+        illnessHoursCent, illnessCostCent, productiveHoursCent: reportHoursCent - illnessHoursCent };
     });
+    const illnessHoursCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.illnessHoursCent, 0);
+    const illnessCostCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.illnessCostCent, 0);
     const employeeHoursDeltaCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.reportHoursCent - row.baseHoursCent, 0);
     const employeeNetDeltaCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.reportNetCent - row.baseNetCent, 0);
     const baseImponibileClientiCent = clientRows.filter(row => Number(row.oreLavorate || 0) > 0).reduce((sum, row) =>
@@ -171,6 +182,8 @@ function createEmployeeCostReport(knex, workflow) {
     const rimanenzaTotaleCent = costoOrarioCent == null ? null :
       clientiDettaglio.reduce((sum, row) => sum + Math.round(row.rimanenza * 100), 0);
     const f24cCent = f24c?.importo_cent ?? null;
+    const f24cWithIllnessCent = f24cCent == null ? null : Number(f24cCent) + illnessCostCent;
+    const employeeAllocationHours = Math.max(0, oreTotali - illnessHoursCent / 100);
     const ccByEmployee = new Map(rows.map(row => [String(row.idDipendente), Math.round(Number(row.cc || 0) * 100)]));
     const clientTariffs = new Map(adjustedClientRows.filter(row => Number(row.oreLavorate || 0) > 0)
       .map(row => [String(row.idCliente), Math.round(Math.round(Number(row.imponibile || 0) * 100) / Number(row.oreLavorate))]));
@@ -190,12 +203,12 @@ function createEmployeeCostReport(knex, workflow) {
       const hours = employeeClientHours.get(employeeId);
       hours.set(clientId, (hours.get(clientId) || 0) + Number(item.delta_cent) / 100);
     }
-    const dipendentiDettaglio = adjustedEmployeeRows.filter(row => row.reportHoursCent > 0).map(row => {
+    const dipendentiDettaglio = adjustedEmployeeRows.filter(row => row.productiveHoursCent > 0).map(row => {
       const id = String(row.idDipendente);
-      const oreDipendente = row.reportHoursCent / 100;
+      const oreDipendente = row.productiveHoursCent / 100;
       const nettoCent = row.reportNetCent;
       const ccDipendenteCent = ccByEmployee.get(id) || 0;
-      const stipendioCent = nettoCent + ccDipendenteCent;
+      const stipendioCent = nettoCent + ccDipendenteCent - row.illnessCostCent;
       const clientHours = employeeClientHours.get(id) || new Map();
       let valoreClientiCent = 0, oreClienti = 0;
       const clientiSenzaTariffa = [];
@@ -209,14 +222,16 @@ function createEmployeeCostReport(knex, workflow) {
         }
         valoreClientiCent += Math.round(hours * tariffaCent);
       }
-      const costoOrarioDipendenteCent = f24cCent == null || oreTotali <= 0 || oreDipendente <= 0 ? null :
-        Math.round(Number(f24cCent) / oreTotali + stipendioCent / oreDipendente);
-      const costoDipendenteCent = f24cCent == null || oreTotali <= 0 ? null :
-        Math.round(stipendioCent + Number(f24cCent) * oreDipendente / oreTotali);
+      const costoOrarioDipendenteCent = f24cWithIllnessCent == null || employeeAllocationHours <= 0 ? null :
+        Math.round(f24cWithIllnessCent / employeeAllocationHours + stipendioCent / oreDipendente);
+      const costoDipendenteCent = f24cWithIllnessCent == null || employeeAllocationHours <= 0 ? null :
+        Math.round(stipendioCent + f24cWithIllnessCent * oreDipendente / employeeAllocationHours);
       const resaCent = costoDipendenteCent == null || clientiSenzaTariffa.length ? null :
         valoreClientiCent - costoDipendenteCent;
       return { id, dipendente: row.cognomeNome || id,
-        ore: oreDipendente, nettoBusta: nettoCent / 100, cc: ccDipendenteCent / 100,
+        ore: oreDipendente, oreTotaliConMalattia: row.reportHoursCent / 100,
+        oreMalattia: row.illnessHoursCent / 100, quotaMalattia: row.illnessCostCent / 100,
+        nettoBusta: nettoCent / 100, cc: ccDipendenteCent / 100,
         stipendio: stipendioCent / 100, oreClienti: Math.round(oreClienti * 100) / 100,
         valoreClienti: valoreClientiCent / 100,
         costoOrario: costoOrarioDipendenteCent == null ? null : costoOrarioDipendenteCent / 100,
@@ -270,6 +285,10 @@ function createEmployeeCostReport(knex, workflow) {
       rimanenzaTotale: rimanenzaTotaleCent == null ? null : rimanenzaTotaleCent / 100,
       clientiDettaglio,
       f24c: f24cCent == null ? null : Number(f24cCent) / 100,
+      costoMalattia: illnessCostCent / 100,
+      oreMalattia: illnessHoursCent / 100,
+      oreRipartizioneDipendenti: employeeAllocationHours,
+      f24cConMalattia: f24cWithIllnessCent == null ? null : f24cWithIllnessCent / 100,
       dipendentiDettaglio
     };
   }

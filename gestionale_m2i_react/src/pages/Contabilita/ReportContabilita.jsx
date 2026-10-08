@@ -6,6 +6,7 @@ import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 const mesi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
   'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+const euroOrarioPreciso = value => `${Number(value).toLocaleString('it-IT', { minimumFractionDigits: 6, maximumFractionDigits: 6 })} €/h`;
 const ore = value => Number(value || 0).toLocaleString('it-IT', { maximumFractionDigits: 2 });
 const shortClientName = value => String(value || '').trim().split(/\s+/).slice(0, 4).join(' ');
 const adjustmentLabels = {
@@ -25,7 +26,7 @@ const columns = [
 ];
 const employeeColumns = [
   { key: 'dipendente', label: 'Dipendente' },
-  { key: 'ore', label: 'Ore totali' },
+  { key: 'ore', label: 'Ore senza malattia' },
   { key: 'stipendio', label: 'Stipendio' },
   { key: 'costoOrario', label: 'Costo orario' },
   { key: 'resa', label: 'Resa' }
@@ -77,6 +78,18 @@ function AdjustableCard({ field, label, value, adjustments, clientAdjustments = 
         </button>
       </li>)}
     </ul>}
+  </div>;
+}
+
+function HourlyCostBreakdown({ row, report }) {
+  if (row.costoOrario == null) return null;
+  const quotaF24c = report.f24cConMalattia / report.oreRipartizioneDipendenti;
+  const quotaStipendio = row.stipendio / row.ore;
+  return <div className="mt-1 space-y-0.5 whitespace-normal text-xs font-normal leading-snug text-slate-600">
+    <p>Quota F24C: {euro(report.f24cConMalattia)} ÷ {ore(report.oreRipartizioneDipendenti)} h = {euroOrarioPreciso(quotaF24c)}</p>
+    <p>Quota stipendio: {euro(row.stipendio)} ÷ {ore(row.ore)} h = {euroOrarioPreciso(quotaStipendio)}</p>
+    <p>Somma: {euroOrarioPreciso(quotaF24c)} + {euroOrarioPreciso(quotaStipendio)} = {euroOrarioPreciso(quotaF24c + quotaStipendio)}</p>
+    <p className="font-semibold text-slate-700">Arrotondato: {euro(row.costoOrario)} / h</p>
   </div>;
 }
 
@@ -430,7 +443,7 @@ export default function ReportContabilita() {
       <section aria-label="Resa dei dipendenti" className="space-y-4 border-t border-slate-200 pt-6">
         <div>
           <h2 className="text-xl font-bold">Dipendenti</h2>
-          <p className="mt-1 text-sm text-slate-600">Ore totali dall’elaborato mensile, comprese ferie, permessi e malattia. Stipendio dato da netto busta paga e CC. La resa è il valore delle ore presso i clienti meno stipendio e quota F24C.</p>
+          <p className="mt-1 text-sm text-slate-600">Le ore della tabella comprendono lavoro, ferie e permessi; la malattia viene esclusa. La quota di netto attribuita alla malattia passa nel F24C usato per il calcolo. La resa è il valore delle ore presso i clienti meno il costo del dipendente.</p>
         </div>
         <form onSubmit={saveF24c} className="flex flex-wrap items-end gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-5">
           <label className="text-sm font-semibold text-indigo-900">F24C del mese (€)
@@ -439,6 +452,11 @@ export default function ReportContabilita() {
           <button type="submit" disabled={savingF24c || !f24cInput.trim()} className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{savingF24c ? 'Salvataggio...' : 'Salva F24C'}</button>
           <p className="text-sm text-indigo-900">Salvato solo nel Report · {report.f24c == null ? 'Da inserire' : euro(report.f24c)}</p>
         </form>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold">Costo malattia trasferito</p><p className="mt-1 text-xl font-bold">{euro(report.costoMalattia)}</p><p className="mt-1 text-xs text-slate-600">Somma di netto senza CC ÷ ore totali del dipendente × ore di malattia.</p></div>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4"><p className="text-sm font-semibold">F24C usato nel calcolo</p><p className="mt-1 text-xl font-bold">{report.f24cConMalattia == null ? '—' : euro(report.f24cConMalattia)}</p><p className="mt-1 text-xs text-slate-600">{report.f24c == null ? 'Inserisci F24C' : `${euro(report.f24c)} + ${euro(report.costoMalattia)}`}</p></div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="text-sm font-semibold">Ore per ripartizione</p><p className="mt-1 text-xl font-bold">{ore(report.oreRipartizioneDipendenti)} h</p><p className="mt-1 text-xs text-slate-600">{ore(report.oreTotali)} h totali − {ore(report.oreMalattia)} h malattia</p></div>
+        </div>
         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm">
           <table className="w-full min-w-[1100px] table-fixed border-collapse text-left text-sm">
             <colgroup><col className="w-[22%]" /><col className="w-[13%]" /><col className="w-[18%]" /><col className="w-[26%]" /><col className="w-[21%]" /></colgroup>
@@ -455,17 +473,18 @@ export default function ReportContabilita() {
                 <td className="px-3 py-3 font-semibold">{row.dipendente}</td>
                 <td className="px-3 py-3 tabular-nums"><span className="inline-flex items-center gap-1">{ore(row.ore)} h
                   <button type="button" onClick={() => openEmployeeCell(row, 'ore')} title={`Rettifica ore totali · ${row.dipendente}`} aria-label={`Rettifica ore totali per ${row.dipendente}`} className={`rounded-full p-0.5 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700 ${(report.rettificheDipendenti?.some(item => item.dipendenteId === row.id && item.voce === 'ore') || report.rettificheOreAbbinate?.some(item => item.abbinamenti.some(pair => pair.dipendenteId === row.id))) ? 'text-indigo-800' : 'text-slate-600'}`}><Info size={17} aria-hidden="true" /></button>
-                </span></td>
+                </span>{row.oreMalattia > 0 && <span className="mt-0.5 block text-xs text-slate-600">{ore(row.oreTotaliConMalattia)} h totali − {ore(row.oreMalattia)} h malattia</span>}</td>
                 <td className="px-3 py-3 tabular-nums">
                   <span className="font-semibold">{euro(row.stipendio)}</span>
                   <span className="mt-0.5 flex items-center gap-1 text-xs text-slate-600">{euro(row.nettoBusta)} netto busta
                     <button type="button" onClick={() => openEmployeeCell(row, 'netto')} title={`Rettifica netto busta · ${row.dipendente}`} aria-label={`Rettifica netto busta per ${row.dipendente}`} className={`rounded-full p-0.5 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700 ${report.rettificheDipendenti?.some(item => item.dipendenteId === row.id && item.voce === 'netto') ? 'text-indigo-800' : 'text-slate-600'}`}><Info size={17} aria-hidden="true" /></button>
                   </span>
                   <span className="block text-xs text-slate-600">+ {euro(row.cc)} CC</span>
+                  {row.quotaMalattia > 0 && <span className="block text-xs text-slate-600">− {euro(row.quotaMalattia)} malattia trasferita</span>}
                 </td>
                 <td className="px-3 py-3 font-semibold tabular-nums">
                   {row.costoOrario == null ? '—' : `${euro(row.costoOrario)} / h`}
-                  {row.costoOrario != null && <span className="mt-1 block whitespace-normal text-xs font-normal leading-snug text-slate-600">({euro(report.f24c)} F24C ÷ {ore(report.oreTotali)} h totali) + ({euro(row.stipendio)} stipendio ÷ {ore(row.ore)} h dipendente)</span>}
+                  <HourlyCostBreakdown row={row} report={report} />
                 </td>
                 <td className={`px-3 py-3 font-bold tabular-nums ${row.resa == null ? 'text-slate-500' : row.resa >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>
                   {row.resa == null ? '—' : `${row.resa > 0 ? '+' : ''}${euro(row.resa)}`}
@@ -485,7 +504,7 @@ export default function ReportContabilita() {
           <h2 id="report-ore-abbinate-title" className="text-xl font-bold">Ore abbinate · {pairedCell.name}</h2>
           <button type="button" onClick={() => setPairedCell(null)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold hover:bg-slate-200">Chiudi</button>
         </div>
-        <p className="mt-3 text-sm text-slate-600">Ore attuali: {ore(pairedRow?.ore)} h. Indica le nuove ore e ripartisci la differenza tra {pairedCell.origine === 'cliente' ? 'i dipendenti' : 'i clienti'} coinvolti. Questa rettifica riguarda le ore presso i clienti; le ore di ferie, permesso e malattia del dipendente restano fisse.</p>
+        <p className="mt-3 text-sm text-slate-600">Ore attuali: {ore(pairedRow?.ore)} h. Indica le nuove ore e ripartisci la differenza tra {pairedCell.origine === 'cliente' ? 'i dipendenti' : 'i clienti'} coinvolti. Questa rettifica riguarda le ore presso i clienti; ferie, permessi e malattia restano fissi.</p>
         {report.rettificheClienti?.some(item => item.voce === 'ore') || report.rettificheDipendenti?.some(item => item.voce === 'ore')
           ? <p role="alert" className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Sono presenti vecchie rettifiche ore senza abbinamento. Eliminale dal riquadro Ore totali prima di creare una rettifica collegata.</p> : null}
         <form onSubmit={savePairedHours} className="mt-5 space-y-4">
