@@ -5,11 +5,33 @@ const os = require('node:os');
 const path = require('node:path');
 const knexFactory = require('knex');
 const JSZip = require('jszip');
-const { createArubaZipService, classify } = require('../fatture_aruba_zip');
+const { createArubaZipService, classify, readPair } = require('../fatture_aruba_zip');
 const { createReceiptsService, todayInItaly } = require('../incassi_insoluti');
 
 const invoiceXml = (number, amount) => `<?xml version="1.0" encoding="UTF-8"?>
 <FatturaElettronica><FatturaElettronicaHeader><CessionarioCommittente><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>12345678901</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>Cliente Test</Denominazione></Anagrafica></DatiAnagrafici></CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Numero>${number}</Numero><Data>2026-10-08</Data><ImportoTotaleDocumento>${amount}</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DatiRiepilogo><ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo></DatiBeniServizi></FatturaElettronicaBody></FatturaElettronica>`;
+
+test('ZIP Aruba: con ritenuta confronta il pagamento netto con l’elaborato', async () => {
+  const xml = invoiceXml('FPR 605/26', '187.88')
+    .replace('<ImportoTotaleDocumento>187.88</ImportoTotaleDocumento>',
+      '<ImportoTotaleDocumento>187.88</ImportoTotaleDocumento><DatiRitenuta><TipoRitenuta>RT02</TipoRitenuta><ImportoRitenuta>6.16</ImportoRitenuta><AliquotaRitenuta>4.00</AliquotaRitenuta></DatiRitenuta>')
+    .replace('<ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta>',
+      '<ImponibileImporto>154.00</ImponibileImporto><Imposta>33.88</Imposta>')
+    .replace('</FatturaElettronicaBody>',
+      '<DatiPagamento><DettaglioPagamento><ImportoPagamento>181.72</ImportoPagamento></DettaglioPagamento></DatiPagamento></FatturaElettronicaBody>');
+  const xmlZip = new JSZip(); xmlZip.file('XML/ritenuta.xml', xml);
+  const pdfZip = new JSZip(); pdfZip.file('PDF/ritenuta.xml - FPR 605_26.pdf', Buffer.from('%PDF-1.4\nexample'));
+  const pair = await readPair(await xmlZip.generateAsync({ type: 'nodebuffer' }),
+    await pdfZip.generateAsync({ type: 'nodebuffer' }));
+  const invoice = pair.invoices[0];
+  assert.equal(invoice.importoLordo, 187.88);
+  assert.equal(invoice.importoRitenuta, 6.16);
+  assert.equal(invoice.importoTotale, 181.72);
+  const classified = classify([invoice], [{ id: 'C1', partita_iva: '12345678901' }],
+    [{ idCliente: 'C1', importoTotale: 181.72 }], [], [], '2026-09');
+  assert.equal(classified[0].issues.some(issue => issue.code === 'importo'), false);
+  assert.equal(classified[0].stato, 'pronta');
+});
 
 test('ZIP Aruba: due fatture dello stesso cliente e differenze richiedono scelta esplicita', () => {
   const clients = [{ id: 'C1', ragione_sociale: 'Cliente Test', partita_iva: '12345678901' }];

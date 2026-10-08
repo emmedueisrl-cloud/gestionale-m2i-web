@@ -61,6 +61,7 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/fatture_import_choice.js
 !/gestionale_m2i_sql/fatture_reconciliation.js
 !/gestionale_m2i_sql/fatture_aruba_zip.js
+!/gestionale_m2i_sql/importo_xml_fattura.js
 !/gestionale_m2i_sql/ricalcolo_ritenuta_storica.js
 !/gestionale_m2i_sql/payroll_attachment.js
 !/gestionale_m2i_sql/payroll_extraction.js

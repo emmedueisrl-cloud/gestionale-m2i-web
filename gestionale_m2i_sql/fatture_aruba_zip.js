@@ -5,6 +5,7 @@ const JSZip = require('jszip');
 const xml2js = require('xml2js');
 const { reconcileRegistration } = require('./fatture_reconciliation');
 const { transferSentReceipts } = require('./incassi_insoluti');
+const { calcolaImportoXmlFattura } = require('./importo_xml_fattura');
 
 const MAX_ENTRIES = 300;
 const MAX_UNCOMPRESSED = 100 * 1024 * 1024;
@@ -62,7 +63,8 @@ async function parseInvoice(content) {
   const summaries = [body?.DatiBeniServizi?.DatiRiepilogo].flat().filter(Boolean);
   const taxable = summaries.reduce((sum, item) => sum + Number(item.ImponibileImporto || 0), 0);
   const tax = summaries.reduce((sum, item) => sum + Number(item.Imposta || 0), 0);
-  const total = document?.ImportoTotaleDocumento == null ? taxable + tax : Number(document.ImportoTotaleDocumento);
+  const { importoTotale: total, importoLordo, importoRitenuta } =
+    calcolaImportoXmlFattura(document, body, taxable, tax);
   const descriptions = [...[document?.Causale].flat(), ...[body?.DatiBeniServizi?.DettaglioLinee].flat()
     .filter(Boolean).map(line => line.Descrizione)].filter(Boolean).join(' ');
   const referencePeriods = new Set([...descriptions.toLowerCase().matchAll(
@@ -73,6 +75,7 @@ async function parseInvoice(content) {
       !Number.isSafeInteger(cents(total)) || Math.abs(total * 100 - cents(total)) > 0.000001 ||
       !Number.isFinite(taxable) || !Number.isFinite(tax)) throw new Error('Dati XML non validi.');
   return { numero: number, tipoDocumento, dataFattura: date, importoTotale: cents(total) / 100,
+    importoLordo, importoRitenuta,
     imponibile: cents(taxable) / 100, iva: cents(tax) / 100,
     vat, taxCode, periodoDescrizione: referencePeriods.size === 1 ? [...referencePeriods][0] : null,
     periodoAmbiguo: referencePeriods.size > 1,
@@ -242,6 +245,7 @@ function createArubaZipService(knex, workflow) {
       partitaIvaXml: item.vat || '', codiceFiscaleXml: item.taxCode || '',
       abbinamentoFiscale: item.matchedBy, tipoDocumento: item.tipoDocumento || '',
       numero: item.numero || '', data: item.dataFattura || '', importo: item.importoTotale ?? null,
+      importoLordo: item.importoLordo ?? null, importoRitenuta: item.importoRitenuta ?? 0,
       xml: item.xml?.name || null, pdf: item.pdf?.name || null, pdfId: item.pdf?.id || null,
       stato: item.stato, motivo: item.motivo, incongruenze: item.issues,
       selezionata: !item.issues.length && ['pronta', 'allega', 'contabile'].includes(item.stato)

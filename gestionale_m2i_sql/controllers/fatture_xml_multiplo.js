@@ -4,6 +4,7 @@ const { knex } = require('../db');
 const { ottieniElaboratoClienti } = require('./elaborati');
 const path = require('path');
 const { sameDocument, sameOfficialInvoice } = require('../fatture_import_choice');
+const { calcolaImportoXmlFattura } = require('../importo_xml_fattura');
 
 async function verifyReplacementXml(row) {
   const filename = String(row.filename || '');
@@ -67,8 +68,7 @@ async function parseSingoloXml(filePath) {
     causaleTesto = linee.map(l => l.Descrizione).filter(Boolean).join('; ');
   }
 
-  let importoTotale = parseFloat(doc.ImportoTotaleDocumento || 0);
-  if (!importoTotale) importoTotale = imponibile + iva;
+  const { importoTotale } = calcolaImportoXmlFattura(doc, root?.FatturaElettronicaBody, imponibile, iva);
 
   // Scadenza
   let dataScadenza = dataFattura;

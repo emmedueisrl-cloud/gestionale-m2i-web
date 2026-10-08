@@ -3,6 +3,7 @@ const xml2js = require('xml2js');
 const { knex } = require('../db');
 const { reconcileOfficial } = require('../fatture_reconciliation');
 const { inspectChoice, replaceRegistration } = require('../fatture_import_choice');
+const { calcolaImportoXmlFattura } = require('../importo_xml_fattura');
 
 async function processFatturaXml(req, res) {
   if (!req.file) {
@@ -46,8 +47,7 @@ async function processFatturaXml(req, res) {
       });
     }
     
-    let importoTotale = parseFloat(doc.ImportoTotaleDocumento || 0);
-    if (!importoTotale) importoTotale = imponibile + iva;
+    const { importoTotale } = calcolaImportoXmlFattura(doc, root?.FatturaElettronicaBody, imponibile, iva);
 
     // Scadenza
     let dataScadenza = dataFattura; // Fallback

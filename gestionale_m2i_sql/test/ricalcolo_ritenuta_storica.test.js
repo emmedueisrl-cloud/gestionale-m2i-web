@@ -19,7 +19,12 @@ test('ricalcola righe blindate e mesi chiusi con ritenuta, conservando una tracc
   await db.schema.createTable('fatture', table => {
     table.text('id').primary(); table.float('importo_totale');
   });
+  await db.schema.createTable('fatture_inviate_elaborati', table => {
+    table.text('cliente_id'); table.integer('mese'); table.integer('anno'); table.text('inviata_at');
+  });
   await db('fatture').insert({ id: 'ARUBA-STORICA', importo_totale: 104 });
+  await db('fatture_inviate_elaborati').insert({ cliente_id: 'R', mese: 9, anno: 2026,
+    inviata_at: '2026-10-01T10:00:00.000Z' });
   await db('clienti').insert([
     { id: 'R', tipo_tassazione: 'TRAT. ACC.' },
     { id: 'I', tipo_tassazione: 'IVA' },
@@ -47,6 +52,8 @@ test('ricalcola righe blindate e mesi chiusi con ritenuta, conservando una tracc
   assert.equal(snapshot.importoRitenuta, 4);
   assert.equal(snapshot.importoTotale, 118);
   assert.equal((await db('dettaglio_mesi_chiusi_clienti').where({ cliente_id: 'R' }).first()).importo_totale, 118);
+  assert.equal((await db('fatture_inviate_elaborati').where({ cliente_id: 'R' }).first()).inviata_at,
+    '2026-10-01T10:00:00.000Z');
   assert.equal((await db('dettaglio_mesi_chiusi_clienti').where({ cliente_id: 'L' }).first()).importo_totale, 118);
   assert.equal((await db('dettaglio_mesi_chiusi_clienti').where({ cliente_id: 'S' }).first()).importo_totale, 122);
   assert.equal((await db('rettifiche_ritenuta_elaborati')).length, 3);
