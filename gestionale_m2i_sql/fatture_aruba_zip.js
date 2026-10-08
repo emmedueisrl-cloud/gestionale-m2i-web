@@ -81,24 +81,42 @@ async function parseInvoice(content) {
 }
 
 async function readPair(xmlZip, pdfZip) {
-  const [xmls, pdfs] = await Promise.all([entries(xmlZip, 'XML'), entries(pdfZip, 'PDF')]);
+  const first = await Promise.allSettled([entries(xmlZip, 'XML'), entries(pdfZip, 'PDF')]);
+  let xmls, pdfs, swapped = false;
+  if (first.every(result => result.status === 'fulfilled')) {
+    [xmls, pdfs] = first.map(result => result.value);
+  } else if (first[0].status === 'rejected' && first[1].status === 'rejected' &&
+    first[0].reason?.message === 'Nessun file XML nell’archivio.' &&
+    first[1].reason?.message === 'Nessun file PDF nell’archivio.') {
+    [xmls, pdfs] = await Promise.all([entries(pdfZip, 'XML'), entries(xmlZip, 'PDF')]);
+    swapped = true;
+  } else {
+    throw first.find(result => result.status === 'rejected').reason;
+  }
   const invoices = [];
   for (const [id, xml] of xmls) {
     try { invoices.push({ id, xml, pdf: pdfs.get(id) || null, ...await parseInvoice(xml.content) }); }
     catch (error) { invoices.push({ id, xml, pdf: pdfs.get(id) || null, parseError: error.message }); }
   }
   const orphanPdfs = [...pdfs.values()].filter(pdf => !xmls.has(pdf.id));
-  return { invoices, pdfs, orphanPdfs, pdfWithoutXml: orphanPdfs.length };
+  return { invoices, pdfs, orphanPdfs, pdfWithoutXml: orphanPdfs.length, swapped };
 }
 
 function classify(invoices, clients, monthlyRows, registrations, officialInvoices = [], selectedPeriod = null, separateDocuments = []) {
   const eligible = new Map(monthlyRows.map(row => [String(row.idCliente), row]));
-  const clientMatches = invoice => clients.filter(client =>
+  const fiscalCandidates = invoice => clients.filter(client =>
     invoice.vat && fiscal(client.partita_iva) === invoice.vat ||
     invoice.taxCode && fiscal(client.codice_fiscale) === invoice.taxCode);
+  const fiscalConflict = (invoice, client) =>
+    Boolean(invoice.vat && fiscal(client.partita_iva) && fiscal(client.partita_iva) !== invoice.vat ||
+      invoice.taxCode && fiscal(client.codice_fiscale) && fiscal(client.codice_fiscale) !== invoice.taxCode);
   const prepared = invoices.map(invoice => {
-    const matches = invoice.parseError ? [] : clientMatches(invoice);
+    const candidates = invoice.parseError ? [] : fiscalCandidates(invoice);
+    const matches = candidates.filter(candidate => !fiscalConflict(invoice, candidate));
+    const conflictingIdentifiers = candidates.length > 0 && !matches.length;
     const client = matches.length === 1 ? matches[0] : null;
+    const matchedBy = client ? [invoice.vat && fiscal(client.partita_iva) === invoice.vat && 'Partita IVA',
+      invoice.taxCode && fiscal(client.codice_fiscale) === invoice.taxCode && 'Codice fiscale'].filter(Boolean).join(' e ') : null;
     const existing = client && registrations.find(record => record.cliente_id === client.id &&
       record.numero_fattura.trim() === invoice.numero && record.data_fattura === invoice.dataFattura);
     const separate = client && separateDocuments.find(record => record.cliente_id === client.id &&
@@ -110,7 +128,9 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
     let stato = 'pronta', motivo = '';
     if (invoice.parseError) { stato = 'errore'; motivo = invoice.parseError; }
     else if (!invoice.pdf) { stato = 'senza_pdf'; motivo = 'PDF corrispondente assente.'; }
-    else if (matches.length !== 1) { stato = 'cliente'; motivo = matches.length ? 'Più clienti corrispondono ai dati XML.' : 'Cliente non trovato in anagrafica.'; }
+    else if (matches.length !== 1) { stato = 'cliente'; motivo = conflictingIdentifiers
+      ? 'Partita IVA e codice fiscale non coincidono con la stessa anagrafica.'
+      : matches.length ? 'Più clienti corrispondono ai dati XML.' : 'Cliente non trovato in anagrafica.'; }
     else if (!eligible.has(String(client.id))) { stato = 'mese'; motivo = 'Cliente non presente tra le righe blindate o chiuse del mese scelto.'; }
     else if (separate) { stato = 'presente'; motivo = 'Documento già allegato separatamente.'; }
     else if (existing && cents(existing.importo_totale) !== cents(invoice.tipoDocumento === 'TD04' ? -invoice.importoTotale : invoice.importoTotale)) {
@@ -140,11 +160,9 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
     if (!invoice.parseError) {
       if (invoice.tipoDocumento === 'TD04') addIssue('nota_credito', 'Nota di credito: scegli come trattarla nel mese.');
       else if (invoice.tipoDocumento !== 'TD01') addIssue('tipo_documento', `Tipo documento ${invoice.tipoDocumento || 'non indicato'} da verificare.`);
-      if (matches.length !== 1) addIssue('cliente', matches.length
-        ? 'Più clienti hanno gli stessi dati fiscali.' : 'Cliente non trovato in anagrafica.');
-      if (client && invoice.clienteXml && nameKey(invoice.clienteXml) !== nameKey(client.ragione_sociale)) {
-        addIssue('nome', `Nome XML diverso dall’anagrafica: ${client.ragione_sociale}.`);
-      }
+      if (matches.length !== 1) addIssue('cliente', conflictingIdentifiers
+        ? 'Partita IVA e codice fiscale dell’XML non coincidono con la stessa anagrafica.'
+        : matches.length ? 'Più clienti hanno gli stessi dati fiscali.' : 'Cliente non trovato tramite partita IVA o codice fiscale.');
       if (client && !eligible.has(String(client.id))) addIssue('mese', 'Cliente assente dalla Fatturazione del mese scelto.');
       if (invoice.periodoAmbiguo) addIssue('periodo', 'L’XML cita più periodi.');
       else if (selectedPeriod && invoice.periodoDescrizione && invoice.periodoDescrizione !== selectedPeriod) {
@@ -159,7 +177,7 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
         if (label && nameKey(label) !== nameKey(invoice.numero)) addIssue('pdf_numero', 'Il numero nel nome del PDF differisce dall’XML.');
       }
     }
-    return { ...invoice, client, stato, motivo, importoPrevisto: remaining, issues };
+    return { ...invoice, client, matchedBy, stato, motivo, importoPrevisto: remaining, issues };
   });
   const byClient = new Map();
   for (const item of prepared.filter(item => item.stato === 'pronta')) {
@@ -212,15 +230,17 @@ function createArubaZipService(knex, workflow) {
   async function preview(args) {
     const { pair, classified, clients, rows } = await analyze(args);
     const monthlyIds = new Set(rows.map(row => String(row.idCliente)));
-    return { pdfSenzaXml: pair.pdfWithoutXml,
+    return { archiviInvertiti: pair.swapped, pdfSenzaXml: pair.pdfWithoutXml,
       pdfSenzaXmlDettaglio: pair.orphanPdfs.map(pdf => ({ id: pdf.id, nome: pdf.name })),
       pdfDisponibili: [...pair.pdfs.values()].map(pdf => ({ id: pdf.id, nome: pdf.name })),
       clientiDisponibili: clients.map(client => ({ id: client.id, nome: client.ragione_sociale,
-        partitaIva: client.partita_iva || '', nelMese: monthlyIds.has(String(client.id)) })),
+        partitaIva: client.partita_iva || '', codiceFiscale: client.codice_fiscale || '',
+        nelMese: monthlyIds.has(String(client.id)) })),
       fatture: classified.map(item => ({
       id: item.id, cliente: item.client?.ragione_sociale || item.clienteXml || 'Cliente sconosciuto',
       clienteXml: item.clienteXml || '', clienteId: item.client?.id || null,
-      partitaIvaXml: item.vat || '', tipoDocumento: item.tipoDocumento || '',
+      partitaIvaXml: item.vat || '', codiceFiscaleXml: item.taxCode || '',
+      abbinamentoFiscale: item.matchedBy, tipoDocumento: item.tipoDocumento || '',
       numero: item.numero || '', data: item.dataFattura || '', importo: item.importoTotale ?? null,
       xml: item.xml?.name || null, pdf: item.pdf?.name || null, pdfId: item.pdf?.id || null,
       stato: item.stato, motivo: item.motivo, incongruenze: item.issues,

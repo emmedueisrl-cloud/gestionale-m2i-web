@@ -26,7 +26,19 @@ test('ZIP Aruba: due fatture dello stesso cliente e differenze richiedono scelta
   assert.equal(otherPeriod[0].issues.some(issue => issue.code === 'periodo'), true);
   const renamed = classify([{ ...base, id: 'a', numero: '1', clienteXml: 'Nome Aruba Differente', tipoDocumento: 'TD01' }],
     clients, [{ idCliente: 'C1', importoTotale: 122 }], []);
-  assert.equal(renamed[0].issues.some(issue => issue.code === 'nome'), true);
+  assert.equal(renamed[0].issues.length, 0);
+  assert.equal(renamed[0].matchedBy, 'Partita IVA');
+  const fiscalOnly = classify([{ ...base, id: 'a', numero: '1', vat: '', taxCode: 'CF-CLIENTE',
+    clienteXml: 'Condominio con nome diverso', tipoDocumento: 'TD01' }],
+  [{ id: 'C1', ragione_sociale: 'Condominio nel gestionale', partita_iva: '', codice_fiscale: 'CF-CLIENTE' }],
+  [{ idCliente: 'C1', importoTotale: 122 }], []);
+  assert.equal(fiscalOnly[0].client.id, 'C1');
+  assert.equal(fiscalOnly[0].matchedBy, 'Codice fiscale');
+  assert.equal(fiscalOnly[0].issues.length, 0);
+  const fiscalMismatch = classify([{ ...base, id: 'a', numero: '1', taxCode: 'CF-XML', tipoDocumento: 'TD01' }],
+  [{ ...clients[0], codice_fiscale: 'CF-DIVERSO' }], [{ idCliente: 'C1', importoTotale: 122 }], []);
+  assert.equal(fiscalMismatch[0].client, null);
+  assert.equal(fiscalMismatch[0].issues.some(issue => issue.code === 'cliente'), true);
   const absent = classify([{ ...base, id: 'a', numero: '1', tipoDocumento: 'TD01' }], clients, [], []);
   assert.equal(absent[0].issues.some(issue => issue.code === 'mese'), true);
   const credit = classify([{ ...base, id: 'a', numero: 'NC1', tipoDocumento: 'TD04' }], clients,
@@ -98,6 +110,9 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   const preview = await service.preview(args);
   assert.equal(preview.fatture[0].stato, 'pronta');
   assert.equal(preview.fatture[0].selezionata, true);
+  const inverted = await service.preview({ ...args, xmlZip: args.pdfZip, pdfZip: args.xmlZip });
+  assert.equal(inverted.archiviInvertiti, true);
+  assert.equal(inverted.fatture[0].stato, 'pronta');
   const imported = await service.importSelected({ ...args, selected: ['aruba_A'], userId: 'TEST' });
   assert.equal(imported.importate, 1);
   assert.equal(imported.risultati[0].esito, 'riconciliata');
@@ -147,7 +162,7 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   const extraArgs = { ...args, xmlZip: await extraZip.generateAsync({ type: 'nodebuffer' }),
     pdfZip: await extraPdf.generateAsync({ type: 'nodebuffer' }) };
   const extraPreview = (await service.preview(extraArgs)).fatture[0];
-  assert.equal(extraPreview.incongruenze.some(issue => issue.code === 'nome'), true);
+  assert.equal(extraPreview.incongruenze.some(issue => issue.code === 'nome'), false);
   assert.equal(extraPreview.incongruenze.some(issue => issue.code === 'mese'), true);
   await assert.rejects(service.importSelected({ ...extraArgs,
     selected: [{ id: 'extra_E', reviewed: true }] }), /fuori mese/);
