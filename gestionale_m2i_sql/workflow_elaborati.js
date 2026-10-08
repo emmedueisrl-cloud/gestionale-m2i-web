@@ -6,6 +6,7 @@ const elaborati = require('./controllers/elaborati');
 const { calcolaCostoPersonalePerCliente, statoCostoPersonalePerCliente } = require('./costo_personale_clienti');
 const { calcolaValoriContabilitaCliente } = require('./valori_contabilita_clienti');
 const { reconcileRegistration, registrationStatuses } = require('./fatture_reconciliation');
+const { transferSentReceipts } = require('./incassi_insoluti');
 
 const kinds = {
   cliente: { read: 'ottieniElaboratoClienti', id: 'idCliente', detail: 'dettaglio_mesi_chiusi_clienti', header: 'mesi_chiusi_clienti' },
@@ -83,6 +84,23 @@ async function initialize() {
   if (!await knex.schema.hasColumn('fatture_aruba_elaborati', 'fattura_id')) {
     // ALTER TABLE diretto: Knex ricostruirebbe la tabella e fallirebbe sui vecchi FK orfani.
     await knex.raw('ALTER TABLE fatture_aruba_elaborati ADD COLUMN fattura_id TEXT REFERENCES fatture(id) ON DELETE SET NULL');
+  }
+  if (!await knex.schema.hasColumn('fatture_aruba_elaborati', 'tipo_documento')) {
+    await knex.raw('ALTER TABLE fatture_aruba_elaborati ADD COLUMN tipo_documento TEXT');
+  }
+  if (!await knex.schema.hasColumn('fatture', 'tipo_documento')) {
+    await knex.raw('ALTER TABLE fatture ADD COLUMN tipo_documento TEXT');
+  }
+  if (!await knex.schema.hasTable('documenti_aruba_mese')) {
+    await knex.schema.createTable('documenti_aruba_mese', table => {
+      table.increments('id').primary(); table.text('cliente_id').notNullable();
+      table.integer('mese').notNullable(); table.integer('anno').notNullable();
+      table.text('tipo_documento').notNullable(); table.text('numero_fattura').notNullable();
+      table.text('data_fattura').notNullable(); table.float('importo_documento').notNullable();
+      table.text('pdf_path').notNullable(); table.text('xml_name').notNullable();
+      table.text('registrata_at').notNullable(); table.text('registrata_da');
+      table.unique(['cliente_id', 'numero_fattura', 'data_fattura']);
+    });
   }
   await knex.raw('CREATE UNIQUE INDEX IF NOT EXISTS idx_fatture_aruba_fattura_id ON fatture_aruba_elaborati(fattura_id)');
   if (!await knex.schema.hasTable('rettifiche_fatture_aruba')) {
@@ -246,6 +264,7 @@ async function accountingRows(tipo, mese, anno) {
     const frozenIds = new Set((await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id')).map(r => r.soggetto_id));
     if (tipo === 'cliente') {
       const invoices = await registrationStatuses(trx, await trx('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
+      const documents = await trx('documenti_aruba_mese').where({ mese: p.mese, anno: p.anno }).orderBy('id');
       const sent = await trx('fatture_inviate_elaborati').where({ mese: p.mese, anno: p.anno });
       const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
       const dipendentiElaborato = (await elaborati.ottieniElaboratoMensile(p.mese, p.anno, trx)).dati;
@@ -263,12 +282,36 @@ async function accountingRows(tipo, mese, anno) {
       const oreRegistrate = await trx('registro_ore').select('dipendente_id', 'cliente_id', 'ore_totali', 'causale_assenza').where({ mese: p.mese, anno: p.anno });
       const costiPersonale = calcolaCostoPersonalePerCliente(dipendenti, oreRegistrate);
       const statoCosti = statoCostoPersonalePerCliente(dipendenti, oreRegistrate);
-      return rows.map(row => {
-        const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), statoRiconciliazione: f.stato_riconciliazione }));
+      const result = rows.map(row => {
+        const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), tipoDocumento: f.tipo_documento || 'TD01', registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione }));
+        const attachments = documents.filter(d => d.cliente_id === row.idCliente).map(d => ({ id: d.id, numero: d.numero_fattura,
+          data: d.data_fattura, importo: Number(d.importo_documento), tipoDocumento: d.tipo_documento,
+          registrataAt: d.registrata_at }));
         const actual = linked.reduce((sum, f) => sum + f.importo, 0);
         const importi = calcolaValoriContabilitaCliente(row, costiPersonale.get(String(row.idCliente)) || 0);
-        return { ...row, ...importi, costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
+        return { ...row, ...importi, costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, documentiAruba: attachments, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
       });
+      const known = new Set(rows.map(row => String(row.idCliente)));
+      const extraIds = [...new Set([...invoices, ...documents].map(item => String(item.cliente_id)))].filter(id => !known.has(id));
+      if (extraIds.length) {
+        const clients = await trx('clienti').whereIn('id', extraIds).select('id', 'ragione_sociale');
+        for (const client of clients) {
+          const linked = invoices.filter(f => String(f.cliente_id) === String(client.id)).map(f => ({ id: f.id,
+            numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale),
+            tipoDocumento: f.tipo_documento || 'TD01', registrataAt: f.registrata_at,
+            allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione }));
+          const attachments = documents.filter(d => String(d.cliente_id) === String(client.id)).map(d => ({ id: d.id,
+            numero: d.numero_fattura, data: d.data_fattura, importo: Number(d.importo_documento),
+            tipoDocumento: d.tipo_documento, registrataAt: d.registrata_at }));
+          const actual = linked.reduce((sum, f) => sum + f.importo, 0);
+          result.push({ idCliente: client.id, ragioneSociale: client.ragione_sociale,
+            imponibile: 0, importoTassa: 0, importoTotale: 0, tipoTassazione: 'IVA',
+            notaMensile: 'Documento Aruba aggiunto fuori dall’elaborato del mese.', rigaExtra: true,
+            fatture: linked, documentiAruba: attachments, importoRealmenteFatturato: actual,
+            differenza: actual, costoPersonaleDefinitivo: true });
+        }
+      }
+      return result;
     }
     const payments = await trx('pagamenti_elaborati_dipendenti').where({ mese: p.mese, anno: p.anno });
     const ccRows = await trx('cc_elaborati_dipendenti').where({ mese: p.mese, anno: p.anno });
@@ -413,7 +456,9 @@ async function registerInvoice({ mese, anno, clienteId, numero, dataFattura, imp
       if (!stillLocked && !historical) throw new Error('Riga cliente sblindata: aggiorna l’elaborato prima di registrare la fattura.');
       const record = { cliente_id: clienteId, mese: p.mese, anno: p.anno, numero_fattura: numero.trim(), data_fattura: dataFattura, importo_totale: Math.round(amount * 100) / 100, allegato_path: relative, registrata_at: new Date().toISOString(), registrata_da: userId };
       const [id] = await trx('fatture_aruba_elaborati').insert(record);
-      return { id, ...await reconcileRegistration(trx, { ...record, id }) };
+      const registration = { ...record, id };
+      await transferSentReceipts(trx, { cliente_id: clienteId, mese: p.mese, anno: p.anno }, registration);
+      return { id, ...await reconcileRegistration(trx, registration) };
     });
     return { ...result, differenza: Number(((await accountingRows('cliente', p.mese, p.anno)).find(r => r.idCliente === clienteId).differenza).toFixed(2)) };
   } catch (error) {

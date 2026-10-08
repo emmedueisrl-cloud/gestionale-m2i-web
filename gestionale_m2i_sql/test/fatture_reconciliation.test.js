@@ -9,7 +9,7 @@ test('Aruba e XML/CSV si riconciliano nei due ordini, senza duplicati o abbiname
   try {
     await db.schema.createTable('fatture', t => {
       t.string('id').primary(); t.string('cliente_id'); t.string('numero_fattura');
-      t.string('data_fattura'); t.decimal('importo_totale');
+      t.string('data_fattura'); t.decimal('importo_totale'); t.string('allegato_fattura');
     });
     await db.schema.createTable('fatture_aruba_elaborati', t => {
       t.increments('id'); t.string('cliente_id'); t.string('numero_fattura');

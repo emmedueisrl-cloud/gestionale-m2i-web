@@ -23,6 +23,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "imapflow": "^1.7.0",
+    "jszip": "^3.10.2",
     "knex": "^3.3.0",
     "mailparser": "^3.9.15",
     "multer": "^2.2.0",

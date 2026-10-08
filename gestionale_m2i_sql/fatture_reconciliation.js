@@ -86,13 +86,14 @@ async function reconcileRegistration(trx, record) {
 async function registrationStatuses(trx, records) {
   if (!records.length) return records;
   const ids = [...new Set(records.map(record => record.cliente_id))];
-  const official = await trx('fatture').whereIn('cliente_id', ids).select('id', 'cliente_id', 'numero_fattura', 'data_fattura', 'importo_totale');
+  const official = await trx('fatture').whereIn('cliente_id', ids).select('id', 'cliente_id', 'numero_fattura', 'data_fattura', 'importo_totale', 'allegato_fattura');
   return records.map(record => {
     const candidates = official.filter(invoice => invoice.cliente_id === record.cliente_id &&
       String(invoice.numero_fattura).trim() === String(record.numero_fattura).trim() &&
       normalizedDate(invoice.data_fattura).slice(0, 4) === normalizedDate(record.data_fattura).slice(0, 4));
     const valid = candidates.length === 1 && matches(record, candidates[0]) && record.fattura_id === candidates[0].id;
-    return { ...record, stato_riconciliazione: valid ? 'riconciliata' :
+    return { ...record, xml_allegato: valid && /\.xml$/i.test(candidates[0].allegato_fattura || ''),
+      stato_riconciliazione: valid ? 'riconciliata' :
       candidates.length ? 'da_verificare' : 'in_attesa_importazione' };
   });
 }

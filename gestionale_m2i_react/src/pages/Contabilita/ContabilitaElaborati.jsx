@@ -5,6 +5,7 @@ import TabellaPagamenti from './TabellaPagamenti';
 import CaricaBusteElaborato from './CaricaBusteElaborato';
 import PerUfficioPaghe from './PerUfficioPaghe';
 import PerConsulente from './PerConsulente';
+import ImportaFattureArubaZip from './ImportaFattureArubaZip';
 import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
@@ -144,8 +145,8 @@ export default function ContabilitaElaborati({ tipo }) {
   };
 
   const gruppi = tipo === 'cliente' ? [
-    { titolo: 'Fatture da elaborare', etichetta: 'Da elaborare', contatore: 'fatture', elaborate: false, righe: rows.filter(row => !row.fatture?.length && !row.fatturaInviataAt), vuoto: 'Nessuna fattura da elaborare.' },
-    { titolo: 'Fatture elaborate', etichetta: 'Elaborate', contatore: 'fatture', elaborate: true, righe: rows.filter(row => row.fatture?.length || row.fatturaInviataAt), vuoto: 'Nessuna fattura elaborata per questo mese.' }
+    { titolo: 'Fatture da elaborare', etichetta: 'Da elaborare', contatore: 'fatture', elaborate: false, righe: rows.filter(row => !row.fatture?.length && !row.documentiAruba?.length && !row.fatturaInviataAt), vuoto: 'Nessuna fattura da elaborare.' },
+    { titolo: 'Fatture elaborate', etichetta: 'Elaborate', contatore: 'fatture', elaborate: true, righe: rows.filter(row => row.fatture?.length || row.documentiAruba?.length || row.fatturaInviataAt), vuoto: 'Nessuna fattura elaborata per questo mese.' }
   ] : [];
   const searchTerm = search.trim().toLocaleLowerCase('it-IT');
   const matchesClient = row => !searchTerm || [row.ragioneSociale, ...(row.fatture || []).map(fattura => fattura.numero)]
@@ -228,7 +229,7 @@ export default function ContabilitaElaborati({ tipo }) {
     </div>
     {error && <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-red-800">{error}</div>}
     {message?.section === sezioneAttiva && message.period === `${anno}-${mese}` && message.tipo === tipo && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-800">{message.text}</div>}
-    <div className="flex justify-start"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" /></div>
+    <div className="flex flex-wrap items-center gap-3"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" />{tipo === 'cliente' && <ImportaFattureArubaZip mese={mese} anno={anno} onChanged={async () => { setSezioneAttiva(1); await load(); }} />}</div>
     {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onInviata={markInvoiceSent} busy={busy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}

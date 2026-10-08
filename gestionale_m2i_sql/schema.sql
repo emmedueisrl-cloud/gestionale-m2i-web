@@ -122,6 +122,7 @@ CREATE TABLE fatture (
     data_pagamento TEXT,
     importo_pagato REAL DEFAULT 0,
     allegato_fattura TEXT,
+    tipo_documento TEXT,
     note TEXT,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,
     creato_da TEXT
@@ -554,9 +555,21 @@ CREATE TABLE fatture_aruba_elaborati (
   cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
   numero_fattura TEXT NOT NULL, data_fattura TEXT NOT NULL,
   importo_totale REAL NOT NULL, allegato_path TEXT,
+  tipo_documento TEXT,
   registrata_at TEXT NOT NULL, registrata_da INTEGER,
   data_scadenza TEXT,
   fattura_id TEXT UNIQUE REFERENCES fatture(id) ON DELETE SET NULL,
+  UNIQUE (cliente_id, numero_fattura, data_fattura)
+);
+
+CREATE TABLE documenti_aruba_mese (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT,
+  mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  tipo_documento TEXT NOT NULL, numero_fattura TEXT NOT NULL,
+  data_fattura TEXT NOT NULL, importo_documento REAL NOT NULL,
+  pdf_path TEXT NOT NULL, xml_name TEXT NOT NULL,
+  registrata_at TEXT NOT NULL, registrata_da TEXT,
   UNIQUE (cliente_id, numero_fattura, data_fattura)
 );
 
@@ -582,6 +595,17 @@ CREATE TABLE fatture_inviate_elaborati (
   inviata_at TEXT NOT NULL, inviata_da INTEGER,
   PRIMARY KEY (cliente_id, mese, anno)
 );
+
+CREATE TABLE incassi_fatture_inviate (
+  id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  data_incasso TEXT NOT NULL, importo_cent INTEGER NOT NULL,
+  nota TEXT, origine TEXT NOT NULL DEFAULT 'manuale',
+  registrato_at TEXT NOT NULL, registrato_da TEXT,
+  annullato_at TEXT, annullato_da TEXT, motivo_annullamento TEXT,
+  idempotency_key TEXT UNIQUE
+);
+CREATE INDEX idx_incassi_fatture_inviate_periodo ON incassi_fatture_inviate(cliente_id, anno, mese);
 
 CREATE TABLE rettifiche_fatture_aruba (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

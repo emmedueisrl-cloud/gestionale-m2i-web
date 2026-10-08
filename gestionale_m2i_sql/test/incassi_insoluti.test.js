@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const knexFactory = require('knex');
-const { createReceiptsService, todayInItaly } = require('../incassi_insoluti');
+const { createReceiptsService, todayInItaly, transferSentReceipts } = require('../incassi_insoluti');
 const { reconcileOfficial } = require('../fatture_reconciliation');
 
 test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async t => {
@@ -133,6 +133,7 @@ test('incassi mostra solo le fatture elaborate, anche senza importazione general
   assert.equal(result.riepilogo.daIncassare, 1086);
   assert.equal(result.fatture[0].gestibile, true);
   assert.equal(result.fatture[1].registrata, false);
+  assert.equal(result.fatture[1].gestibile, true);
   const registrationId = result.fatture[0].id;
   const paymentDate = todayInItaly();
   const payment = await service.register({ fatturaId: registrationId, data: paymentDate,
@@ -171,4 +172,27 @@ test('incassi mostra solo le fatture elaborate, anche senza importazione general
     importo: '300.00', idempotencyKey: 'aruba-payment-1' })).alreadyRegistered, true);
   await service.cancel({ receiptId: payment.id, reason: 'Incasso inserito per errore' });
   assert.equal((await service.list()).fatture.find(row => row.clienteId === 'SEP').incassato, 0);
+
+  const sentId = result.fatture[1].id;
+  const firstSentPayment = await service.register({ fatturaId: sentId, data: paymentDate, importo: '50.00' });
+  let sentRow = (await service.list()).fatture.find(row => row.clienteId === 'SENT');
+  assert.equal(sentRow.incassato, 50);
+  assert.equal(sentRow.residuo, 100);
+  assert.equal(sentRow.storico.length, 1);
+  await service.cancel({ receiptId: firstSentPayment.id, reason: 'Pagamento errato' });
+  const secondSentPayment = await service.register({ fatturaId: sentId, data: paymentDate,
+    importo: '75.00', idempotencyKey: 'sent-payment-1' });
+  await assert.rejects(service.register({ fatturaId: sentId, data: paymentDate, importo: '76.00' }), /superiore al residuo/);
+  sentRow = (await service.list()).fatture.find(row => row.clienteId === 'SENT');
+  assert.equal(sentRow.incassato, 75);
+  const [sentRegistrationId] = await db('fatture_aruba_elaborati').insert({ cliente_id: 'SENT', mese: 10, anno: 2026,
+    numero_fattura: '13/26', data_fattura: '2026-10-01', importo_totale: 150 });
+  await db.transaction(trx => transferSentReceipts(trx, { cliente_id: 'SENT', mese: 10, anno: 2026 },
+    { id: sentRegistrationId, importo_totale: 150 }));
+  sentRow = (await service.list()).fatture.find(row => row.clienteId === 'SENT');
+  assert.equal(sentRow.id, `aruba:${sentRegistrationId}`);
+  assert.equal(sentRow.incassato, 75);
+  assert.equal(sentRow.storico.find(row => row.id === firstSentPayment.id).motivoAnnullamento, 'Pagamento errato');
+  await service.cancel({ receiptId: secondSentPayment.id, reason: 'Da correggere' });
+  assert.equal((await service.list()).fatture.find(row => row.clienteId === 'SENT').incassato, 0);
 });

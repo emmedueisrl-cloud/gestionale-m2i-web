@@ -45,7 +45,7 @@ function Metric({ label, amount, detail, style }) {
   </div>;
 }
 
-function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onDue, onCancel }) {
+function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCancel }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
   const selectedColumn = invoiceSortColumns.find(column => column.key === sortKey);
@@ -79,13 +79,12 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onDue, 
                 <button type="button" onClick={() => onPay(invoice, true)} className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800">Segna come incassata</button>
                 <button type="button" onClick={() => onPay(invoice, false)} className="rounded-lg bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-900 hover:bg-indigo-200">Registra acconto</button>
               </>}
-              {invoice.residuo > 0 && invoice.gestibile && <button type="button" onClick={() => onDue(invoice)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold hover:bg-slate-200" title={invoice.scadenza ? `Scadenza: ${dateIt(invoice.scadenza)}` : 'Scadenza non impostata'}>Scadenza</button>}
               {invoice.gestibile ? <button type="button" onClick={() => onExpand(invoice.id)} aria-expanded={expandedId === invoice.id} className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold hover:bg-slate-200"><History className="h-3.5 w-3.5" />Storico</button> : <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900" title={invoice.sincronizzazioneDaVerificare ? 'Gli incassi della fattura elaborata devono essere riconciliati con quelli della fattura importata.' : 'La fattura inviata deve ancora essere registrata.'}>{invoice.sincronizzazioneDaVerificare ? 'Verifica incassi' : 'In attesa registrazione'}</span>}
             </div></td>
           </tr>
           {invoice.incongruenza && <tr className="bg-amber-50"><td colSpan={8} className="border-b border-amber-200 px-3 pb-3 font-medium text-amber-900">{invoice.stato === 'Importo da verificare' ? 'Importo dell’elaborato non disponibile: verifica la riga in Fatturazione.' : invoice.sincronizzazioneDaVerificare ? 'Gli incassi registrati prima dell’importazione richiedono una verifica con la fattura importata.' : 'Gli importi della fattura e del registro non coincidono. Verifica prima di aggiungere incassi.'}</td></tr>}
           {expandedId === invoice.id && <tr className="bg-slate-50"><td colSpan={8} className="border-b border-slate-300 px-4 py-4">
-            <h4 className="mb-3 font-bold">Storico incassi · {invoice.numero}</h4>
+            <h4 className="mb-3 font-bold">Storico incassi · {invoice.registrata ? invoice.numero : invoice.cliente}</h4>
             {!invoice.storico.length ? <p className="text-slate-600">Nessun incasso registrato.</p> : <div className="space-y-2">{invoice.storico.map(receipt => <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
               <div><span className="font-semibold">{receipt.data ? dateIt(receipt.data) : 'Data non disponibile'} · {euro(receipt.importo)}</span>
                 {receipt.origine === 'storico' && <span className="ml-2 rounded bg-slate-100 px-2 py-1 text-xs">Storico cumulativo</span>}
@@ -108,12 +107,10 @@ export default function IncassiInsoluti() {
   const [showAll, setShowAll] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [payment, setPayment] = useState(null);
-  const [dueInvoice, setDueInvoice] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(italyDate);
   const [note, setNote] = useState('');
-  const [dueDate, setDueDate] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [requestKey, setRequestKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -150,11 +147,13 @@ export default function IncassiInsoluti() {
     (a.scadenza || '9999-12-31').localeCompare(b.scadenza || '9999-12-31');
   const isOpen = invoice => invoice.residuo > 0 || invoice.stato === 'Importo da verificare';
   const monthOpen = monthInvoices.filter(isOpen).sort(priority);
-  const monthPaid = monthInvoices.filter(invoice => !isOpen(invoice));
+  const monthPaid = monthInvoices.filter(invoice => !isOpen(invoice) && invoice.stato !== 'Nota di credito');
+  const monthCredits = monthInvoices.filter(invoice => invoice.stato === 'Nota di credito');
   const allOpen = invoices.filter(isOpen).sort(priority);
   const matchesSearch = invoice => `${invoice.cliente} ${invoice.numero}`.toLocaleLowerCase('it-IT').includes(search.trim().toLocaleLowerCase('it-IT'));
   const visibleMonthOpen = monthOpen.filter(matchesSearch);
   const visibleMonthPaid = monthPaid.filter(matchesSearch);
+  const visibleMonthCredits = monthCredits.filter(matchesSearch);
   const visibleOpen = allOpen.filter(matchesSearch);
   const shownCount = (visible, total) => search.trim() ? `${visible} di ${total}` : total;
   const monthReceipts = receipts.filter(receipt => !receipt.annullatoAt && monthOf(receipt.data) === month);
@@ -180,17 +179,8 @@ export default function IncassiInsoluti() {
       await workflowRequest(`contabilita/incassi-insoluti/${encodeURIComponent(payment.id)}/incassi`, {
         method: 'POST', body: JSON.stringify({ data: paymentDate, importo: amount, nota: note, idempotencyKey: requestKey })
       });
-      const number = payment.numero;
-      await load(); setPayment(null); setMessage(`Incasso della fattura ${number} registrato.`);
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
-  };
-  const submitDue = async event => {
-    event.preventDefault(); if (!dueInvoice) return;
-    setBusy(true); setError(''); setMessage('');
-    try {
-      await workflowRequest(`contabilita/incassi-insoluti/${encodeURIComponent(dueInvoice.id)}/scadenza`, { method: 'PUT', body: JSON.stringify({ scadenza: dueDate || null }) });
-      await load(); setDueInvoice(null); setMessage('Scadenza aggiornata.');
+      const label = payment.registrata ? `fattura ${payment.numero}` : `fattura inviata a ${payment.cliente}`;
+      await load(); setPayment(null); setMessage(`Incasso della ${label} registrato.`);
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   };
@@ -204,7 +194,6 @@ export default function IncassiInsoluti() {
     finally { setBusy(false); }
   };
   const tableActions = { today: data.oggi || italyDate(), expandedId, onExpand: id => setExpandedId(current => current === id ? null : id), onPay: openPayment,
-    onDue: invoice => { setDueInvoice(invoice); setDueDate(invoice.scadenza || ''); setError(''); },
     onCancel: (invoice, receipt) => { setCancelTarget({ invoice, receipt }); setCancelReason(''); setError(''); } };
 
   return <div className="space-y-7 bg-white pb-12 text-slate-900">
@@ -218,13 +207,14 @@ export default function IncassiInsoluti() {
     </section>
     {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">{message}</p>}
     {loading && <p role="status" className="rounded-lg bg-slate-100 p-3 text-sm text-slate-700">Caricamento fatture e incassi...</p>}
-    {error && !payment && !dueInvoice && !cancelTarget && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">{error}</p>}
+    {error && !payment && !cancelTarget && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">{error}</p>}
     <section className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-4"><div>{showAll ? <h2 className="text-2xl font-bold">Tutti i mesi</h2> : <><h2 className="text-2xl font-bold">{monthLabel(month)}</h2><p className="text-sm text-slate-600">Fatture raggruppate per mese di riferimento in Fatturazione.</p></>}</div><div className="flex flex-wrap items-center gap-2">{!showAll && <button type="button" aria-label="Mese precedente" onClick={() => setPeriod(shiftMonth(month, -1))} className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>}<input type="month" aria-label="Mese da visualizzare" value={month} onChange={event => { if (event.target.value) { setPeriod(event.target.value); setShowAll(false); } }} className="rounded-lg border border-slate-300 bg-white p-2 font-semibold" />{!showAll && <button type="button" aria-label="Mese successivo" onClick={() => setPeriod(shiftMonth(month, 1))} className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>}<button type="button" onClick={() => setShowAll(current => !current)} aria-pressed={showAll} className={`rounded-lg border px-4 py-2 font-semibold ${showAll ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-300 bg-white hover:bg-slate-100'}`}>{showAll ? 'Vedi mese' : 'Vedi tutte'}</button></div></div>
       <div className="flex justify-end"><input type="search" aria-label="Cerca azienda o numero fattura" placeholder="Cerca azienda o fattura" value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-64" /></div>
       {!showAll && <>
       <div className="grid gap-3 sm:grid-cols-3"><Metric label="Fatturato del mese" amount={monthRevenue} detail={`${monthInvoices.length} fatture elaborate`} style="border-indigo-300 bg-indigo-50 text-indigo-900" /><Metric label="Incassato nel mese" amount={monthCollected} detail={`${monthReceipts.length} registrazioni`} style="border-emerald-300 bg-emerald-50 text-emerald-900" /><Metric label="Residuo delle fatture del mese" amount={monthRemaining} style="border-amber-300 bg-amber-50 text-amber-900" /></div>
       <div className="space-y-3"><h3 className="text-lg font-bold">Da incassare · {shownCount(visibleMonthOpen.length, monthOpen.length)}</h3><InvoiceTable rows={visibleMonthOpen} empty={search ? 'Nessuna fattura da incassare corrisponde alla ricerca.' : 'Nessuna fattura aperta emessa in questo mese.'} {...tableActions} /></div>
       <div className="space-y-3"><h3 className="text-lg font-bold">Incassate · {shownCount(visibleMonthPaid.length, monthPaid.length)}</h3><InvoiceTable rows={visibleMonthPaid} empty={search ? 'Nessuna fattura incassata corrisponde alla ricerca.' : 'Nessuna fattura interamente incassata emessa in questo mese.'} {...tableActions} /></div>
+      {monthCredits.length > 0 && <div className="space-y-3"><h3 className="text-lg font-bold">Note di credito · {shownCount(visibleMonthCredits.length, monthCredits.length)}</h3><InvoiceTable rows={visibleMonthCredits} empty="Nessuna nota di credito corrisponde alla ricerca." {...tableActions} /></div>}
       </>}
       {showAll && <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><h2 className="text-xl font-bold">Tutte le fatture da incassare</h2><span className="text-sm font-semibold text-slate-600">{shownCount(visibleOpen.length, allOpen.length)} · {euro(data.riepilogo?.daIncassare)}</span></div><InvoiceTable rows={visibleOpen} empty={search ? 'Nessuna fattura corrisponde alla ricerca.' : 'Non ci sono fatture da incassare.'} {...tableActions} /></div>}
     </section>
@@ -233,8 +223,7 @@ export default function IncassiInsoluti() {
       <div className="h-[360px] w-full overflow-x-auto"><div className="h-full min-w-[700px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart} margin={{ top: 8, right: 12, left: 12, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} /><XAxis dataKey="mese" tick={{ fill: '#475569', fontSize: 11 }} interval={0} /><YAxis tickFormatter={value => `${Math.round(value / 1000)}k`} tick={{ fill: '#475569', fontSize: 11 }} /><Tooltip formatter={(value, name) => [euro(value), name]} /><Legend /><Bar name="Fatturato" dataKey="fatturato" fill="#4f46e5" radius={[4, 4, 0, 0]} /><Bar name="Incassato" dataKey="incassato" fill="#059669" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div>
       {legacy.length > 0 && <p className="mt-3 text-xs text-slate-600">Gli incassi precedenti al nuovo registro sono totali cumulativi: se datati sono attribuiti all’ultima data disponibile, senza dettaglio delle rate.{legacy.some(receipt => !receipt.data) && ' I totali storici senza data non compaiono nel grafico.'}</p>}
     </div></div>}
-    {payment && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"><form onSubmit={submitPayment} className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Registra incasso</h2><p className="text-sm text-slate-600">{payment.cliente} · Fattura {payment.numero}</p></div><button type="button" disabled={busy} onClick={() => setPayment(null)} aria-label="Chiudi"><X className="h-5 w-5" /></button></div><p className="rounded-lg bg-amber-50 p-3 font-semibold text-amber-900">Residuo: {euro(payment.residuo)}</p><label className="block text-sm font-semibold">Data incasso<input required type="date" max={italyDate()} value={paymentDate} onChange={event => setPaymentDate(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label><label className="block text-sm font-semibold">Importo incassato (€)<input required type="number" min="0.01" max={payment.residuo} step="0.01" value={amount} onChange={event => setAmount(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label><label className="block text-sm font-semibold">Nota facoltativa<textarea value={note} onChange={event => setNote(event.target.value)} maxLength={2000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setPayment(null)} className="rounded-lg bg-slate-100 px-4 py-2">Annulla</button><button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Registrazione...' : 'Conferma incasso'}</button></div></form></div>}
-    {dueInvoice && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"><form onSubmit={submitDue} className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"><h2 className="text-xl font-bold">Scadenza · Fattura {dueInvoice.numero}</h2><p className="text-sm text-slate-600">Una fattura con scadenza superata e importo residuo viene indicata come insoluta.</p><label className="block text-sm font-semibold">Data di scadenza<input type="date" value={dueDate} onChange={event => setDueDate(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setDueInvoice(null)} className="rounded-lg bg-slate-100 px-4 py-2">Annulla</button><button type="submit" disabled={busy} className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Salva scadenza</button></div></form></div>}
-    {cancelTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"><form onSubmit={submitCancel} className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"><h2 className="text-xl font-bold">Annulla incasso</h2><p className="text-sm text-slate-700">Fattura {cancelTarget.invoice.numero} · {euro(cancelTarget.receipt.importo)} del {dateIt(cancelTarget.receipt.data)}. L’operazione rimarrà nello storico e il residuo sarà aggiornato.</p><label className="block text-sm font-semibold">Motivo dell’annullamento<textarea required minLength={3} maxLength={1000} rows={3} value={cancelReason} onChange={event => setCancelReason(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setCancelTarget(null)} className="rounded-lg bg-slate-100 px-4 py-2">Torna indietro</button><button type="submit" disabled={busy} className="rounded-lg bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Conferma annullamento</button></div></form></div>}
+    {payment && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"><form onSubmit={submitPayment} className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Registra incasso</h2><p className="text-sm text-slate-600">{payment.cliente} · {payment.registrata ? `Fattura ${payment.numero}` : 'Fattura inviata da registrare'}</p></div><button type="button" disabled={busy} onClick={() => setPayment(null)} aria-label="Chiudi"><X className="h-5 w-5" /></button></div><p className="rounded-lg bg-amber-50 p-3 font-semibold text-amber-900">Residuo: {euro(payment.residuo)}</p><label className="block text-sm font-semibold">Data incasso<input required type="date" max={italyDate()} value={paymentDate} onChange={event => setPaymentDate(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label><label className="block text-sm font-semibold">Importo incassato (€)<input required type="number" min="0.01" max={payment.residuo} step="0.01" value={amount} onChange={event => setAmount(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label><label className="block text-sm font-semibold">Nota facoltativa<textarea value={note} onChange={event => setNote(event.target.value)} maxLength={2000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setPayment(null)} className="rounded-lg bg-slate-100 px-4 py-2">Annulla</button><button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Registrazione...' : 'Conferma incasso'}</button></div></form></div>}
+    {cancelTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"><form onSubmit={submitCancel} className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"><h2 className="text-xl font-bold">Annulla incasso</h2><p className="text-sm text-slate-700">{cancelTarget.invoice.registrata ? `Fattura ${cancelTarget.invoice.numero}` : `Fattura inviata a ${cancelTarget.invoice.cliente}`} · {euro(cancelTarget.receipt.importo)} del {dateIt(cancelTarget.receipt.data)}. L’operazione rimarrà nello storico e il residuo sarà aggiornato.</p><label className="block text-sm font-semibold">Motivo dell’annullamento<textarea required minLength={3} maxLength={1000} rows={3} value={cancelReason} onChange={event => setCancelReason(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setCancelTarget(null)} className="rounded-lg bg-slate-100 px-4 py-2">Torna indietro</button><button type="submit" disabled={busy} className="rounded-lg bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Conferma annullamento</button></div></form></div>}
   </div>;
 }

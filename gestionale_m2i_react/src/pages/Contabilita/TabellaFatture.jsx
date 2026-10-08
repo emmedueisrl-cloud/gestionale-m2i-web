@@ -45,7 +45,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
             const fatture = row.fatture || [];
             const totale = Number(row.importoTotale) || 0;
             const tassa = Number.isFinite(Number(row.importoTassa)) ? Number(row.importoTassa) : totale - (Number(row.imponibile) || 0);
-            const registered = fatture.length > 0;
+            const registered = fatture.length > 0 || Boolean(row.documentiAruba?.length);
             const hasDifference = registered && Math.abs(differenceCents(row)) > 20;
             const cell = 'border-r border-r-slate-200 border-b-2 border-b-slate-400 px-2 py-2 align-middle last:border-r-0';
             const numberCell = `${cell} whitespace-nowrap text-[18px]`;
@@ -73,10 +73,10 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
               <td className={cell}>
                 <div className="flex items-center justify-center gap-2">
                   {registered ? <>
-                    <span role="status" title="Fattura registrata!" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-2 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Fattura registrata!</span></span>
-                    {hasDifference && <button type="button" onClick={() => setDetailsRow(row)} aria-label={`Differenza nella fattura di ${row.ragioneSociale}: apri note e allegati`} title="Differenza superiore a € 0,20: apri note e allegati" className="rounded-full bg-white p-1.5 text-red-700 ring-1 ring-red-700 hover:bg-red-50">
-                      <CircleAlert className="h-5 w-5" aria-hidden="true" />
-                    </button>}
+                    <span role="status" title="Documenti registrati" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-2 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Documenti registrati</span></span>
+                    <button type="button" onClick={() => setDetailsRow(row)} aria-label={`Apri documenti e allegati di ${row.ragioneSociale}`} title="Apri documenti e allegati" className={`rounded-full bg-white p-1.5 ring-1 hover:bg-red-50 ${hasDifference ? 'text-red-700 ring-red-700' : 'text-indigo-700 ring-indigo-500'}`}>
+                      {hasDifference ? <CircleAlert className="h-5 w-5" aria-hidden="true" /> : <FilePlus2 className="h-5 w-5" aria-hidden="true" />}
+                    </button>
                   </> : <>
                     <button type="button" onClick={() => onRegistra(row)} aria-label={`Registra fattura di ${row.ragioneSociale}`} title="Registra fattura" className="rounded-lg bg-white/70 p-1.5 text-indigo-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700"><FilePlus2 className="h-5 w-5" aria-hidden="true" /></button>
                     {row.fatturaInviataAt ? <span role="status" title="Fattura inviata" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-1 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Fattura inviata</span></span> :
@@ -93,7 +93,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
     {detailsRow && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={() => setDetailsRow(null)}>
       <div role="dialog" aria-modal="true" aria-labelledby="invoice-details-title" className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 text-left text-slate-900 shadow-xl" onMouseDown={event => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
-          <h3 id="invoice-details-title" className="text-lg font-bold">Fattura registrata · {detailsRow.ragioneSociale}</h3>
+          <h3 id="invoice-details-title" className="text-lg font-bold">Documenti registrati · {detailsRow.ragioneSociale}</h3>
           <button type="button" onClick={() => setDetailsRow(null)} aria-label="Chiudi dettagli fattura" className="rounded p-1 hover:bg-slate-100"><X className="h-5 w-5" /></button>
         </div>
         <div className="mt-4 grid gap-3 rounded-lg bg-red-50 p-3 text-sm sm:grid-cols-3">
@@ -109,7 +109,8 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
         </div>
         <div className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
           <h4 className="font-bold">Fatture e allegati</h4>
-          {(detailsRow.fatture || []).map(f => <p key={f.id}>Fattura {f.numero} · {f.data} · {euro(f.importo)} · registrata {new Date(f.registrataAt).toLocaleString('it-IT')} · {f.statoRiconciliazione === 'riconciliata' ? 'Riconciliata' : f.statoRiconciliazione === 'da_verificare' ? 'Da verificare' : 'In attesa XML/CSV'}{f.allegato && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/allegato`}>Apri allegato</a></>}</p>)}
+          {(detailsRow.fatture || []).map(f => <p key={f.id}>{f.tipoDocumento === 'TD04' ? 'Nota di credito' : 'Fattura'} {f.numero} · {f.data} · {euro(f.importo)} · registrata {new Date(f.registrataAt).toLocaleString('it-IT')} · {f.statoRiconciliazione === 'riconciliata' ? 'Riconciliata' : f.statoRiconciliazione === 'da_verificare' ? 'Da verificare' : 'In attesa XML/CSV'}{f.allegato && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/allegato`}>Apri PDF</a></>}{f.xml && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/xml`}>Scarica XML</a></>}</p>)}
+          {(detailsRow.documentiAruba || []).map(d => <p key={`doc-${d.id}`}>Nota di credito {d.numero} · {d.data} · {euro(d.importo)} · solo allegato, senza effetto sui totali · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/pdf`}>Apri PDF</a> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/xml`}>Scarica XML</a></p>)}
         </div>
       </div>
     </div>}

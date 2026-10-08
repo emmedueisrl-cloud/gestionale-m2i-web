@@ -20,6 +20,8 @@ const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
 const { createReceiptsService } = require('./incassi_insoluti');
 const incassiInsoluti = createReceiptsService(knex);
+const { createArubaZipService } = require('./fatture_aruba_zip');
+const arubaZip = createArubaZipService(knex, workflowElaborati);
 const consulenteEmail = require('./consulente_email');
 const tableExport = require('./tabella_contabilita_export');
 const { ensureIndexes } = require('./db_indexes');
@@ -290,6 +292,41 @@ app.get('/api/contabilita/fatture/:id/allegato', async (req, res) => {
     res.download(file, `Fattura_${invoice.id}${path.extname(file)}`);
   } catch (error) { res.status(500).send(error.message); }
 });
+app.get('/api/contabilita/fatture/:id/xml', async (req, res) => {
+  try {
+    const registration = await knex('fatture_aruba_elaborati').where({ id: req.params.id }).first();
+    const invoice = registration?.fattura_id && await knex('fatture').where({ id: registration.fattura_id }).first();
+    const filename = invoice?.allegato_fattura;
+    if (!filename || !process.env.DATA_DIR || path.basename(filename) !== filename ||
+      path.extname(filename).toLowerCase() !== '.xml') return res.status(404).send('XML non trovato.');
+    const file = path.resolve(process.env.DATA_DIR, 'uploads', 'unknown', filename);
+    if (!fs.existsSync(file)) return res.status(404).send('XML non disponibile.');
+    res.download(file, `Fattura_${registration.id}.xml`);
+  } catch (error) { res.status(500).send(error.message); }
+});
+app.get('/api/contabilita/documenti-aruba/:id/pdf', async (req, res) => {
+  try {
+    const document = await knex('documenti_aruba_mese').where({ id: req.params.id }).first();
+    if (!document || !process.env.DATA_DIR) return res.status(404).send('Documento non trovato.');
+    const root = path.resolve(process.env.DATA_DIR, 'uploads', 'fatture_aruba');
+    const file = path.resolve(process.env.DATA_DIR, document.pdf_path);
+    if (!file.startsWith(root + path.sep) || path.extname(file).toLowerCase() !== '.pdf' || !fs.existsSync(file)) {
+      return res.status(404).send('PDF non disponibile.');
+    }
+    res.download(file, `Nota_credito_${document.numero_fattura.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
+  } catch (error) { res.status(500).send(error.message); }
+});
+app.get('/api/contabilita/documenti-aruba/:id/xml', async (req, res) => {
+  try {
+    const document = await knex('documenti_aruba_mese').where({ id: req.params.id }).first();
+    const filename = document?.xml_name;
+    if (!filename || !process.env.DATA_DIR || path.basename(filename) !== filename ||
+      path.extname(filename).toLowerCase() !== '.xml') return res.status(404).send('XML non trovato.');
+    const file = path.resolve(process.env.DATA_DIR, 'uploads', 'unknown', filename);
+    if (!fs.existsSync(file)) return res.status(404).send('XML non disponibile.');
+    res.download(file, `Nota_credito_${document.numero_fattura.replace(/[^a-zA-Z0-9_-]/g, '_')}.xml`);
+  } catch (error) { res.status(500).send(error.message); }
+});
 // La rotta specifica va registrata prima di /:tipo/:anno/:mese.
 app.get('/api/contabilita/provvigioni/:anno/:mese', async (req, res) => {
   try {
@@ -311,6 +348,17 @@ app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWorkflow(req =>
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));
+const arubaZipUpload = multer({ storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 2, fields: 5, parts: 7 } });
+app.post('/api/contabilita/fatture/importazione-zip/anteprima',
+  arubaZipUpload.fields([{ name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
+  handleWorkflow(req => arubaZip.preview({ xmlZip: req.files?.xml?.[0]?.buffer,
+    pdfZip: req.files?.pdf?.[0]?.buffer, mese: req.body?.mese, anno: req.body?.anno })));
+app.post('/api/contabilita/fatture/importazione-zip/conferma',
+  arubaZipUpload.fields([{ name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
+  handleWorkflow(req => arubaZip.importSelected({ xmlZip: req.files?.xml?.[0]?.buffer,
+    pdfZip: req.files?.pdf?.[0]?.buffer, mese: req.body?.mese, anno: req.body?.anno,
+    selected: JSON.parse(req.body?.selected || '[]'), userId: req.authUser.id })));
 app.post('/api/contabilita/pagamenti', handleWorkflow(req =>
   workflowElaborati.registerPayment({ ...req.body, userId: req.authUser.id })));
 app.put('/api/contabilita/dipendenti/:anno/:mese/:id/nota-consulente', handleWorkflow(req =>
