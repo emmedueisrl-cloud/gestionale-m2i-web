@@ -6,6 +6,7 @@ import { salvaNuovoCliente, uploadFileCliente } from '../../api/clienti';
 import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
 import OperatoreSelect from '../../components/clienti/OperatoreSelect';
+import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
 
 const dataOdiernaItaliana = () => {
   const parti = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -78,6 +79,8 @@ export default function NuovoCliente() {
   useEffect(() => {
     if (dati.tipoTassazione === 'REVERSE CHARGE') {
       setDati(prev => ({ ...prev, percentualeTassazione: '0' }));
+    } else if (['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(dati.tipoTassazione)) {
+      setDati(prev => ({ ...prev, percentualeTassazione: '22' }));
     }
   }, [dati.tipoTassazione]);
 
@@ -340,7 +343,8 @@ export default function NuovoCliente() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1">Partita IVA *</label>
-              <input id="partitaIva" type="text" name="partitaIva" value={dati.partitaIva} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" maxLength="11" />
+              <input id="partitaIva" type="text" name="partitaIva" value={dati.partitaIva} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" aria-describedby={dati.partitaIva.trim().length > 11 ? 'avvisoPartitaIva' : undefined} />
+              <AvvisoPartitaIva valore={dati.partitaIva} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 flex items-center justify-between">
@@ -532,7 +536,9 @@ export default function NuovoCliente() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 text-amber-400">% Tassazione</label>
-              <input type="number" step="0.01" name="percentualeTassazione" value={dati.percentualeTassazione} onChange={handleChange} disabled={dati.tipoTassazione === 'REVERSE CHARGE'} className={`w-full p-2.5 bg-slate-900/80 border border-amber-500/30 rounded-lg outline-none text-slate-100 font-bold ${dati.tipoTassazione === 'REVERSE CHARGE' ? 'opacity-50 cursor-not-allowed' : 'focus:ring-2 focus:ring-amber-500'}`} placeholder="Es. 22" />
+              {['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(dati.tipoTassazione)
+                ? <p className="rounded-lg border border-amber-500/30 bg-slate-900/80 p-2.5 text-sm text-amber-200">IVA 22% − ritenuta 4% dell’imponibile</p>
+                : <input type="number" step="0.01" name="percentualeTassazione" value={dati.percentualeTassazione} onChange={handleChange} disabled={dati.tipoTassazione === 'REVERSE CHARGE'} className={`w-full p-2.5 bg-slate-900/80 border border-amber-500/30 rounded-lg outline-none text-slate-100 font-bold ${dati.tipoTassazione === 'REVERSE CHARGE' ? 'opacity-50 cursor-not-allowed' : 'focus:ring-2 focus:ring-amber-500'}`} placeholder="Es. 22" />}
             </div>
             {dati.tipoTassazione === 'ALTRO' && (
               <div>

@@ -1,4 +1,5 @@
 const { knex } = require('../db');
+const { calcolaImportiFatturaCliente } = require('../valori_contabilita_clienti');
 
 module.exports = {
   // ==========================================
@@ -324,23 +325,8 @@ module.exports = {
       const tipoTassazione = (c.tipo_tassazione || 'IVA').toUpperCase().trim();
       const percTassazione = parseFloat(c.percentuale_tassazione) || 0;
 
-      let importoIva = 0;
-      let importoTotale = imponibile;
-
-      if (tipoTassazione === 'REVERSE CHARGE') {
-        // Reverse Charge: IVA = 0, totale = imponibile
-        importoIva = 0;
-        importoTotale = imponibile;
-      } else if (tipoTassazione === 'TRAT. ACC.' || tipoTassazione === 'TRATTENUTA ACCONTO') {
-        // Trattenuta acconto: si somma la percentuale
-        importoIva = (imponibile * percTassazione / 100);
-        importoTotale = imponibile + importoIva;
-      } else {
-        // IVA normale
-        const aliquota = percTassazione > 0 ? percTassazione : 22;
-        importoIva = imponibile * aliquota / 100;
-        importoTotale = imponibile + importoIva;
-      }
+      const { importoIva, importoRitenuta, importoTotale } =
+        calcolaImportiFatturaCliente(imponibile, tipoTassazione, percTassazione);
 
       rows.push({
         idCliente: c.id,
@@ -356,6 +342,7 @@ module.exports = {
         tipoTassazione: c.tipo_tassazione || 'IVA',
         percentualeTassazione: parseFloat(c.percentuale_tassazione) || 0,
         importoIva: importoIva,
+        importoRitenuta,
         importoTotale: importoTotale,
         note: "",
         notaFissa: c.note_fisse_elaborato || "",

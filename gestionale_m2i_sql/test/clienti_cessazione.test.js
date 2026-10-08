@@ -161,3 +161,15 @@ test('una bozza con data di inizio non entra ancora negli elaborati', async () =
   await knex('clienti_periodi_attivita').insert({ cliente_id: 'C_BOZZA', data_inizio: '2026-10-06', data_fine: null });
   assert.equal(await visible('C_BOZZA', 10), false);
 });
+
+test('l’elaborato clienti applica IVA 22% e ritenuta 4% anche se la vecchia percentuale era 4', async () => {
+  await knex('clienti').insert({ id: 'C_RITENUTA', ragione_sociale: 'Cliente con ritenuta',
+    partita_iva: 'TEST-RITENUTA', attivo: 'SI', quotazione_tipo: 'Mensile',
+    quotazione_importo: 100, tipo_tassazione: 'TRAT. ACC.', percentuale_tassazione: 4 });
+  const row = (await elaborati.ottieniElaboratoClienti(12, 2026)).dati
+    .find(item => item.idCliente === 'C_RITENUTA');
+  assert.equal(row.imponibile, 100);
+  assert.equal(row.importoIva, 22);
+  assert.equal(row.importoRitenuta, 4);
+  assert.equal(row.importoTotale, 118);
+});

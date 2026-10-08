@@ -373,6 +373,21 @@ CREATE TABLE dettaglio_mesi_chiusi_clienti (
     FOREIGN KEY (mese, anno) REFERENCES mesi_chiusi_clienti(mese, anno) ON DELETE CASCADE
 );
 
+CREATE TABLE rettifiche_ritenuta_elaborati (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id TEXT NOT NULL,
+    mese INTEGER NOT NULL,
+    anno INTEGER NOT NULL,
+    origine TEXT NOT NULL,
+    imponibile REAL NOT NULL,
+    iva_precedente REAL,
+    totale_precedente REAL,
+    iva_nuova REAL NOT NULL,
+    ritenuta_nuova REAL NOT NULL,
+    totale_nuovo REAL NOT NULL,
+    rettificata_at TEXT NOT NULL
+);
+
 CREATE TABLE mesi_chiusi_provvigioni (
     mese INTEGER NOT NULL,
     anno INTEGER NOT NULL,

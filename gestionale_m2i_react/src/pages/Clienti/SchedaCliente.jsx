@@ -166,7 +166,9 @@ export default function SchedaCliente() {
             <p className="font-bold text-amber-400 text-2xl tracking-wide mb-1">{data.quotazione_importo ? `€ ${parseFloat(data.quotazione_importo).toFixed(2)}` : 'DA DEFINIRE'}</p>
             <p className="text-xs font-medium text-slate-300 uppercase tracking-wider">
               Tassazione: <span className="font-bold text-slate-100">{data.tipo_tassazione === 'ALTRO' ? data.tassazione_altro : (data.tipo_tassazione || 'DA DEFINIRE')}</span>
-              {data.tipo_tassazione && data.tipo_tassazione !== 'REVERSE CHARGE' && ` (${data.percentuale_tassazione !== null && data.percentuale_tassazione !== undefined ? data.percentuale_tassazione : 22}%)`}
+              {['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(String(data.tipo_tassazione || '').toUpperCase())
+                ? ' (IVA 22% − ritenuta 4% dell’imponibile)'
+                : data.tipo_tassazione && data.tipo_tassazione !== 'REVERSE CHARGE' && ` (${data.percentuale_tassazione !== null && data.percentuale_tassazione !== undefined ? data.percentuale_tassazione : 22}%)`}
             </p>
           </div>
         </div>

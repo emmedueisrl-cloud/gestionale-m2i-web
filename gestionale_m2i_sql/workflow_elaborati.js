@@ -5,6 +5,7 @@ const { knex } = require('./db');
 const elaborati = require('./controllers/elaborati');
 const { calcolaCostoPersonalePerCliente, statoCostoPersonalePerCliente } = require('./costo_personale_clienti');
 const { calcolaValoriContabilitaCliente } = require('./valori_contabilita_clienti');
+const { ricalcolaRitenutaStorica } = require('./ricalcolo_ritenuta_storica');
 const { reconcileRegistration, registrationStatuses } = require('./fatture_reconciliation');
 const { transferSentReceipts } = require('./incassi_insoluti');
 
@@ -179,6 +180,7 @@ async function initialize() {
         BEGIN SELECT RAISE(ABORT, 'Riga elaborato blindata: modifica non consentita'); END`);
     }
   }
+  await ricalcolaRitenutaStorica(knex);
 }
 
 async function lockRow(tipo, mese, anno, subjectId) {
