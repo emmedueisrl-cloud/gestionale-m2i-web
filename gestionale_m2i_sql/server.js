@@ -18,6 +18,8 @@ const riferimentiAziendali = require('./riferimenti_aziendali');
 const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./email_attachment_link');
 const { ensureElaboratiNoteStoriche } = require('./elaborati_note_storiche');
 const workflowElaborati = require('./workflow_elaborati');
+const { createEmployeeCostReport } = require('./report_costo_dipendenti');
+const employeeCostReport = createEmployeeCostReport(knex, workflowElaborati);
 const { createReceiptsService } = require('./incassi_insoluti');
 const incassiInsoluti = createReceiptsService(knex);
 const { createArubaZipService } = require('./fatture_aruba_zip');
@@ -343,6 +345,10 @@ app.get('/api/contabilita/dipendenti/anagrafica', handleWorkflow(async () =>
       nomeCompleto: `${row.cognome} ${row.nome}`, codiceFiscale: row.codice_fiscale, stato: row.stato }))));
 app.get(`/api/contabilita/${tipo}/${anno}/${mese}/mancanti`, handleWorkflow(req =>
   workflowElaborati.missingCount(req.params.tipo, req.params.mese, req.params.anno)));
+app.get('/api/contabilita/report/costo-dipendenti/:anno/:mese', handleWorkflow(req =>
+  employeeCostReport.get(req.params.mese, req.params.anno)));
+app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/f24', handleWorkflow(req =>
+  employeeCostReport.saveF24({ mese: req.params.mese, anno: req.params.anno, importo: req.body?.importo })));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
@@ -1356,6 +1362,7 @@ Promise.resolve().then(async () => {
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
   await workflowElaborati.initialize();
+  await employeeCostReport.initialize();
   await incassiInsoluti.initialize();
   await ensureIndexes(knex);
   app.listen(PORT, process.env.HOST || '0.0.0.0', () => {

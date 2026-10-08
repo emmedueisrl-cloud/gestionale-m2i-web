@@ -10,7 +10,8 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
     { type: 'item', label: '🧾 Fatturazione', path: '/contabilita/clienti' },
     { type: 'item', label: '💶 Stipendi', path: '/contabilita/dipendenti' },
     { type: 'item', label: '💰 Provvigioni', path: '/contabilita/provvigioni' },
-    { type: 'item', label: '💵 Incassi e Insoluti', path: '/contabilita/incassi-insoluti' }
+    { type: 'item', label: '💵 Incassi e Insoluti', path: '/contabilita/incassi-insoluti' },
+    { type: 'item', label: '📊 Report', path: '/contabilita/report' }
   ] : [
     { type: 'item', label: '🏠 Dashboard', path: '/admin/dashboard' },
     
