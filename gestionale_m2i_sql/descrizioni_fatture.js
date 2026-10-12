@@ -1,8 +1,13 @@
 const MESI = ['GENNAIO', 'FEBBRAIO', 'MARZO', 'APRILE', 'MAGGIO', 'GIUGNO', 'LUGLIO', 'AGOSTO', 'SETTEMBRE', 'OTTOBRE', 'NOVEMBRE', 'DICEMBRE'];
 
 function descrizionePredefinita(cliente, mese, anno) {
-  const riferimento = cliente?.periodo_causale_fattura === 'corrente' ? 0 : -1;
-  const data = new Date(Date.UTC(Number(anno), Number(mese) - 1 + riferimento, 1));
+  const data = new Date(Date.UTC(Number(anno), Number(mese) - 1, 1));
+  const causale = String(cliente?.causale_fattura || 'SERVIZIO DI PULIZIA').trim();
+  return `${causale} ${MESI[data.getUTCMonth()]} ${data.getUTCFullYear()}`;
+}
+
+function descrizioneMesePrecedente(cliente, mese, anno) {
+  const data = new Date(Date.UTC(Number(anno), Number(mese) - 2, 1));
   const causale = String(cliente?.causale_fattura || 'SERVIZIO DI PULIZIA').trim();
   return `${causale} ${MESI[data.getUTCMonth()]} ${data.getUTCFullYear()}`;
 }
@@ -12,7 +17,7 @@ async function initialize(db) {
     await db.raw("ALTER TABLE clienti ADD COLUMN causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA'");
   }
   if (!await db.schema.hasColumn('clienti', 'periodo_causale_fattura')) {
-    await db.raw("ALTER TABLE clienti ADD COLUMN periodo_causale_fattura TEXT NOT NULL DEFAULT 'precedente'");
+    await db.raw("ALTER TABLE clienti ADD COLUMN periodo_causale_fattura TEXT NOT NULL DEFAULT 'corrente'");
   }
   if (!await db.schema.hasTable('descrizioni_fatture_elaborati')) {
     await db.schema.createTable('descrizioni_fatture_elaborati', table => {
@@ -24,6 +29,28 @@ async function initialize(db) {
       table.primary(['tipo', 'soggetto_id', 'mese', 'anno']);
     });
   }
+  // Corregge solo le descrizioni generate con la vecchia regola del mese precedente.
+  // Una descrizione diversa, inserita manualmente, resta intatta.
+  const existingDescriptions = await db('descrizioni_fatture_elaborati').where({ tipo: 'cliente' }).select('*');
+  if (existingDescriptions.length) {
+    const clients = await db('clienti').select('*');
+    const clientsById = new Map(clients.map(client => [String(client.id), client]));
+    for (const row of existingDescriptions) {
+      const client = clientsById.get(String(row.soggetto_id));
+      if (!client) continue;
+      const oldClientDescription = descrizioneMesePrecedente(client, row.mese, row.anno);
+      const oldStandardDescription = descrizioneMesePrecedente(null, row.mese, row.anno);
+      if (row.descrizione !== oldClientDescription && row.descrizione !== oldStandardDescription) continue;
+      const corrected = row.descrizione === oldClientDescription
+        ? descrizionePredefinita(client, row.mese, row.anno)
+        : descrizionePredefinita(null, row.mese, row.anno);
+      await db('descrizioni_fatture_elaborati').where({ tipo: 'cliente', soggetto_id: row.soggetto_id,
+        mese: row.mese, anno: row.anno, descrizione: row.descrizione })
+        .update({ descrizione: corrected });
+    }
+  }
+  await db('clienti').whereNot({ periodo_causale_fattura: 'corrente' }).orWhereNull('periodo_causale_fattura')
+    .update({ periodo_causale_fattura: 'corrente' });
   // Le fatture precedenti all'introduzione della descrizione non hanno una causale
   // archiviata: congela la proposta iniziale, così la scheda cliente non cambia lo storico.
   const periods = new Map();

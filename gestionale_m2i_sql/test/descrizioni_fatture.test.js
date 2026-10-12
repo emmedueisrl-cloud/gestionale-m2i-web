@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const knexFactory = require('knex');
 const { descrizionePredefinita, initialize, freezeMonthlyDescription, save } = require('../descrizioni_fatture');
 
-test('causale fattura: mese precedente, mese corrente e descrizione per fattura', async t => {
+test('causale fattura: sempre mese dell’elaborato e descrizione per fattura', async t => {
   const db = knexFactory({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
   t.after(() => db.destroy());
   await db.schema.createTable('clienti', table => { table.text('id').primary(); });
@@ -20,7 +20,7 @@ test('causale fattura: mese precedente, mese corrente e descrizione per fattura'
   await db('clienti').insert({ id: 'C1' });
   await initialize(db);
   const client = await db('clienti').where({ id: 'C1' }).first();
-  assert.equal(descrizionePredefinita(client, 1, 2027), 'SERVIZIO DI PULIZIA DICEMBRE 2026');
+  assert.equal(descrizionePredefinita(client, 1, 2027), 'SERVIZIO DI PULIZIA GENNAIO 2027');
   assert.equal(descrizionePredefinita({ ...client, periodo_causale_fattura: 'corrente' }, 1, 2027), 'SERVIZIO DI PULIZIA GENNAIO 2027');
   await save(db, { tipo: 'cliente', soggettoId: 'C1', mese: 1, anno: 2027, descrizione: 'Pulizia uffici gennaio 2027' });
   assert.equal((await db('descrizioni_fatture_elaborati').first()).descrizione, 'Pulizia uffici gennaio 2027');
@@ -31,7 +31,7 @@ test('causale fattura: mese precedente, mese corrente e descrizione per fattura'
   assert.equal((await db('descrizioni_fatture_elaborati').where({ tipo: 'extra' }).first()).descrizione, 'Sgrosso magazzino');
 });
 
-test('lo storico conserva la descrizione ricostruita quando cambia la causale del cliente', async t => {
+test('lo storico usa il mese elaborato, corregge i valori precedenti e conserva quelli manuali', async t => {
   const db = knexFactory({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
   t.after(() => db.destroy());
   await db.schema.createTable('clienti', table => { table.text('id').primary(); });
@@ -51,10 +51,19 @@ test('lo storico conserva la descrizione ricostruita quando cambia la causale de
     tipo_documento: 'TD01', importo_totale: 100 });
   await db('dettaglio_mesi_chiusi_clienti').insert({ cliente_id: 'C1', mese: 8, anno: 2026 });
   await initialize(db);
+  assert.deepEqual((await db('descrizioni_fatture_elaborati').where({ tipo: 'cliente' }).orderBy('mese'))
+    .map(row => row.descrizione), [
+    'SERVIZIO DI PULIZIA AGOSTO 2026', 'SERVIZIO DI PULIZIA SETTEMBRE 2026', 'SERVIZIO DI PULIZIA OTTOBRE 2026'
+  ]);
+  await db('descrizioni_fatture_elaborati').where({ mese: 9 }).update({ descrizione: 'SERVIZIO DI PULIZIA AGOSTO 2026' });
+  await db('descrizioni_fatture_elaborati').where({ mese: 8 }).update({ descrizione: 'Prestazione concordata a parte' });
+  await db('clienti').where({ id: 'C1' }).update({ periodo_causale_fattura: 'precedente' });
+  await initialize(db);
   const historic = await db('descrizioni_fatture_elaborati').where({ tipo: 'cliente' }).orderBy('mese');
   assert.deepEqual(historic.map(row => row.descrizione), [
-    'SERVIZIO DI PULIZIA LUGLIO 2026', 'SERVIZIO DI PULIZIA AGOSTO 2026', 'SERVIZIO DI PULIZIA SETTEMBRE 2026'
+    'Prestazione concordata a parte', 'SERVIZIO DI PULIZIA SETTEMBRE 2026', 'SERVIZIO DI PULIZIA OTTOBRE 2026'
   ]);
+  assert.equal((await db('clienti').where({ id: 'C1' }).first()).periodo_causale_fattura, 'corrente');
   await db('clienti').where({ id: 'C1' }).update({ causale_fattura: 'GIARDINAGGIO', periodo_causale_fattura: 'corrente' });
   await initialize(db);
   await freezeMonthlyDescription(db, { clienteId: 'C1', mese: 10, anno: 2026 });

@@ -63,7 +63,6 @@ export default function NuovoCliente() {
     note: '',
     noteFisseElaborato: '',
     causaleFattura: 'SERVIZIO DI PULIZIA',
-    periodoCausaleFattura: 'precedente',
     possessoChiavi: 'NO',
     copie: 0,
     inPossessoDi: '',
@@ -265,7 +264,7 @@ export default function NuovoCliente() {
         ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '',
         cap: '', citta: '', provincia: '', pec: '', sdi: '',
         titolare: '', telefonoTitolare: '', referente: '', ruoloReferente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '',
-        condizioniPagamento: 'Bonifico 30gg DF', note: '', noteFisseElaborato: '', causaleFattura: 'SERVIZIO DI PULIZIA', periodoCausaleFattura: 'precedente', operatore: '', dataInizioAttivita: dataOdiernaItaliana()
+        condizioniPagamento: 'Bonifico 30gg DF', note: '', noteFisseElaborato: '', causaleFattura: 'SERVIZIO DI PULIZIA', operatore: '', dataInizioAttivita: dataOdiernaItaliana()
       });
       setFotoServizio([]);
       setPreviewUrls([]);
@@ -578,15 +577,11 @@ export default function NuovoCliente() {
               <label className="block text-sm font-medium text-slate-200 mb-1">Note Fisse per Elaborato</label>
               <textarea name="noteFisseElaborato" value={dati.noteFisseElaborato} onChange={handleChange} rows="3" placeholder="Queste note verranno sempre incluse nell'elaborato mensile..." className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"></textarea>
             </div>
-            <div className="grid gap-3 md:grid-cols-2 md:col-span-2">
+            <div className="md:col-span-2">
               <label className="text-sm font-medium text-slate-200">Causale in fattura
                 <input name="causaleFattura" maxLength="300" value={dati.causaleFattura || ''} onChange={handleChange} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/50 p-2.5" />
               </label>
-              <label className="text-sm font-medium text-slate-200">Mese nella descrizione
-                <select name="periodoCausaleFattura" value={dati.periodoCausaleFattura || 'precedente'} onChange={handleChange} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/50 p-2.5">
-                  <option value="precedente">Mese precedente all’elaborato</option><option value="corrente">Mese dell’elaborato</option>
-                </select>
-              </label>
+              <p className="mt-1 text-xs text-slate-400">La descrizione della fattura aggiunge sempre il mese e l’anno dell’elaborato.</p>
             </div>
           </div>
         </section>

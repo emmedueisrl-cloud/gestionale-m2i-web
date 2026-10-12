@@ -54,7 +54,7 @@ CREATE TABLE clienti (
     note TEXT,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,
     creato_da TEXT
-, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text, causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA', periodo_causale_fattura TEXT NOT NULL DEFAULT 'precedente');
+, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text, causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA', periodo_causale_fattura TEXT NOT NULL DEFAULT 'corrente');
 
 CREATE TABLE clienti_periodi_attivita (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
