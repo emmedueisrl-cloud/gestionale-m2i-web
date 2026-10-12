@@ -490,7 +490,7 @@ async function rebookPublic(id, body) {
     });
     await addRescheduleNote(trx, previous, dataOra);
     await trx('appuntamenti_note').insert({ appuntamento_id: previous.id, testo, creata_il: new Date().toISOString(), autore: 'Marketing', visibile_pubblico: true, tipo: 'post' });
-    await marketingNotifications.record(trx, { appointmentId: previous.id, type: 'appuntamento', company: previous.nominativo });
+    await marketingNotifications.record(trx, { appointmentId: previous.id, type: 'rifissa', company: previous.nominativo, text: `Nuova data: ${formatAppointmentDate(dataOra)}. ${testo}` });
     return { id: previous.id, stato: STATO_RICHIESTO_MARKETING, numeroAppuntamento: nextNumber, dataOra };
   });
 }

@@ -43,11 +43,12 @@ export default function MarketingNotifications() {
   };
 
   const isNote = current.tipo === 'nota';
+  const isRebook = current.tipo === 'rifissa';
   return <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-slate-950/80 p-4">
     <div role="dialog" aria-modal="true" aria-labelledby="marketing-notification-title" className="w-full max-w-md rounded-2xl border border-indigo-400/50 bg-slate-800 p-6 text-slate-100 shadow-2xl">
-      <div className="mb-5 flex items-center gap-3"><span className="rounded-xl bg-indigo-500/20 p-3 text-indigo-200"><BellRing size={24} /></span><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-300">Avviso Marketing {events.length > 1 && `· ${events.length} da leggere`}</p><h2 id="marketing-notification-title" className="text-xl font-bold">{isNote ? 'Nuova nota da Marketing' : 'Nuovo appuntamento da Marketing'}</h2></div></div>
+      <div className="mb-5 flex items-center gap-3"><span className="rounded-xl bg-indigo-500/20 p-3 text-indigo-200"><BellRing size={24} /></span><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-300">Avviso Marketing {events.length > 1 && `· ${events.length} da leggere`}</p><h2 id="marketing-notification-title" className="text-xl font-bold">{isNote ? 'Nuova nota da Marketing' : isRebook ? 'Appuntamento rifissato da Marketing' : 'Nuovo appuntamento da Marketing'}</h2></div></div>
       <p className="text-lg font-semibold">{current.azienda}</p>
-      {isNote && <p className="mt-3 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900/70 p-3 text-sm text-slate-200">{current.testo}</p>}
+      {(isNote || isRebook) && <p className="mt-3 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900/70 p-3 text-sm text-slate-200">{current.testo}</p>}
       <p className="mt-3 flex items-center gap-2 text-xs text-slate-400">{isNote ? <MessageSquareText size={15} /> : <CalendarDays size={15} />}{new Date(current.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
       {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
       <div className="mt-6 flex flex-wrap justify-end gap-2"><button type="button" disabled={saving} onClick={() => confirm(false)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold hover:bg-slate-600 disabled:opacity-50">Segna come letto</button><button type="button" disabled={saving} onClick={() => confirm(true)} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold hover:bg-indigo-500 disabled:opacity-50">Apri appuntamento</button></div>

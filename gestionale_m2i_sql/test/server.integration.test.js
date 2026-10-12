@@ -412,6 +412,9 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const { id: idSecondoAppuntamento, numeroAppuntamento } = await secondaRichiesta.json();
     assert.equal(numeroAppuntamento, 2);
     assert.equal(idSecondoAppuntamento, idMarketingManuale);
+    const notificheDopoRifissa = await fetch(notificationUrl, { headers: { Cookie: cookie } }).then(response => response.json());
+    const notificaRifissa = notificheDopoRifissa.find(item => item.appuntamentoId === idMarketingManuale && item.tipo === 'rifissa');
+    assert.match(notificaRifissa?.testo || '', /08\/01\/2099 alle 10:00.*secondo sopralluogo/);
     const nuoveRichieste = await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
     assert.equal(nuoveRichieste.length, totalePrimaDelRifissa);
     assert.equal(nuoveRichieste.filter(item => item.id === idMarketingManuale).length, 1);
