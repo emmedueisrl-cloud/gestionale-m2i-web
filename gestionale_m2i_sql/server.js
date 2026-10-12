@@ -22,6 +22,9 @@ const { createEmployeeCostReport } = require('./report_costo_dipendenti');
 const employeeCostReport = createEmployeeCostReport(knex, workflowElaborati);
 const { createReceiptsService } = require('./incassi_insoluti');
 const incassiInsoluti = createReceiptsService(knex);
+const descrizioniFatture = require('./descrizioni_fatture');
+const { createServiziExtra } = require('./servizi_extra');
+const serviziExtra = createServiziExtra(knex);
 const { createArubaZipService } = require('./fatture_aruba_zip');
 const arubaZip = createArubaZipService(knex, workflowElaborati);
 const consulenteEmail = require('./consulente_email');
@@ -231,6 +234,30 @@ app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/righe/:id/blinda`, han
 app.post(`/api/elaborati-workflow/${tipo}/${anno}/${mese}/righe/:id/sblocca`, handleWorkflow(req =>
   workflowElaborati.unlockRow(req.params.tipo, req.params.mese, req.params.anno, req.params.id)));
 
+app.get('/api/servizi-extra/:anno/:mese', handleWorkflow(req =>
+  serviziExtra.list(req.params.mese, req.params.anno, req.query.clienteId)));
+app.get('/api/servizi-extra-dipendenti', handleWorkflow(async () =>
+  (await knex('dipendenti').select('id', 'nome', 'cognome', 'tipo_paga')
+    .whereNot('stato', 'Cessato').where('cestinato', 0).orderBy('cognome').orderBy('nome'))
+    .map(row => ({ id: row.id, nome: `${row.cognome} ${row.nome}`, tipoPaga: row.tipo_paga || 'Oraria' }))));
+app.get('/api/servizi-extra/:anno/:mese/gruppi', handleWorkflow(req =>
+  serviziExtra.groups(req.params.mese, req.params.anno, req.query.clienteId)));
+app.get('/api/servizi-extra/:anno/:mese/fatture-aruba', handleWorkflow(req =>
+  serviziExtra.registrations(req.params.mese, req.params.anno, req.query.clienteId)));
+app.get('/api/servizi-extra-note-credito-aruba', handleWorkflow(req =>
+  serviziExtra.creditNotes(req.query.clienteId)));
+app.post('/api/servizi-extra', handleWorkflow(req => serviziExtra.save(req.body, req.authUser.id)));
+app.put('/api/servizi-extra/:id', handleWorkflow(req => serviziExtra.save({ ...req.body, id: req.params.id }, req.authUser.id)));
+app.post('/api/servizi-extra/:id/blinda', handleWorkflow(req => serviziExtra.setLock(req.params.id, true)));
+app.post('/api/servizi-extra/:id/sblocca', handleWorkflow(req => serviziExtra.setLock(req.params.id, false)));
+app.post('/api/servizi-extra/gruppi/:id/inviata', handleWorkflow(req => serviziExtra.markSent(req.params.id)));
+app.post('/api/servizi-extra/gruppi/:id/collega-fattura', handleWorkflow(req =>
+  serviziExtra.linkRegistration(req.params.id, req.body.registrazioneId)));
+app.post('/api/servizi-extra/gruppi/:id/nota-credito', handleWorkflow(req =>
+  serviziExtra.registerCredit(req.params.id, req.body.registrazioneId, req.body.imponibile)));
+app.post('/api/servizi-extra/gruppi/:id/rifattura', handleWorkflow(req =>
+  serviziExtra.reissue(req.params.id, req.body.destinazione, req.body.gruppoId)));
+
 app.get('/api/contabilita/fatture', handleWorkflow(async () => {
   const { registrationStatuses } = require('./fatture_reconciliation');
   const rows = await knex('fatture_aruba_elaborati as f').leftJoin('clienti as c', 'f.cliente_id', 'c.id')
@@ -381,6 +408,8 @@ app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/ore-abbinate/:i
   employeeCostReport.deletePairedHours({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
+app.put('/api/contabilita/fatture/descrizione', handleWorkflow(req =>
+  descrizioniFatture.save(knex, req.body || {})));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWorkflow(req =>
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));
@@ -398,18 +427,18 @@ app.post('/api/contabilita/fatture/importazione-zip/conferma',
     mese: req.body?.mese, anno: req.body?.anno,
     selected: JSON.parse(req.body?.selected || '[]'), userId: req.authUser.id })));
 const arubaSingleUpload = multer({ storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 5, parts: 6 } });
+  limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 7, parts: 8 } });
 app.post('/api/contabilita/fatture/importazione-singola/anteprima',
   arubaSingleUpload.single('zip'),
   handleWorkflow(req => arubaZip.previewSingle({ singleZip: req.file?.buffer,
     clienteId: req.body?.clienteId, mese: req.body?.mese, anno: req.body?.anno,
-    registrationId: req.body?.registrazioneId || null })));
+    registrationId: req.body?.registrazioneId || null, gruppoId: req.body?.gruppoId || null })));
 app.post('/api/contabilita/fatture/importazione-singola/conferma',
   arubaSingleUpload.single('zip'),
   handleWorkflow(req => (req.body?.registrazioneId ? arubaZip.replaceSingle : arubaZip.importSingle)({
     singleZip: req.file?.buffer,
     clienteId: req.body?.clienteId, mese: req.body?.mese, anno: req.body?.anno,
-    registrationId: req.body?.registrazioneId || null,
+    registrationId: req.body?.registrazioneId || null, gruppoId: req.body?.gruppoId || null,
     confermaAvvisi: req.body?.confermaAvvisi === 'true', userId: req.authUser.id })));
 app.post('/api/contabilita/pagamenti', handleWorkflow(req =>
   workflowElaborati.registerPayment({ ...req.body, userId: req.authUser.id })));
@@ -801,7 +830,8 @@ app.get('/api/contabilita/tabella/:tipo/:sezione/:anno/:mese.:formato', async (r
       const paidById = new Map(paid.map(item => [String(item.busta_id), item.pagato_at]));
       buste = buste.map(item => ({ ...item, nota_ufficio_paghe: noteById.get(String(item.dipendente_id)) || '', pagato_ufficio_at: paidById.get(String(item.id)) || null }));
     }
-    const table = tableExport.tableData(tipo, sezione, rows, buste, mese, anno);
+    const extraGroups = tipo === 'cliente' ? await serviziExtra.groups(mese, anno) : [];
+    const table = tableExport.tableData(tipo, sezione, rows, buste, mese, anno, extraGroups);
     const buffer = formato === 'pdf' ? await tableExport.toPdf(table) : await tableExport.toXlsx(table);
     const name = `${tipo}_${sezione}_${anno}_${String(mese).padStart(2, '0')}.${formato}`;
     res.setHeader('Content-Type', formato === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -956,15 +986,39 @@ app.get('/api/pdf/stampa-elaborato-clienti', async (req, res) => {
     const { mese, anno } = req.query;
     const elaborato = await api.ottieniElaboratoClienti(mese, anno);
     const dati = elaborato.chiuso ? await workflowElaborati.lockedRows('cliente', mese, anno) : elaborato.dati;
+    const extras = await serviziExtra.list(mese, anno);
+    const { calcolaImportiFatturaCliente } = require('./valori_contabilita_clienti');
+    const extrasByClient = new Map();
+    for (const extra of extras) {
+      const key = String(extra.clienteId);
+      if (!extrasByClient.has(key)) extrasByClient.set(key, []);
+      extrasByClient.get(key).push(extra);
+    }
+    const toExtraRow = (extra, showClient) => {
+      const tax = calcolaImportiFatturaCliente(extra.imponibile, extra.tipoTassazione, extra.percentualeTassazione);
+      return { idCliente: extra.clienteId, ragioneSociale: showClient ? extra.clienteNome : '',
+        isExtra: true, nomeExtra: extra.nome, oreLavorate: extra.lavori.reduce((sum, work) => sum +
+          work.giornate.reduce((part, day) => part + Number(day.ore), 0), 0),
+        tariffaOraria: 0, baseImponibile: extra.imponibile, maggiorazioni: 0, sconti: 0,
+        imponibile: extra.imponibile, tipoTassazione: extra.tipoTassazione,
+        importoTotale: tax.importoTotale, notaMensile: `${extra.nome} · ${extra.gruppoTipo === 'mensile' ? 'con mensile' : extra.gruppoNome}` };
+    };
+    const datiConExtra = dati.flatMap(row => [row, ...(extrasByClient.get(String(row.idCliente)) || [])
+      .map(extra => toExtraRow(extra, false))]);
+    const knownClients = new Set(dati.map(row => String(row.idCliente)));
+    for (const [clientId, clientExtras] of extrasByClient) {
+      if (knownClients.has(clientId)) continue;
+      clientExtras.forEach((extra, index) => datiConExtra.push(toExtraRow(extra, index === 0)));
+    }
     const reportGrafico = req.query.grafico === '1';
     const contabilita = reportGrafico ? await workflowElaborati.accountingRows('cliente', mese, anno) : [];
     const fatturatoPerCliente = new Map(contabilita.map(row => [String(row.idCliente), row.importoRealmenteFatturato]));
     const righePDF = reportGrafico
-      ? dati.map(row => ({ ...row, importoRealmenteFatturato: fatturatoPerCliente.get(String(row.idCliente)) || 0 }))
-      : dati;
+      ? datiConExtra.map(row => ({ ...row, importoRealmenteFatturato: row.isExtra ? 0 : fatturatoPerCliente.get(String(row.idCliente)) || 0 }))
+      : datiConExtra;
     const doc = reportGrafico
       ? pdfGenerator.buildReportGraficoClientiPDF(righePDF, mese, anno)
-      : pdfGenerator.buildStampaElaboratoClientiPDF(dati, mese, anno);
+      : pdfGenerator.buildStampaElaboratoClientiPDF(datiConExtra, mese, anno);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${reportGrafico ? 'Report_Grafico_Clienti' : 'Stampa_Elaborato_Clienti'}_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -1433,7 +1487,9 @@ Promise.resolve().then(async () => {
   await preventiviProforme.ensureTable();
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
+  await descrizioniFatture.initialize(knex);
   await workflowElaborati.initialize();
+  await serviziExtra.initialize();
   await employeeCostReport.initialize();
   await incassiInsoluti.initialize();
   await ensureIndexes(knex);

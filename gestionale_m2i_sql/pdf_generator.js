@@ -298,7 +298,7 @@ function buildStampaElaboratoClientiPDF(datiCompleti, mese, anno) {
     tableBody.push([
       { text: row.ragioneSociale, style: 'testo' },
       { text: parseFloat(row.oreLavorate || 0).toFixed(1) + '\u00A0h', style: 'testo', alignment: 'right' },
-      { text: '€\u00A0' + parseFloat(row.tariffaOraria || 0).toFixed(2), style: 'testo', alignment: 'right' },
+      { text: row.isExtra ? '—' : '€\u00A0' + parseFloat(row.tariffaOraria || 0).toFixed(2), style: 'testo', alignment: 'right' },
       { text: '€\u00A0' + parseFloat(row.baseImponibile || 0).toFixed(2), style: 'testo', alignment: 'right' },
       scontiMaggText,
       { text: '€\u00A0' + parseFloat(row.imponibile || 0).toFixed(2), style: 'testo', alignment: 'right' },
@@ -755,7 +755,7 @@ function buildReportGraficoClientiPDF(datiCompleti, mese, anno) {
       columnGap: 12,
       columns: [
         { svg: icon('building'), width: 43, height: 43, margin: [0, 2, 0, 0], color: verde },
-        { width: '*', text: row.ragioneSociale || 'Cliente', bold: true, fontSize: 17, color: verdeScuro, margin: [0, 9, 0, 0] }
+        { width: '*', text: row.isExtra ? (row.ragioneSociale || '') : (row.ragioneSociale || 'Cliente'), bold: true, fontSize: 17, color: verdeScuro, margin: [0, 9, 0, 0] }
       ]
     };
     const noteCell = {
@@ -775,7 +775,7 @@ function buildReportGraficoClientiPDF(datiCompleti, mese, anno) {
         body: [
           [
             client,
-            valueCell(ore(row.oreLavorate)), valueCell(euro(row.tariffaOraria)),
+            valueCell(ore(row.oreLavorate)), valueCell(row.isExtra ? '—' : euro(row.tariffaOraria)),
             valueCell(euro(row.baseImponibile)), valueCell(euro(differenza)),
             { text: specSM, fontSize: 13, color: '#215e4c', margin: [0, 8, 0, 0] },
             valueCell(euro(row.imponibile)),

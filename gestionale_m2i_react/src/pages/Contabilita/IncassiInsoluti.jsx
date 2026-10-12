@@ -30,6 +30,7 @@ const daysSince = (issueDate, today) => {
 const invoiceSortColumns = [
   { key: 'cliente', label: 'Azienda', value: invoice => shortCompany(invoice.cliente) },
   { key: 'numero', label: 'Fattura', value: invoice => invoice.registrata ? invoice.numero : 'Da registrare' },
+  { key: 'descrizione', label: 'Descrizione', value: invoice => invoice.descrizione },
   { key: 'eta', label: 'Emessa da', value: invoice => -Date.parse(`${invoice.dataFattura}T00:00:00Z`) || 0 },
   { key: 'totale', label: 'Totale', value: invoice => cents(invoice.totale) },
   { key: 'incassato', label: 'Incassato', value: invoice => cents(invoice.incassato) },
@@ -64,17 +65,18 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCance
     <table className="w-full min-w-[1050px] border-collapse text-left text-sm">
       <thead className="bg-slate-100 text-xs uppercase"><tr>{invoiceSortColumns.map(column => <th key={column.key} scope="col" aria-sort={sortKey === column.key ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-3 py-3"><button type="button" onClick={() => changeSort(column.key)} className="inline-flex items-center gap-1 font-bold hover:text-indigo-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">{column.label}{sortKey === column.key ? sortDirection === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />}</button></th>)}<th scope="col" className="border-b border-slate-300 px-3 py-3">Azioni</th></tr></thead>
       <tbody>
-        {!rows.length && <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">{empty}</td></tr>}
+        {!rows.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">{empty}</td></tr>}
         {orderedRows.map((invoice, index) => <Fragment key={invoice.id}>
           <tr className={invoice.incongruenza ? 'bg-amber-50' : index % 2 ? 'bg-sky-50' : 'bg-white'}>
             <td className="border-b border-slate-200 px-3 py-4 font-semibold" title={invoice.cliente}>{shortCompany(invoice.cliente)}</td>
             <td className="border-b border-slate-200 px-3 py-4 font-semibold">{invoice.registrata ? invoice.numero : 'Da registrare'}</td>
+            <td className="max-w-[220px] border-b border-slate-200 px-3 py-4 text-xs" title={invoice.descrizione}>{invoice.descrizione || '—'}</td>
             <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap" title={`${invoice.registrata ? 'Emessa' : 'Segnata come inviata'} il ${dateIt(invoice.dataFattura)}`}>{daysSince(invoice.dataFattura, today)}</td>
-            <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap">{euro(invoice.totale)}</td>
+            <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap">{euro(invoice.totale)}{invoice.accreditato > 0 && <div className="text-xs text-amber-700">Nota di credito: −{euro(invoice.accreditato)}</div>}</td>
             <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap">{euro(invoice.incassato)}</td>
             <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap font-bold">{euro(invoice.residuo)}</td>
             <td className="border-b border-slate-200 px-3 py-4"><span className={`rounded-full px-2 py-1 text-xs font-bold ${invoice.stato === 'Incassata' ? 'bg-emerald-100 text-emerald-800' : invoice.stato === 'Insoluta' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{invoice.stato}</span></td>
-            <td className="border-b border-slate-200 px-3 py-4"><div className="flex flex-wrap gap-2">
+            <td className="border-b border-slate-200 px-3 py-4"><div className="flex flex-col items-start gap-1.5">
               {invoice.residuo > 0 && invoice.gestibile && !invoice.incongruenza && <>
                 <button type="button" onClick={() => onPay(invoice, true)} className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800">Segna come incassata</button>
                 <button type="button" onClick={() => onPay(invoice, false)} className="rounded-lg bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-900 hover:bg-indigo-200">Registra acconto</button>
@@ -82,8 +84,8 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCance
               {invoice.gestibile ? <button type="button" onClick={() => onExpand(invoice.id)} aria-expanded={expandedId === invoice.id} className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold hover:bg-slate-200"><History className="h-3.5 w-3.5" />Storico</button> : <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900" title={invoice.sincronizzazioneDaVerificare ? 'Gli incassi della fattura elaborata devono essere riconciliati con quelli della fattura importata.' : 'La fattura inviata deve ancora essere registrata.'}>{invoice.sincronizzazioneDaVerificare ? 'Verifica incassi' : 'In attesa registrazione'}</span>}
             </div></td>
           </tr>
-          {invoice.incongruenza && <tr className="bg-amber-50"><td colSpan={8} className="border-b border-amber-200 px-3 pb-3 font-medium text-amber-900">{invoice.stato === 'Importo da verificare' ? 'Importo dell’elaborato non disponibile: verifica la riga in Fatturazione.' : invoice.sincronizzazioneDaVerificare ? 'Gli incassi registrati prima dell’importazione richiedono una verifica con la fattura importata.' : 'Gli importi della fattura e del registro non coincidono. Verifica prima di aggiungere incassi.'}</td></tr>}
-          {expandedId === invoice.id && <tr className="bg-slate-50"><td colSpan={8} className="border-b border-slate-300 px-4 py-4">
+          {invoice.incongruenza && <tr className="bg-amber-50"><td colSpan={9} className="border-b border-amber-200 px-3 pb-3 font-medium text-amber-900">{invoice.stato === 'Importo da verificare' ? 'Importo dell’elaborato non disponibile: verifica la riga in Fatturazione.' : invoice.sincronizzazioneDaVerificare ? 'Gli incassi registrati prima dell’importazione richiedono una verifica con la fattura importata.' : 'Gli importi della fattura e del registro non coincidono. Verifica prima di aggiungere incassi.'}</td></tr>}
+          {expandedId === invoice.id && <tr className="bg-slate-50"><td colSpan={9} className="border-b border-slate-300 px-4 py-4">
             <h4 className="mb-3 font-bold">Storico incassi · {invoice.registrata ? invoice.numero : invoice.cliente}</h4>
             {!invoice.storico.length ? <p className="text-slate-600">Nessun incasso registrato.</p> : <div className="space-y-2">{invoice.storico.map(receipt => <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
               <div><span className="font-semibold">{receipt.data ? dateIt(receipt.data) : 'Data non disponibile'} · {euro(receipt.importo)}</span>
@@ -147,23 +149,23 @@ export default function IncassiInsoluti() {
     (a.scadenza || '9999-12-31').localeCompare(b.scadenza || '9999-12-31');
   const isOpen = invoice => invoice.residuo > 0 || invoice.stato === 'Importo da verificare';
   const monthOpen = monthInvoices.filter(isOpen).sort(priority);
-  const monthPaid = monthInvoices.filter(invoice => !isOpen(invoice) && invoice.stato !== 'Nota di credito');
-  const monthCredits = monthInvoices.filter(invoice => invoice.stato === 'Nota di credito');
+  const monthPaid = monthInvoices.filter(invoice => !isOpen(invoice) && !['Nota di credito', 'Stornata'].includes(invoice.stato));
+  const monthCredits = monthInvoices.filter(invoice => ['Nota di credito', 'Stornata'].includes(invoice.stato));
   const allOpen = invoices.filter(isOpen).sort(priority);
-  const matchesSearch = invoice => `${invoice.cliente} ${invoice.numero}`.toLocaleLowerCase('it-IT').includes(search.trim().toLocaleLowerCase('it-IT'));
+  const matchesSearch = invoice => `${invoice.cliente} ${invoice.numero} ${invoice.descrizione || ''}`.toLocaleLowerCase('it-IT').includes(search.trim().toLocaleLowerCase('it-IT'));
   const visibleMonthOpen = monthOpen.filter(matchesSearch);
   const visibleMonthPaid = monthPaid.filter(matchesSearch);
   const visibleMonthCredits = monthCredits.filter(matchesSearch);
   const visibleOpen = allOpen.filter(matchesSearch);
   const shownCount = (visible, total) => search.trim() ? `${visible} di ${total}` : total;
   const monthReceipts = receipts.filter(receipt => !receipt.annullatoAt && monthOf(receipt.data) === month);
-  const monthRevenue = monthInvoices.reduce((sum, invoice) => sum + cents(invoice.totale), 0) / 100;
+  const monthRevenue = monthInvoices.filter(invoice => !invoice.daCollegare).reduce((sum, invoice) => sum + cents(invoice.totale), 0) / 100;
   const monthCollected = monthReceipts.reduce((sum, receipt) => sum + cents(receipt.importo), 0) / 100;
-  const monthRemaining = monthOpen.reduce((sum, invoice) => sum + cents(invoice.residuo), 0) / 100;
+  const monthRemaining = monthOpen.filter(invoice => !invoice.daCollegare).reduce((sum, invoice) => sum + cents(invoice.residuo), 0) / 100;
   const chart = useMemo(() => Array.from({ length: 12 }, (_, index) => {
     const key = shiftMonth(month, index - 11);
     return { mese: `${months[Number(key.slice(5)) - 1].slice(0, 3)} ${key.slice(2, 4)}`,
-      fatturato: invoices.filter(invoice => (invoice.periodo || monthOf(invoice.dataFattura)) === key).reduce((sum, invoice) => sum + cents(invoice.totale), 0) / 100,
+      fatturato: invoices.filter(invoice => !invoice.daCollegare && (invoice.periodo || monthOf(invoice.dataFattura)) === key).reduce((sum, invoice) => sum + cents(invoice.totale), 0) / 100,
       incassato: receipts.filter(receipt => !receipt.annullatoAt && monthOf(receipt.data) === key).reduce((sum, receipt) => sum + cents(receipt.importo), 0) / 100 };
   }), [invoices, receipts, month]);
   const legacy = receipts.filter(receipt => receipt.origine === 'storico' && !receipt.annullatoAt);

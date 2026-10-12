@@ -82,8 +82,17 @@ module.exports = {
         }
         return entry;
       });
+      const lavoriExtra = await trx.schema.hasTable('lavori_servizi_extra') ? await trx('lavori_servizi_extra as l')
+        .join('servizi_extra as e', 'l.servizio_id', 'e.id')
+        .join('clienti as c', 'e.cliente_id', 'c.id')
+        .select('l.modalita', 'l.giornate_json', 'e.id as servizio_id', 'e.nome', 'c.ragione_sociale')
+        .where({ 'l.dipendente_id': idDipendente, 'e.mese': Number(mese), 'e.anno': Number(anno) }) : [];
+      const serviziExtra = lavoriExtra.flatMap(lavoro => JSON.parse(lavoro.giornate_json).map(giorno => ({
+        id: lavoro.servizio_id, data: giorno.data, ore: Number(giorno.ore),
+        nome: lavoro.nome, cliente: lavoro.ragione_sociale, modalita: lavoro.modalita
+      })));
       return { metodo, righe, revisione: state.revisione, solaLettura: state.solaLettura,
-        clientiBloccati: state.clientiBloccati, meseClientiChiuso: state.meseClientiChiuso };
+        clientiBloccati: state.clientiBloccati, meseClientiChiuso: state.meseClientiChiuso, serviziExtra };
     });
   },
 

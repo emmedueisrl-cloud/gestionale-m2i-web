@@ -62,6 +62,7 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/fatture_import_choice.js
 !/gestionale_m2i_sql/fatture_reconciliation.js
 !/gestionale_m2i_sql/fatture_aruba_zip.js
+!/gestionale_m2i_sql/descrizioni_fatture.js
 !/gestionale_m2i_sql/importo_xml_fattura.js
 !/gestionale_m2i_sql/ricalcolo_ritenuta_storica.js
 !/gestionale_m2i_sql/payroll_attachment.js
@@ -75,5 +76,6 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/public_appuntamenti.js
 !/gestionale_m2i_sql/preventivi_proforme.js
 !/gestionale_m2i_sql/incassi_insoluti.js
+!/gestionale_m2i_sql/servizi_extra.js
 !/gestionale_m2i_sql/consulente_email.js
 !/gestionale_m2i_sql/tabella_contabilita_export.js

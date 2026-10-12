@@ -15,6 +15,9 @@ module.exports = {
         .leftJoin('dipendenti as dip', 'd.dipendente_id', 'dip.id')
         .select('d.*', 'dip.iban')
         .where({ 'd.mese': mese, 'd.anno': anno });
+      const blocchi = await connection('righe_bloccate_elaborati')
+        .where({ tipo: 'dipendente', mese, anno }).select('soggetto_id', 'snapshot');
+      const snapshotPerId = new Map(blocchi.map(b => [String(b.soggetto_id), JSON.parse(b.snapshot)]));
       return {
         chiuso: true,
         dataChiusura: chiuso.data_chiusura,
@@ -31,7 +34,8 @@ module.exports = {
           stipendioNetto: r.stipendio_netto,
           noteGenerali: r.note_generali || "",
           notaFissa: r.nota_fissa_storica || "",
-          notaMensile: r.nota_mensile_storica || "",
+          notaMensile: snapshotPerId.get(String(r.dipendente_id))?.notaMensile ?? r.nota_mensile_storica ?? "",
+          notaExtra: snapshotPerId.get(String(r.dipendente_id))?.notaExtra || "",
           rigaBloccata: true
         }))
       };
@@ -46,8 +50,25 @@ module.exports = {
       
     const noteMensili = await connection('note_elaborati').where({ tipo: 'dipendente', mese, anno });
     const notePerDipendente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));
+    const lavoriExtra = await connection.schema.hasTable('lavori_servizi_extra') ? await connection('lavori_servizi_extra as l')
+      .join('servizi_extra as e', 'l.servizio_id', 'e.id')
+      .join('clienti as c', 'e.cliente_id', 'c.id')
+      .select('l.dipendente_id', 'l.modalita', 'l.compenso_cent', 'l.giornate_json',
+        'e.nome as servizio_nome', 'c.ragione_sociale')
+      .where({ 'e.mese': mese, 'e.anno': anno }) : [];
+    const extraPerDipendente = new Map();
+    for (const lavoro of lavoriExtra) {
+      const id = String(lavoro.dipendente_id);
+      if (!extraPerDipendente.has(id)) extraPerDipendente.set(id, []);
+      extraPerDipendente.get(id).push(lavoro);
+    }
     const rows = [];
     for (const d of dip) {
+      const extra = extraPerDipendente.get(String(d.id)) || [];
+      const oreExtraElaborato = extra.filter(l => l.modalita === 'elaborato')
+        .reduce((sum, l) => sum + JSON.parse(l.giornate_json).reduce((part, day) => part + Number(day.ore || 0), 0), 0);
+      const noteExtra = extra.filter(l => l.modalita === 'solo_nota')
+        .map(l => `€ ${(Number(l.compenso_cent || 0) / 100).toFixed(2)} da dare per ${l.servizio_nome} presso ${l.ragione_sociale}`);
       const oreRecords = await connection('registro_ore')
         .select('causale_assenza')
         .sum('ore_totali as s')
@@ -69,6 +90,7 @@ module.exports = {
         }
       }
       
+      oreLavorateOrd += oreExtraElaborato;
       const oreTotali = oreLavorateOrd + oreFPM;
       
       const reg = await connection('regolazioni_stipendi')
@@ -95,7 +117,8 @@ module.exports = {
       if (isMensile) {
         // Paga mensile fissa: non dipende dalle ore lavorate
         // La paga FPM è proporzionale: (stipendio / ore_totali) * ore_fpm (se ci sono ore totali)
-        pagaLavorato = pagaReale; // lo stipendio mensile
+        pagaLavorato = pagaReale + extra.filter(l => l.modalita === 'elaborato')
+          .reduce((sum, l) => sum + Number(l.compenso_cent || 0) / 100, 0);
         pagaFPM = 0; // già incluso nel mensile
       } else {
         // Paga oraria: moltiplica le ore per la tariffa
@@ -121,7 +144,8 @@ module.exports = {
         stipendioNetto: totaleSpettante,
         noteGenerali: "",
         notaFissa: d.note_fisse_elaborato || "",
-        notaMensile: notePerDipendente.get(d.id) || ""
+        notaMensile: notePerDipendente.get(d.id) || '',
+        notaExtra: noteExtra.join(' | ')
       });
     }
     const bloccate = await connection('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno });
@@ -167,13 +191,13 @@ module.exports = {
           detrazioni: r.detrazioni,
           stipendio_netto: r.stipendioNetto,
           nota_fissa_storica: snapshotPerId.has(d.idDipendente) ? r.notaFissa || '' : fissePerId.get(d.idDipendente) || '',
-          nota_mensile_storica: snapshotPerId.has(d.idDipendente) ? r.notaMensile || '' : mensiliPerId.get(d.idDipendente) || '',
+          nota_mensile_storica: r.notaMensile || mensiliPerId.get(d.idDipendente) || '',
           data_chiusura: today,
           chiuso_da: "LocalServer"
         });
         if (!snapshotPerId.has(d.idDipendente)) {
           await trx('righe_bloccate_elaborati').insert({ tipo: 'dipendente', mese, anno, soggetto_id: d.idDipendente,
-            snapshot: JSON.stringify({ ...r, notaFissa: fissePerId.get(d.idDipendente) || '', notaMensile: mensiliPerId.get(d.idDipendente) || '', rigaBloccata: true }), bloccata_at: today });
+            snapshot: JSON.stringify({ ...r, notaFissa: fissePerId.get(d.idDipendente) || '', notaMensile: r.notaMensile || '', rigaBloccata: true }), bloccata_at: today });
         }
       }
     });
@@ -453,22 +477,59 @@ module.exports = {
     const operatoriAttivi = await nomiAttiviNelMese(mese, anno);
     const meseChiuso = await knex('mesi_chiusi_clienti').where({ mese, anno }).first();
     const importi = new Map();
+    const clientiConSnapshot = new Set();
     if (meseChiuso) {
       const righe = await knex('dettaglio_mesi_chiusi_clienti')
         .select('cliente_id', 'imponibile').where({ mese, anno });
-      for (const riga of righe) importi.set(riga.cliente_id, Number(riga.imponibile) || 0);
+      for (const riga of righe) {
+        importi.set(riga.cliente_id, Number(riga.imponibile) || 0);
+        clientiConSnapshot.add(riga.cliente_id);
+      }
     } else {
       const fatture = await knex('fatture')
         .select('cliente_id').sum('importo_imponibile as imponibile')
         .whereRaw("strftime('%m', data_fattura) = ?", [String(mese).padStart(2, '0')])
         .whereRaw("strftime('%Y', data_fattura) = ?", [String(anno)])
         .groupBy('cliente_id');
-      for (const fattura of fatture) importi.set(fattura.cliente_id, Number(fattura.imponibile) || 0);
+      for (const fattura of fatture) {
+        importi.set(fattura.cliente_id, Number(fattura.imponibile) || 0);
+      }
       const righeBlindate = await knex('righe_bloccate_elaborati')
         .select('soggetto_id', 'snapshot').where({ tipo: 'cliente', mese, anno });
       for (const riga of righeBlindate) {
         const snapshot = JSON.parse(riga.snapshot);
         importi.set(riga.soggetto_id, Number(snapshot.imponibile) || 0);
+        clientiConSnapshot.add(riga.soggetto_id);
+      }
+    }
+    if (await knex.schema.hasTable('gruppi_fatturazione_extra')) {
+      const groups = await knex('gruppi_fatturazione_extra').where({ mese, anno });
+      const officialLinks = groups.length ? await knex('fatture_aruba_elaborati')
+        .select('id').whereIn('id', groups.map(group => group.fattura_registrazione_id).filter(Boolean))
+        .whereNotNull('fattura_id') : [];
+      const countedRegistrations = new Set(officialLinks.map(link => link.id));
+      const extras = groups.length ? await knex('servizi_extra').whereIn('gruppo_id', groups.map(group => group.id)) : [];
+      const credits = groups.length && await knex.schema.hasTable('documenti_rettifica_extra')
+        ? await knex('documenti_rettifica_extra').whereIn('gruppo_id', groups.map(group => group.id)) : [];
+      const nextMonth = new Date(Date.UTC(Number(anno), Number(mese), 5)).toISOString().slice(0, 10);
+      for (const group of groups) {
+        if (!meseChiuso && !group.inviata_at && !group.fattura_registrazione_id) continue;
+        if (!meseChiuso && countedRegistrations.has(group.fattura_registrazione_id)
+          && !clientiConSnapshot.has(group.cliente_id)) continue;
+        const taxableCent = group.imponibile_cent ?? extras.filter(extra => extra.gruppo_id === group.id)
+          .reduce((sum, extra) => sum + Number(extra.imponibile_cent), 0);
+        const creditCent = credits.filter(credit => credit.gruppo_id === group.id && credit.data <= nextMonth)
+          .reduce((sum, credit) => sum + Number(credit.imponibile_cent), 0);
+        let netCent = Math.max(0, taxableCent - creditCent);
+        const originalCredits = credits.filter(credit => credit.gruppo_sostitutivo_id === group.id);
+        if (originalCredits.length) {
+          // Il servizio rifatturato recupera solo la quota che una nota tempestiva
+          // aveva tolto dal mese originale; una nota dopo il 5 non crea doppia provvigione.
+          netCent = Math.min(netCent, originalCredits.filter(credit => credit.data <= nextMonth)
+            .reduce((sum, credit) => sum + Number(credit.imponibile_cent), 0));
+        }
+        const net = netCent / 100;
+        importi.set(group.cliente_id, (importi.get(group.cliente_id) || 0) + net);
       }
     }
     const clienti = await knex('clienti')
@@ -554,6 +615,11 @@ module.exports = {
     if (chiuso) {
       const id = tipo === 'dipendente' ? 'dipendente_id' : 'cliente_id';
       const righe = await knex(`dettaglio_mesi_chiusi_${suffisso}`).where({ mese, anno }).select(id, 'nota_mensile_storica', 'data_chiusura');
+      if (tipo === 'dipendente') {
+        const blocchi = await knex('righe_bloccate_elaborati').where({ tipo, mese, anno }).select('soggetto_id', 'snapshot');
+        const snapshotPerId = new Map(blocchi.map(b => [String(b.soggetto_id), JSON.parse(b.snapshot)]));
+        return righe.map(r => ({ soggetto_id: r[id], testo: snapshotPerId.get(String(r[id]))?.notaMensile ?? r.nota_mensile_storica ?? '', data_modifica: r.data_chiusura }));
+      }
       return righe.map(r => ({ soggetto_id: r[id], testo: r.nota_mensile_storica || '', data_modifica: r.data_chiusura }));
     }
     return knex('note_elaborati')

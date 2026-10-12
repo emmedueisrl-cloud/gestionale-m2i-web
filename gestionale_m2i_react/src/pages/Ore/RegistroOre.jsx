@@ -42,6 +42,8 @@ export default function RegistroOre() {
 
   // Dati griglia a calendario (Array di array. Indice = giorno del mese - 1)
   const [giorniData, setGiorniData] = useState([]);
+  const [serviziExtra, setServiziExtra] = useState([]);
+  const oreExtraElaborato = serviziExtra.filter(r => r.modalita === 'elaborato').reduce((sum, r) => sum + r.ore, 0);
   // Dati mensile totale
   const [totaleMensileData, setTotaleMensileData] = useState([]);
   
@@ -200,15 +202,17 @@ export default function RegistroOre() {
         setMetodoInserimento(null);
         setGiorniData([]);
         setTotaleMensileData([]);
+        setServiziExtra([]);
         return;
       }
       const raw = await recuperaOreMensili(dipId, m, a);
       if (request !== loadRequestRef.current) return;
       if (!raw.revisione) throw new Error('Aggiorna il server prima di modificare le ore.');
       revisionRef.current = raw.revisione;
+      setServiziExtra(raw.serviziExtra || []);
       setAccesso({ solaLettura: raw.solaLettura, clientiBloccati: raw.clientiBloccati || [],
         meseClientiChiuso: raw.meseClientiChiuso, haOreBlindate: raw.righe.some(r => r.bloccata) });
-      setMetodoInserimento(raw.metodo);
+      setMetodoInserimento(raw.metodo || (raw.serviziExtra?.length ? 'Calendarizzata' : null));
       setTotaleMensileData(raw.metodo === 'Mensile Totale' ? raw.righe.map(r => ({ ...r, idCliente: r.idCliente || '' })) : []);
       setGiorniData(righeToCalendar(raw.metodo === 'Mensile Totale' ? [] : raw.righe, new Date(a, m, 0).getDate()));
       setIsDirty(false);
@@ -575,6 +579,10 @@ export default function RegistroOre() {
             }}>Ricarica registro</button>
         </div>
       )}
+      {idDipendente && serviziExtra.length > 0 && <div className="mb-4 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3 text-sm text-indigo-100">
+        <strong>Servizi extra del mese</strong> · {oreExtraElaborato.toFixed(2)} ore nell’elaborato · {serviziExtra.filter(r => r.modalita === 'solo_nota').reduce((sum, r) => sum + r.ore, 0).toFixed(2)} ore solo in nota. Le voci qui sotto sono gestite da Servizi extra.
+        {metodoInserimento !== 'Calendarizzata' && <div className="mt-2 flex flex-wrap gap-2">{serviziExtra.map((r, i) => <span key={`${r.id}-${i}`} className="rounded bg-slate-900/70 px-2 py-1">{r.data}: {r.nome} · {r.cliente} · {r.ore} h</span>)}</div>}
+      </div>}
       <div className="flex-1 bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden flex flex-col relative">
         {isLoading && (
           <div className="absolute inset-0 bg-slate-800/70 z-10 flex items-center justify-center text-indigo-400">
@@ -833,6 +841,11 @@ export default function RegistroOre() {
                           </div>
                         );
                       })}
+                      {serviziExtra.filter(extra => Number(extra.data.slice(8, 10)) === i + 1).map((extra, index) => <div key={`${extra.id}-${index}`} className="rounded-md border border-indigo-500/40 bg-indigo-500/10 p-1.5 text-xs text-indigo-100">
+                        <div className="truncate font-medium" title={extra.cliente}>{extra.cliente}</div>
+                        <div className="flex justify-between gap-1"><span className="truncate" title={extra.nome}>{extra.nome}</span><strong>{extra.ore} h</strong></div>
+                        <div className="text-[10px] opacity-80">{extra.modalita === 'solo_nota' ? 'Solo nota' : 'In elaborato'}</div>
+                      </div>)}
                     </div>
                   </div>
                 );
@@ -844,7 +857,7 @@ export default function RegistroOre() {
               {Object.entries(totaliPerCausale).length === 0 ? (
                 <div className="flex justify-between items-center">
                   <span className="text-indigo-200 font-medium text-lg">Totale Ore:</span>
-                  <span className="text-3xl font-bold text-indigo-400">0 <span className="text-lg opacity-60">h</span></span>
+                  <span className="text-3xl font-bold text-indigo-400">{oreExtraElaborato.toFixed(2)} <span className="text-lg opacity-60">h</span></span>
                 </div>
               ) : (
                 Object.entries(totaliPerCausale).sort().map(([caus, tot]) => (
@@ -854,6 +867,7 @@ export default function RegistroOre() {
                   </div>
                 ))
               )}
+              {oreExtraElaborato > 0 && Object.entries(totaliPerCausale).length > 0 && <div className="flex justify-between border-t border-indigo-500/20 pt-2"><span className="text-indigo-200 font-medium">Servizi extra in elaborato:</span><span className="text-2xl font-bold text-indigo-400">{oreExtraElaborato.toFixed(2)} h</span></div>}
             </div>
           </div>
         )}

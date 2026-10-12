@@ -31,6 +31,7 @@ const SchedaCliente = lazy(() => import('./pages/Clienti/SchedaCliente'));
 const NuovoCliente = lazy(() => import('./pages/Clienti/NuovoCliente'));
 const ModificaCliente = lazy(() => import('./pages/Clienti/ModificaCliente'));
 const ScontiMaggiorazioniClienti = lazy(() => import('./pages/Clienti/ScontiMaggiorazioniClienti'));
+const ServiziExtra = lazy(() => import('./pages/Clienti/ServiziExtra'));
 const Pagamenti = lazy(() => import('./pages/Commerciale/Pagamenti'));
 const Provvigioni = lazy(() => import('./pages/Commerciale/Provvigioni'));
 const Preventivi = lazy(() => import('./pages/Commerciale/Preventivi'));
@@ -111,6 +112,7 @@ function App() {
         <Route path="clienti/nuovo" element={<NuovoCliente />} />
         <Route path="clienti/modifica" element={<ModificaCliente />} />
         <Route path="clienti/regolazioni" element={<ScontiMaggiorazioniClienti />} />
+        <Route path="clienti/servizi-extra" element={<ServiziExtra />} />
         <Route path="fatture" element={<Navigate to="/contabilita/incassi-insoluti" replace />} />
         <Route path="pagamenti" element={<Pagamenti />} />
         <Route path="provvigioni" element={<Navigate to="/contabilita/provvigioni" replace />} />

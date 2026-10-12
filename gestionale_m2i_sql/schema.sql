@@ -54,7 +54,7 @@ CREATE TABLE clienti (
     note TEXT,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,
     creato_da TEXT
-, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text);
+, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text, causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA', periodo_causale_fattura TEXT NOT NULL DEFAULT 'precedente');
 
 CREATE TABLE clienti_periodi_attivita (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +62,14 @@ CREATE TABLE clienti_periodi_attivita (
     data_inizio TEXT,
     data_fine TEXT,
     CHECK (data_inizio IS NULL OR data_fine IS NULL OR data_inizio <= data_fine)
+);
+CREATE TABLE descrizioni_fatture_elaborati (
+    tipo TEXT NOT NULL,
+    soggetto_id TEXT NOT NULL,
+    mese INTEGER NOT NULL,
+    anno INTEGER NOT NULL,
+    descrizione TEXT NOT NULL,
+    PRIMARY KEY (tipo, soggetto_id, mese, anno)
 );
 CREATE UNIQUE INDEX idx_clienti_periodi_aperti ON clienti_periodi_attivita(cliente_id) WHERE data_fine IS NULL;
 
@@ -614,6 +622,72 @@ CREATE TABLE fatture_inviate_elaborati (
   inviata_at TEXT NOT NULL, inviata_da INTEGER,
   PRIMARY KEY (cliente_id, mese, anno)
 );
+
+CREATE TABLE gruppi_fatturazione_extra (
+  id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT,
+  mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  tipo TEXT NOT NULL, nome TEXT NOT NULL,
+  inviata_at TEXT, totale_cent INTEGER, imponibile_cent INTEGER, data_scadenza TEXT,
+  fattura_registrazione_id INTEGER REFERENCES fatture_aruba_elaborati(id) ON DELETE SET NULL,
+  creata_at TEXT NOT NULL
+);
+CREATE INDEX idx_gruppi_fatturazione_extra_periodo ON gruppi_fatturazione_extra(cliente_id, anno, mese);
+CREATE UNIQUE INDEX idx_gruppo_mensile_extra ON gruppi_fatturazione_extra(cliente_id, anno, mese) WHERE tipo = 'mensile' AND fattura_registrazione_id IS NULL;
+
+CREATE TABLE servizi_extra (
+  id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT,
+  mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  data_servizio TEXT NOT NULL, nome TEXT NOT NULL,
+  categoria TEXT NOT NULL, descrizione TEXT NOT NULL DEFAULT '', descrizione_fattura TEXT,
+  imponibile_cent INTEGER NOT NULL,
+  gruppo_id TEXT NOT NULL REFERENCES gruppi_fatturazione_extra(id) ON DELETE RESTRICT,
+  bloccato_at TEXT, creato_at TEXT NOT NULL, modificato_at TEXT NOT NULL
+);
+CREATE INDEX idx_servizi_extra_periodo ON servizi_extra(cliente_id, anno, mese);
+CREATE INDEX idx_servizi_extra_gruppo ON servizi_extra(gruppo_id);
+
+CREATE TABLE lavori_servizi_extra (
+  id TEXT PRIMARY KEY,
+  servizio_id TEXT NOT NULL REFERENCES servizi_extra(id) ON DELETE RESTRICT,
+  dipendente_id TEXT NOT NULL REFERENCES dipendenti(id) ON DELETE RESTRICT,
+  modalita TEXT NOT NULL, compenso_cent INTEGER,
+  giornate_json TEXT NOT NULL,
+  UNIQUE(servizio_id, dipendente_id)
+);
+CREATE INDEX idx_lavori_servizi_extra_dipendente ON lavori_servizi_extra(dipendente_id);
+
+CREATE TABLE rettifiche_servizi_extra (
+  id TEXT PRIMARY KEY,
+  servizio_id TEXT NOT NULL REFERENCES servizi_extra(id) ON DELETE RESTRICT,
+  prima TEXT NOT NULL, dopo TEXT NOT NULL,
+  modificata_at TEXT NOT NULL, utente_id TEXT
+);
+
+CREATE TABLE documenti_rettifica_extra (
+  id TEXT PRIMARY KEY,
+  gruppo_id TEXT NOT NULL REFERENCES gruppi_fatturazione_extra(id) ON DELETE RESTRICT,
+  tipo TEXT NOT NULL, numero TEXT NOT NULL, data TEXT NOT NULL,
+  imponibile_cent INTEGER NOT NULL, totale_cent INTEGER NOT NULL,
+  fattura_origine_id INTEGER REFERENCES fatture_aruba_elaborati(id) ON DELETE RESTRICT,
+  nota_registrazione_id INTEGER REFERENCES fatture_aruba_elaborati(id) ON DELETE RESTRICT,
+  gruppo_sostitutivo_id TEXT REFERENCES gruppi_fatturazione_extra(id) ON DELETE SET NULL,
+  registrato_at TEXT NOT NULL, utente_id TEXT,
+  UNIQUE(gruppo_id, numero, data)
+);
+CREATE UNIQUE INDEX idx_rettifica_extra_nota ON documenti_rettifica_extra(nota_registrazione_id);
+
+CREATE TABLE incassi_gruppi_extra (
+  id TEXT PRIMARY KEY,
+  gruppo_id TEXT NOT NULL REFERENCES gruppi_fatturazione_extra(id) ON DELETE RESTRICT,
+  data_incasso TEXT NOT NULL, importo_cent INTEGER NOT NULL,
+  nota TEXT, origine TEXT NOT NULL DEFAULT 'manuale',
+  registrato_at TEXT NOT NULL, registrato_da TEXT,
+  annullato_at TEXT, annullato_da TEXT, motivo_annullamento TEXT,
+  idempotency_key TEXT UNIQUE
+);
+CREATE INDEX idx_incassi_gruppi_extra ON incassi_gruppi_extra(gruppo_id, data_incasso);
 
 CREATE TABLE incassi_fatture_inviate (
   id TEXT PRIMARY KEY,

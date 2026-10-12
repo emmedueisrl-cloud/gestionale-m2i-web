@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { transferArubaReceipts } = require('./fatture_reconciliation');
+const { descrizionePredefinita } = require('./descrizioni_fatture');
 
 const cents = value => Math.round(Number(value || 0) * 100);
 const money = value => cents(value) / 100;
@@ -38,11 +39,18 @@ const sentId = value => {
   return match && Number(match[3]) >= 1 && Number(match[3]) <= 12
     ? { cliente_id: match[1], anno: Number(match[2]), mese: Number(match[3]) } : null;
 };
+const extraId = value => /^extra:([0-9a-f-]{36})$/.exec(String(value || ''))?.[1] || null;
 const sentTotal = sent => {
   let snapshot = null;
   try { snapshot = sent.snapshot ? JSON.parse(sent.snapshot) : null; } catch { /* Snapshot storico non leggibile. */ }
   const raw = snapshot?.importoTotale ?? sent.importo_storico;
   return raw !== null && raw !== undefined && Number.isFinite(Number(raw)) ? money(raw) : null;
+};
+const creditCents = async (db, registrationId) => {
+  if (!registrationId || !await db.schema.hasTable('documenti_rettifica_extra')) return 0;
+  const row = await db('documenti_rettifica_extra').where({ fattura_origine_id: registrationId })
+    .sum('totale_cent as total').first();
+  return Number(row?.total || 0);
 };
 const sentInvoice = (db, key) => db('fatture_inviate_elaborati as s')
   .leftJoin('righe_bloccate_elaborati as b', function () {
@@ -154,9 +162,21 @@ function createReceiptsService(knex) {
   }
 
   async function list() {
+    const extraTablesPresent = await knex.schema.hasTable('gruppi_fatturazione_extra') && await knex.schema.hasTable('incassi_gruppi_extra');
+    const creditsPresent = await knex.schema.hasTable('documenti_rettifica_extra');
+    const descriptionTablePresent = await knex.schema.hasTable('descrizioni_fatture_elaborati');
+    const [savedDescriptions, descriptionClients] = await Promise.all([
+      descriptionTablePresent ? knex('descrizioni_fatture_elaborati').select('*') : Promise.resolve([]),
+      knex('clienti').select('*')
+    ]);
+    const descriptionByKey = new Map(savedDescriptions.map(item =>
+      [`${item.tipo}:${item.soggetto_id}:${item.anno}:${item.mese}`, item.descrizione]));
+    const descriptionClientById = new Map(descriptionClients.map(item => [String(item.id), item]));
+    const monthlyDescription = (clientId, month, year) => descriptionByKey.get(`cliente:${clientId}:${year}:${month}`) ||
+      descrizionePredefinita(descriptionClientById.get(String(clientId)), month, year);
     // Solo le registrazioni della sezione Fatturazione appartengono a questo flusso.
     // La tabella generale fatture contiene anche importazioni storiche non elaborate qui.
-    const [registrations, sentInvoices, receipts, arubaReceipts, sentReceipts] = await Promise.all([
+    const [registrations, sentInvoices, receipts, arubaReceipts, sentReceipts, extraGroups, extraReceipts, monthlyGroups, credits] = await Promise.all([
       knex('fatture_aruba_elaborati as a')
         .leftJoin('clienti as c', 'a.cliente_id', 'c.id')
         .leftJoin('fatture as f', 'a.fattura_id', 'f.id')
@@ -181,7 +201,12 @@ function createReceiptsService(knex) {
       knex('incassi_fatture_aruba').select('id', 'registrazione_id', 'data_incasso', 'importo_cent',
         'nota', 'origine', 'registrato_at', 'annullato_at', 'motivo_annullamento').orderBy('registrato_at', 'desc'),
       knex('incassi_fatture_inviate').select('id', 'cliente_id', 'anno', 'mese', 'data_incasso', 'importo_cent',
-        'nota', 'origine', 'registrato_at', 'annullato_at', 'motivo_annullamento').orderBy('registrato_at', 'desc')
+        'nota', 'origine', 'registrato_at', 'annullato_at', 'motivo_annullamento').orderBy('registrato_at', 'desc'),
+      extraTablesPresent ? knex('gruppi_fatturazione_extra as g').join('clienti as c', 'g.cliente_id', 'c.id')
+        .select('g.*', 'c.ragione_sociale').where({ 'g.tipo': 'extra' }).whereNotNull('g.inviata_at') : Promise.resolve([]),
+      extraTablesPresent ? knex('incassi_gruppi_extra').select('*').orderBy('registrato_at', 'desc') : Promise.resolve([]),
+      extraTablesPresent ? knex('gruppi_fatturazione_extra').where({ tipo: 'mensile' }).orderBy('creata_at') : Promise.resolve([]),
+      creditsPresent ? knex('documenti_rettifica_extra').select('fattura_origine_id', 'totale_cent') : Promise.resolve([])
     ]);
     const byInvoice = new Map();
     for (const receipt of receipts) {
@@ -214,7 +239,19 @@ function createReceiptsService(knex) {
       });
     }
     const today = todayInItaly();
+    const creditByRegistration = new Map();
+    const extraGroupByRegistration = new Map(extraGroups.filter(group => group.fattura_registrazione_id)
+      .map(group => [Number(group.fattura_registrazione_id), group]));
+    const extraDescriptions = extraGroups.length && await knex.schema.hasTable('servizi_extra')
+      ? await knex('servizi_extra').whereIn('gruppo_id', extraGroups.map(group => group.id))
+        .select('gruppo_id', 'nome', 'descrizione_fattura') : [];
+    const extraDescriptionByGroup = new Map(extraGroups.map(group => [group.id,
+      extraDescriptions.filter(item => item.gruppo_id === group.id)
+        .map(item => item.descrizione_fattura || item.nome).join('; ') || group.nome]));
+    for (const credit of credits) creditByRegistration.set(credit.fattura_origine_id,
+      (creditByRegistration.get(credit.fattura_origine_id) || 0) + Number(credit.totale_cent));
     const rows = registrations.map(invoice => {
+      const extraGroup = extraGroupByRegistration.get(Number(invoice.registrazione_id));
       const linked = Boolean(invoice.fattura_id);
       const pendingHistory = byRegistration.get(String(invoice.registrazione_id)) || [];
       const awaitingTransfer = linked && pendingHistory.length > 0;
@@ -222,30 +259,40 @@ function createReceiptsService(knex) {
       const paid = linked && !awaitingTransfer ? money(invoice.importo_pagato)
         : history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + row.importo, 0);
       const total = money(invoice.importo_totale);
+      const credited = (creditByRegistration.get(invoice.registrazione_id) || 0) / 100;
+      const effectiveTotal = Math.max(0, total - credited);
       const activeLedgerCents = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + cents(row.importo), 0);
       const scadenza = linked && !awaitingTransfer ? invoice.data_scadenza : invoice.scadenza_aruba;
       return {
         id: linked && !awaitingTransfer ? invoice.fattura_id : `aruba:${invoice.registrazione_id}`,
         clienteId: invoice.cliente_id, cliente: invoice.ragione_sociale || 'Cliente non disponibile',
+        descrizione: extraGroup ? descriptionByKey.get(`extra:${extraGroup.id}:${extraGroup.anno}:${extraGroup.mese}`) || extraDescriptionByGroup.get(extraGroup.id) :
+          monthlyDescription(invoice.cliente_id, invoice.mese, invoice.anno),
         numero: invoice.numero_fattura, registrata: true, gestibile: !awaitingTransfer,
         tipoDocumento: invoice.tipo_documento || 'TD01',
         sincronizzazioneDaVerificare: awaitingTransfer,
         periodo: `${invoice.anno}-${String(invoice.mese).padStart(2, '0')}`,
         dataFattura: invoice.data_fattura, scadenza,
-        totale: total, incassato: paid, residuo: Math.max(0, (cents(total) - cents(paid)) / 100),
-        stato: statusFor({ ...invoice, importo_pagato: paid, data_scadenza: scadenza }, today),
-        incongruenza: awaitingTransfer || (total >= 0 && cents(paid) > cents(total)) || (linked && (activeLedgerCents !== cents(paid) || cents(paid) < 0 ||
+        totale: total, accreditato: credited, incassato: paid, residuo: Math.max(0, (cents(effectiveTotal) - cents(paid)) / 100),
+        stato: credited > 0 && cents(effectiveTotal) === 0 && invoice.tipo_documento !== 'TD04'
+          ? 'Stornata' : statusFor({ ...invoice, importo_totale: effectiveTotal, importo_pagato: paid, data_scadenza: scadenza }, today),
+        incongruenza: awaitingTransfer || (total >= 0 && cents(paid) > cents(effectiveTotal)) || (linked && (activeLedgerCents !== cents(paid) || cents(paid) < 0 ||
           (invoice.stato_pagamento === 'Pagata' && cents(paid) < cents(total)))),
         storico: history
       };
     });
+    const monthGroupByPeriod = new Map(monthlyGroups.map(group => [`${group.cliente_id}:${group.anno}:${group.mese}`, group]));
     const registeredPeriods = new Set(registrations.filter(row => row.tipo_documento !== 'TD04' && cents(row.importo_totale) >= 0)
-      .map(row => `${row.cliente_id}:${row.anno}:${row.mese}`));
+      .filter(row => {
+        const group = monthGroupByPeriod.get(`${row.cliente_id}:${row.anno}:${row.mese}`);
+        return !group || Number(group.fattura_registrazione_id) === row.registrazione_id;
+      }).map(row => `${row.cliente_id}:${row.anno}:${row.mese}`));
     for (const sent of sentInvoices) {
       if (registeredPeriods.has(`${sent.cliente_id}:${sent.anno}:${sent.mese}`)) continue;
       const key = `${sent.cliente_id}:${sent.anno}:${sent.mese}`;
       const history = bySent.get(key) || [];
-      const rawTotal = sentTotal(sent);
+      const monthlyGroup = monthGroupByPeriod.get(key);
+      const rawTotal = monthlyGroup?.totale_cent != null ? monthlyGroup.totale_cent / 100 : sentTotal(sent);
       const validTotal = rawTotal !== null;
       const total = validTotal ? rawTotal : 0;
       const paid = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + row.importo, 0);
@@ -253,6 +300,7 @@ function createReceiptsService(knex) {
       rows.push({
         id: `inviata:${sent.cliente_id}:${sent.anno}:${sent.mese}`,
         clienteId: sent.cliente_id, cliente: sent.ragione_sociale || 'Cliente non disponibile',
+        descrizione: monthlyDescription(sent.cliente_id, sent.mese, sent.anno),
         numero: '', registrata: false, gestibile: true,
         periodo: `${sent.anno}-${String(sent.mese).padStart(2, '0')}`,
         dataFattura: dateInItaly(sent.inviata_at), scadenza: null,
@@ -261,12 +309,40 @@ function createReceiptsService(knex) {
         incongruenza: inconsistent, storico: history
       });
     }
-    const sum = selector => rows.reduce((total, row) => total + cents(selector(row)), 0) / 100;
+    for (const group of extraGroups) {
+      if (group.fattura_registrazione_id) continue;
+      const linkedRegistrationIds = new Set([...extraGroups, ...monthlyGroups]
+        .map(item => Number(item.fattura_registrazione_id)).filter(Boolean));
+      const matchingImported = registrations.filter(invoice => invoice.cliente_id === group.cliente_id &&
+        Number(invoice.anno) === group.anno && Number(invoice.mese) === group.mese &&
+        invoice.tipo_documento !== 'TD04' && !linkedRegistrationIds.has(invoice.registrazione_id) &&
+        cents(invoice.importo_totale) === Number(group.totale_cent));
+      const daCollegare = matchingImported.length === 1;
+      const history = extraReceipts.filter(receipt => receipt.gruppo_id === group.id).map(receipt => ({
+        id: receipt.id, data: receipt.data_incasso, importo: receipt.importo_cent / 100,
+        nota: receipt.nota || '', origine: receipt.origine, registratoAt: receipt.registrato_at,
+        annullatoAt: receipt.annullato_at, motivoAnnullamento: receipt.motivo_annullamento
+      }));
+      const total = Number(group.totale_cent || 0) / 100;
+      const paid = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + row.importo, 0);
+      rows.push({ id: `extra:${group.id}`, clienteId: group.cliente_id,
+        descrizione: descriptionByKey.get(`extra:${group.id}:${group.anno}:${group.mese}`) || extraDescriptionByGroup.get(group.id),
+        cliente: group.ragione_sociale || 'Cliente non disponibile', numero: group.nome,
+        registrata: false, gestibile: !daCollegare, daCollegare, tipoDocumento: 'TD01',
+        periodo: `${group.anno}-${String(group.mese).padStart(2, '0')}`,
+        dataFattura: dateInItaly(group.inviata_at), scadenza: group.data_scadenza || null,
+        totale: total, incassato: paid, residuo: Math.max(0, total - paid),
+        stato: daCollegare ? 'Da collegare ad Aruba'
+          : statusFor({ importo_totale: total, importo_pagato: paid, data_scadenza: group.data_scadenza }, today),
+        incongruenza: cents(paid) > cents(total), storico: history });
+    }
+    const sum = (selector, includePending = false) => rows.reduce((total, row) =>
+      total + (row.daCollegare && !includePending ? 0 : cents(selector(row))), 0) / 100;
     return { fatture: rows, fattureDaRiconciliare: registrations.filter(row => !row.fattura_id).map(row => ({
       id: row.registrazione_id, numero: row.numero_fattura, dataFattura: row.data_fattura,
       totale: money(row.importo_totale), cliente: row.ragione_sociale || 'Cliente non disponibile'
     })), riepilogo: {
-      fatturato: sum(row => row.totale), incassato: sum(row => row.incassato),
+      fatturato: sum(row => row.totale), incassato: sum(row => row.incassato, true),
       daIncassare: sum(row => row.residuo), insoluto: sum(row => row.stato === 'Insoluta' ? row.residuo : 0)
     }, oggi: today };
   }
@@ -279,6 +355,28 @@ function createReceiptsService(knex) {
     }
     if (typeof nota !== 'undefined' && (typeof nota !== 'string' || nota.length > 2000)) throw new Error('La nota supera il limite di 2000 caratteri.');
     if (idempotencyKey && (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9-]{8,64}$/.test(idempotencyKey))) throw new Error('Identificativo richiesta non valido.');
+    const groupId = extraId(fatturaId);
+    if (groupId) return knex.transaction(async trx => {
+      const group = await trx('gruppi_fatturazione_extra').where({ id: groupId, tipo: 'extra' }).first();
+      if (!group || !group.inviata_at || group.fattura_registrazione_id) throw new Error('Fattura extra non disponibile per l’incasso.');
+      if (idempotencyKey) {
+        const existing = await trx('incassi_gruppi_extra').where({ idempotency_key: idempotencyKey }).first();
+        if (existing) {
+          if (existing.gruppo_id !== groupId) throw new Error('Richiesta già usata per un’altra fattura.');
+          return { id: existing.id, alreadyRegistered: true };
+        }
+      }
+      const paid = (await trx('incassi_gruppi_extra').where({ gruppo_id: groupId }).whereNull('annullato_at'))
+        .reduce((sum, receipt) => sum + Number(receipt.importo_cent), 0);
+      const amount = cents(raw), remaining = Number(group.totale_cent || 0) - paid;
+      if (amount > remaining || remaining <= 0) throw new Error('Importo superiore al residuo della fattura extra.');
+      const id = crypto.randomUUID();
+      await trx('incassi_gruppi_extra').insert({ id, gruppo_id: groupId, data_incasso: data,
+        importo_cent: amount, nota: (nota || '').trim(), origine: 'manuale',
+        registrato_at: new Date().toISOString(), registrato_da: userId || null,
+        idempotency_key: idempotencyKey || null });
+      return { id, incassato: (paid + amount) / 100, residuo: (remaining - amount) / 100 };
+    });
     const sentKey = sentId(fatturaId);
     if (sentKey) return knex.transaction(async trx => {
       const sent = await sentInvoice(trx, sentKey);
@@ -292,10 +390,13 @@ function createReceiptsService(knex) {
           return { id: existing.id, alreadyRegistered: true };
         }
       }
-      if (await trx('fatture_aruba_elaborati').where(sentKey).where('importo_totale', '>=', 0).first()) {
+      const monthlyGroup = await trx.schema.hasTable('gruppi_fatturazione_extra')
+        ? await trx('gruppi_fatturazione_extra').where({ ...sentKey, tipo: 'mensile' })
+          .orderByRaw('fattura_registrazione_id IS NOT NULL').orderBy('creata_at', 'desc').first() : null;
+      if (monthlyGroup?.fattura_registrazione_id || !monthlyGroup && await trx('fatture_aruba_elaborati').where(sentKey).where('importo_totale', '>=', 0).first()) {
         throw new Error('La fattura è stata registrata. Aggiorna la pagina e riprova.');
       }
-      const total = sentTotal(sent);
+      const total = monthlyGroup?.totale_cent != null ? monthlyGroup.totale_cent / 100 : sentTotal(sent);
       if (total === null || cents(total) <= 0) throw new Error('Importo della fattura inviata da verificare.');
       const recorded = await trx('incassi_fatture_inviate').where(sentKey).whereNull('annullato_at');
       const paid = recorded.reduce((sum, row) => sum + Number(row.importo_cent), 0);
@@ -332,7 +433,7 @@ function createReceiptsService(knex) {
       if (registration.fattura_id) throw new Error('La fattura è stata collegata all’archivio. Aggiorna la pagina e riprova.');
       const recorded = await trx('incassi_fatture_aruba').where({ registrazione_id: registrationId });
       const paid = recorded.filter(row => !row.annullato_at).reduce((sum, row) => sum + Number(row.importo_cent), 0);
-      const remaining = cents(registration.importo_totale) - paid;
+      const remaining = cents(registration.importo_totale) - await creditCents(trx, registration.id) - paid;
       const amount = cents(raw);
       if (remaining <= 0) throw new Error('La fattura risulta già interamente incassata.');
       if (amount > remaining) throw new Error(`Importo superiore al residuo di ${(remaining / 100).toFixed(2)} €.`);
@@ -370,7 +471,8 @@ function createReceiptsService(knex) {
         .reduce((sum, row) => sum + Number(row.importo_cent), 0) !== cents(invoice.importo_pagato)) {
         throw new Error('Gli incassi registrati non coincidono con il totale della fattura. Verifica prima di aggiungerne altri.');
       }
-      const remaining = cents(invoice.importo_totale) - cents(invoice.importo_pagato);
+      const linkedRegistration = await trx('fatture_aruba_elaborati').where({ fattura_id: fatturaId }).first();
+      const remaining = cents(invoice.importo_totale) - await creditCents(trx, linkedRegistration?.id) - cents(invoice.importo_pagato);
       const amount = cents(raw);
       if (remaining <= 0) throw new Error('La fattura risulta già interamente incassata.');
       if (amount > remaining) throw new Error(`Importo superiore al residuo di ${(remaining / 100).toFixed(2)} €.`);
@@ -382,7 +484,7 @@ function createReceiptsService(knex) {
         idempotency_key: idempotencyKey || null });
       await trx('fatture').where({ id: fatturaId }).update({
         importo_pagato: paid / 100, data_pagamento: data,
-        stato_pagamento: paid === cents(invoice.importo_totale) ? 'Pagata' : 'Parzialmente Pagata'
+        stato_pagamento: paid === cents(invoice.importo_totale) - await creditCents(trx, linkedRegistration?.id) ? 'Pagata' : 'Parzialmente Pagata'
       });
       await trx('log_attivita').insert({ categoria: 'Incassi', icona: '💶', colore: '#059669',
         descrizione: `Registrato incasso di ${(amount / 100).toFixed(2)} € per fattura ${invoice.numero_fattura}.`,
@@ -394,13 +496,25 @@ function createReceiptsService(knex) {
   async function cancel({ receiptId, reason, userId }) {
     if (typeof reason !== 'string' || reason.trim().length < 3 || reason.length > 1000) throw new Error('Indica il motivo dell’annullamento.');
     return knex.transaction(async trx => {
+      const extraReceipt = await trx.schema.hasTable('incassi_gruppi_extra')
+        ? await trx('incassi_gruppi_extra').where({ id: receiptId }).first() : null;
+      if (extraReceipt) {
+        const group = await trx('gruppi_fatturazione_extra').where({ id: extraReceipt.gruppo_id }).first();
+        if (!group || group.fattura_registrazione_id || extraReceipt.annullato_at) throw new Error('Incasso extra non annullabile in questo stato.');
+        await trx('incassi_gruppi_extra').where({ id: receiptId }).update({ annullato_at: new Date().toISOString(),
+          annullato_da: userId || null, motivo_annullamento: reason.trim() });
+        return { success: true };
+      }
       const receipt = await trx('incassi_fatture').where({ id: receiptId }).first();
       if (!receipt) {
         const sentReceipt = await trx('incassi_fatture_inviate').where({ id: receiptId }).first();
         if (sentReceipt) {
           if (sentReceipt.annullato_at) throw new Error('Incasso già annullato.');
           const key = { cliente_id: sentReceipt.cliente_id, anno: sentReceipt.anno, mese: sentReceipt.mese };
-          if (await trx('fatture_aruba_elaborati').where(key).where('importo_totale', '>=', 0).first()) {
+          const monthlyGroup = await trx.schema.hasTable('gruppi_fatturazione_extra')
+            ? await trx('gruppi_fatturazione_extra').where({ ...key, tipo: 'mensile' })
+              .orderByRaw('fattura_registrazione_id IS NOT NULL').orderBy('creata_at', 'desc').first() : null;
+          if (monthlyGroup?.fattura_registrazione_id || !monthlyGroup && await trx('fatture_aruba_elaborati').where(key).where('importo_totale', '>=', 0).first()) {
             throw new Error('La fattura è stata registrata. Aggiorna la pagina e riprova.');
           }
           await trx('incassi_fatture_inviate').where({ id: receiptId }).update({
@@ -444,7 +558,8 @@ function createReceiptsService(knex) {
         .whereNotNull('data_incasso').orderBy('data_incasso', 'desc').first();
       await trx('fatture').where({ id: receipt.fattura_id }).update({
         importo_pagato: paid / 100, data_pagamento: previous?.data_incasso || null,
-        stato_pagamento: paid === 0 ? 'Da Pagare' : paid >= cents(invoice.importo_totale) ? 'Pagata' : 'Parzialmente Pagata'
+        stato_pagamento: paid === 0 ? 'Da Pagare' : paid >= cents(invoice.importo_totale) - await creditCents(trx,
+          (await trx('fatture_aruba_elaborati').where({ fattura_id: receipt.fattura_id }).first())?.id) ? 'Pagata' : 'Parzialmente Pagata'
       });
       await trx('log_attivita').insert({ categoria: 'Incassi', icona: '↩️', colore: '#dc2626',
         descrizione: `Annullato incasso ${receiptId} della fattura ${invoice.numero_fattura}. Motivo: ${reason.trim()}`,
@@ -456,6 +571,13 @@ function createReceiptsService(knex) {
   async function setDueDate({ fatturaId, date, userId }) {
     if (date !== null && date !== '' && !validDate(date)) throw new Error('Data di scadenza non valida.');
     return knex.transaction(async trx => {
+      const groupId = extraId(fatturaId);
+      if (groupId) {
+        const group = await trx('gruppi_fatturazione_extra').where({ id: groupId, tipo: 'extra' }).first();
+        if (!group || group.fattura_registrazione_id) throw new Error('Fattura extra non disponibile.');
+        await trx('gruppi_fatturazione_extra').where({ id: groupId }).update({ data_scadenza: date || null });
+        return { success: true };
+      }
       const registrationId = arubaId(fatturaId);
       if (registrationId) {
         const registration = await trx('fatture_aruba_elaborati').where({ id: registrationId }).first();

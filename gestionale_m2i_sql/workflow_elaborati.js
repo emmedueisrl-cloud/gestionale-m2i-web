@@ -9,6 +9,7 @@ const { ricalcolaRitenutaStorica } = require('./ricalcolo_ritenuta_storica');
 const { reconcileRegistration, registrationStatuses } = require('./fatture_reconciliation');
 const { replacementBlocked } = require('./fatture_import_choice');
 const { transferSentReceipts } = require('./incassi_insoluti');
+const { descrizionePredefinita, freezeMonthlyDescription } = require('./descrizioni_fatture');
 
 const kinds = {
   cliente: { read: 'ottieniElaboratoClienti', id: 'idCliente', detail: 'dettaglio_mesi_chiusi_clienti', header: 'mesi_chiusi_clienti' },
@@ -276,6 +277,11 @@ async function accountingRows(tipo, mese, anno) {
       for (const invoice of invoices) replacementBlocks.set(invoice.id, await replacementBlocked(trx, invoice));
       const documents = await trx('documenti_aruba_mese').where({ mese: p.mese, anno: p.anno }).orderBy('id');
       const sent = await trx('fatture_inviate_elaborati').where({ mese: p.mese, anno: p.anno });
+      const descriptions = await trx.schema.hasTable('descrizioni_fatture_elaborati')
+        ? await trx('descrizioni_fatture_elaborati').where({ tipo: 'cliente', mese: p.mese, anno: p.anno }) : [];
+      const descriptionByClient = new Map(descriptions.map(item => [String(item.soggetto_id), item.descrizione]));
+      const clientDescriptions = await trx('clienti').select('*');
+      const clientById = new Map(clientDescriptions.map(item => [String(item.id), item]));
       const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
       const dipendentiElaborato = (await elaborati.ottieniElaboratoMensile(p.mese, p.anno, trx)).dati;
       const buste = await trx('buste_paga')
@@ -300,7 +306,7 @@ async function accountingRows(tipo, mese, anno) {
           registrataAt: d.registrata_at }));
         const actual = linked.reduce((sum, f) => sum + f.importo, 0);
         const importi = calcolaValoriContabilitaCliente(row, costiPersonale.get(String(row.idCliente)) || 0);
-        return { ...row, ...importi, costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, documentiAruba: attachments, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
+        return { ...row, ...importi, descrizioneFattura: descriptionByClient.get(String(row.idCliente)) || descrizionePredefinita(clientById.get(String(row.idCliente)), p.mese, p.anno), costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, documentiAruba: attachments, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(row.importoTotale || 0)).toFixed(2)) : null };
       });
       const known = new Set(rows.map(row => String(row.idCliente)));
       const extraIds = [...new Set([...invoices, ...documents].map(item => String(item.cliente_id)))].filter(id => !known.has(id));
@@ -317,6 +323,7 @@ async function accountingRows(tipo, mese, anno) {
             tipoDocumento: d.tipo_documento, registrataAt: d.registrata_at }));
           const actual = linked.reduce((sum, f) => sum + f.importo, 0);
           result.push({ idCliente: client.id, ragioneSociale: client.ragione_sociale,
+            descrizioneFattura: descriptionByClient.get(String(client.id)) || descrizionePredefinita(clientById.get(String(client.id)), p.mese, p.anno),
             imponibile: 0, importoTassa: 0, importoTotale: 0, tipoTassazione: 'IVA',
             notaMensile: 'Documento Aruba aggiunto fuori dall’elaborato del mese.', rigaExtra: true,
             fatture: linked, documentiAruba: attachments, importoRealmenteFatturato: actual,
@@ -421,7 +428,25 @@ async function markInvoiceSent({ mese, anno, clienteId, userId }) {
   return knex.transaction(async trx => {
     const row = (await lockedRows('cliente', p.mese, p.anno, trx)).find(item => item.idCliente === clienteId);
     if (!row) throw new Error('Riga cliente non blindata.');
+    const monthlyGroup = await trx.schema.hasTable('gruppi_fatturazione_extra')
+      ? await trx('gruppi_fatturazione_extra')
+        .where({ cliente_id: clienteId, mese: p.mese, anno: p.anno, tipo: 'mensile' })
+        .whereNull('fattura_registrazione_id').first() : null;
+    if (monthlyGroup) {
+      const extras = await trx('servizi_extra').where({ gruppo_id: monthlyGroup.id });
+      if (extras.some(extra => !extra.bloccato_at)) throw new Error('Blinda gli extra uniti al mensile prima di segnare la fattura come inviata.');
+      const total = Number(row.importoTotale || 0) + extras.reduce((sum, extra) => {
+        const price = Number(extra.imponibile_cent) / 100;
+        const { calcolaImportiFatturaCliente } = require('./valori_contabilita_clienti');
+        return sum + calcolaImportiFatturaCliente(price, row.tipoTassazione, row.percentualeTassazione).importoTotale;
+      }, 0);
+      await trx('gruppi_fatturazione_extra').where({ id: monthlyGroup.id }).update({
+        inviata_at: monthlyGroup.inviata_at || new Date().toISOString(), totale_cent: Math.round(total * 100),
+        imponibile_cent: extras.reduce((sum, extra) => sum + Number(extra.imponibile_cent), 0)
+      });
+    }
     const sentAt = new Date().toISOString();
+    await freezeMonthlyDescription(trx, { clienteId, mese: p.mese, anno: p.anno });
     await trx('fatture_inviate_elaborati').insert({ cliente_id: clienteId, mese: p.mese, anno: p.anno, inviata_at: sentAt, inviata_da: userId })
       .onConflict(['cliente_id', 'mese', 'anno']).ignore();
     const saved = await trx('fatture_inviate_elaborati').where({ cliente_id: clienteId, mese: p.mese, anno: p.anno }).first();
@@ -468,8 +493,16 @@ async function registerInvoice({ mese, anno, clienteId, numero, dataFattura, imp
       if (!stillLocked && !historical) throw new Error('Riga cliente sblindata: aggiorna l’elaborato prima di registrare la fattura.');
       const record = { cliente_id: clienteId, mese: p.mese, anno: p.anno, numero_fattura: numero.trim(), data_fattura: dataFattura, importo_totale: Math.round(amount * 100) / 100, allegato_path: relative, registrata_at: new Date().toISOString(), registrata_da: userId };
       const [id] = await trx('fatture_aruba_elaborati').insert(record);
+      await freezeMonthlyDescription(trx, { clienteId, mese: p.mese, anno: p.anno });
       const registration = { ...record, id };
-      await transferSentReceipts(trx, { cliente_id: clienteId, mese: p.mese, anno: p.anno }, registration);
+      const monthlyGroup = await trx.schema.hasTable('gruppi_fatturazione_extra')
+        ? await trx('gruppi_fatturazione_extra').where({ cliente_id: clienteId, mese: p.mese, anno: p.anno, tipo: 'mensile' })
+          .whereNull('fattura_registrazione_id').first() : null;
+      if (!monthlyGroup || monthlyGroup.totale_cent != null && Number(monthlyGroup.totale_cent) === Math.round(amount * 100)) {
+        await transferSentReceipts(trx, { cliente_id: clienteId, mese: p.mese, anno: p.anno }, registration);
+        if (monthlyGroup) await trx('gruppi_fatturazione_extra').where({ id: monthlyGroup.id })
+          .update({ fattura_registrazione_id: id, inviata_at: monthlyGroup.inviata_at || record.registrata_at });
+      }
       return { id, ...await reconcileRegistration(trx, registration) };
     });
     return { ...result, differenza: Number(((await accountingRows('cliente', p.mese, p.anno)).find(r => r.idCliente === clienteId).differenza).toFixed(2)) };

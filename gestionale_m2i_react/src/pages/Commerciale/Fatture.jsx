@@ -88,6 +88,7 @@ export default function Fatture() {
   
   const [fatture, setFatture] = useState([]);
   const [fattureAruba, setFattureAruba] = useState([]);
+  const [gruppiExtra, setGruppiExtra] = useState([]);
   const [storicoFattura, setStoricoFattura] = useState(null);
   const [clienti, setClienti] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -137,6 +138,8 @@ export default function Fatture() {
     try {
       const dati = await recuperaFatture(mese, anno);
       const aruba = await workflowRequest('contabilita/fatture');
+      const gruppi = await workflowRequest(`servizi-extra/${anno}/${mese}/gruppi`);
+      setGruppiExtra(gruppi.filter(group => group.servizi.length));
       setFattureAruba(aruba.filter(f => Number(f.mese) === mese && Number(f.anno) === anno));
       let elaboratiDb = [];
       try {
@@ -151,7 +154,8 @@ export default function Fatture() {
       setClientiMancanti(mancanti);
 
       setFatture(fTrovate.map(f => {
-        const isExtra = !elaboratiDb.some(el => el.idCliente === f.cliente_id && parseFloat(el.imponibile || 0) > 0);
+        const isExtra = !elaboratiDb.some(el => el.idCliente === f.cliente_id && parseFloat(el.imponibile || 0) > 0)
+          && !gruppi.some(group => group.clienteId === f.cliente_id && group.servizi.length);
         return {
           ...f,
           numero: f.numero_fattura,
@@ -542,6 +546,9 @@ export default function Fatture() {
           <button className={`py-3 font-medium border-b-2 ${activeMainTab === 'aruba' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400'}`} onClick={() => setActiveMainTab('aruba')}>
             Registrate da Aruba ({fattureAruba.length})
           </button>
+          <button className={`py-3 font-medium border-b-2 ${activeMainTab === 'servizi' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400'}`} onClick={() => setActiveMainTab('servizi')}>
+            Servizi extra ({gruppiExtra.length})
+          </button>
         </div>
 
         <div className="flex-1 overflow-hidden bg-slate-800 rounded-b-2xl shadow-xl border-x border-b border-slate-700 flex flex-col relative">
@@ -570,6 +577,12 @@ export default function Fatture() {
             {!fattureAruba.length && <p className="mt-3 text-slate-400">Nessuna fattura Aruba registrata per questo mese.</p>}
           </div>}
 
+          {activeMainTab === 'servizi' && <div className="overflow-auto p-5 text-slate-100">
+            <p className="mb-3 text-sm text-slate-400">Una riga per ogni fattura prevista dai servizi extra. Gestisci raggruppamenti, note di credito e collegamento ai documenti Aruba nella voce Servizi extra.</p>
+            <table className="w-full text-left text-sm"><thead><tr className="border-b border-slate-600"><th className="p-2">Cliente</th><th className="p-2">Gruppo</th><th className="p-2">Imponibile extra</th><th className="p-2">Stato</th></tr></thead>
+              <tbody>{gruppiExtra.map(group => <tr key={group.id} className="border-b border-slate-700"><td className="p-2">{clienti.find(client => client.id === group.clienteId)?.ragione_sociale || group.clienteId}</td><td className="p-2">{group.tipo === 'mensile' ? 'Unito al mensile' : group.nome}</td><td className="p-2">{Number(group.imponibileExtra).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</td><td className="p-2">{group.fatturaRegistrazioneId ? 'Registrata su Aruba' : group.inviataAt ? 'Inviata' : 'Da fatturare'}</td></tr>)}</tbody></table>
+          </div>}
+
           {activeMainTab === 'extra' && (
             <DataTable 
               data={fattureExtra}
@@ -589,8 +602,8 @@ export default function Fatture() {
                   <thead>
                     <tr className="text-xs uppercase text-slate-400 border-b border-slate-700">
                       <th className="pb-3 font-medium px-4">Cliente</th>
-                      <th className="pb-3 font-medium text-right px-4">Importo Imponibile Atteso</th>
-                      <th className="pb-3 font-medium text-right px-4">Importo Totale Atteso</th>
+                      <th className="pb-3 font-medium text-right px-4">Imponibile ordinario atteso</th>
+                      <th className="pb-3 font-medium text-right px-4">Totale ordinario atteso</th>
                       <th className="pb-3 font-medium px-4">Note Elaborato</th>
                     </tr>
                   </thead>

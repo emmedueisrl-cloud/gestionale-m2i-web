@@ -71,3 +71,23 @@ test('una singola riga blindata conta anche senza fattura registrata', async () 
   assert.equal(result[0].fatturatoTotale, 150);
   assert.equal(result[0].provvigioneTotale, 10);
 });
+
+test('extra e nota di credito usano il 5 del mese successivo senza doppia provvigione sulla sostitutiva', async () => {
+  const now = '2026-10-12T10:00:00.000Z';
+  await knex('gruppi_fatturazione_extra').insert({ id: 'G1', cliente_id: 'C_OP_1', mese: 10, anno: 2026,
+    tipo: 'extra', nome: 'Sgrosso', inviata_at: now, imponibile_cent: 10000, totale_cent: 12200, creata_at: now });
+  await knex('servizi_extra').insert({ id: 'E1', cliente_id: 'C_OP_1', mese: 10, anno: 2026,
+    data_servizio: '2026-10-12', nome: 'Sgrosso', categoria: 'Sgrosso', descrizione: '',
+    imponibile_cent: 10000, gruppo_id: 'G1', bloccato_at: now, creato_at: now, modificato_at: now });
+  assert.equal((await elaborati.ottieniElaboratoProvvigioni(10, 2026))[0].fatturatoTotale, 250);
+  await knex('gruppi_fatturazione_extra').insert({ id: 'G2', cliente_id: 'C_OP_1', mese: 10, anno: 2026,
+    tipo: 'extra', nome: 'Sgrosso sostitutivo', imponibile_cent: 10000, totale_cent: 12200, creata_at: now });
+  await knex('documenti_rettifica_extra').insert({ id: 'NC1', gruppo_id: 'G1', tipo: 'TD04',
+    numero: 'NC1', data: '2026-11-05', imponibile_cent: 10000, totale_cent: 12200,
+    registrato_at: now, gruppo_sostitutivo_id: 'G2' });
+  assert.equal((await elaborati.ottieniElaboratoProvvigioni(10, 2026))[0].fatturatoTotale, 150);
+  await knex('gruppi_fatturazione_extra').where({ id: 'G2' }).update({ inviata_at: now });
+  assert.equal((await elaborati.ottieniElaboratoProvvigioni(10, 2026))[0].fatturatoTotale, 250);
+  await knex('documenti_rettifica_extra').where({ id: 'NC1' }).update({ data: '2026-11-06' });
+  assert.equal((await elaborati.ottieniElaboratoProvvigioni(10, 2026))[0].fatturatoTotale, 250);
+});

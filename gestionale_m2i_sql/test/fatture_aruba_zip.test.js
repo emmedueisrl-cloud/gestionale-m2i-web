@@ -6,6 +6,7 @@ const path = require('node:path');
 const knexFactory = require('knex');
 const JSZip = require('jszip');
 const { createArubaZipService, classify, readPair } = require('../fatture_aruba_zip');
+const { createServiziExtra } = require('../servizi_extra');
 const { createReceiptsService, todayInItaly } = require('../incassi_insoluti');
 
 const invoiceXml = (number, amount) => `<?xml version="1.0" encoding="UTF-8"?>
@@ -88,6 +89,7 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   });
   await db.schema.createTable('clienti', table => {
     table.text('id').primary(); table.text('ragione_sociale'); table.text('partita_iva'); table.text('codice_fiscale');
+    table.text('tipo_tassazione'); table.float('percentuale_tassazione');
   });
   await db.schema.createTable('fatture', table => {
     table.text('id').primary(); table.text('cliente_id'); table.text('numero_fattura'); table.text('data_fattura');
@@ -126,7 +128,8 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
     table.increments('id'); table.integer('registrazione_id'); table.text('precedente');
     table.text('successivo'); table.text('fonte'); table.text('rettificata_at'); table.text('rettificata_da');
   });
-  await db('clienti').insert({ id: 'C1', ragione_sociale: 'Cliente Test', partita_iva: '12345678901' });
+  await db('clienti').insert({ id: 'C1', ragione_sociale: 'Cliente Test', partita_iva: '12345678901',
+    tipo_tassazione: 'IVA', percentuale_tassazione: 22 });
   await db('fatture_inviate_elaborati').insert({ cliente_id: 'C1', mese: 9, anno: 2026, inviata_at: '2026-10-08T00:00:00Z' });
   await db('righe_bloccate_elaborati').insert({ tipo: 'cliente', soggetto_id: 'C1',
     mese: 9, anno: 2026, snapshot: JSON.stringify({ importoTotale: 122 }) });
@@ -140,7 +143,7 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
     pdfZip: await pdfZip.generateAsync({ type: 'nodebuffer' }), mese: 9, anno: 2026 };
   let expectedTotal = 122;
   const workflow = { period: (_, mese, anno) => ({ mese: Number(mese), anno: Number(anno) }),
-    lockedRows: async () => [{ idCliente: 'C1', importoTotale: expectedTotal }] };
+    lockedRows: async (_, mese) => Number(mese) === 10 ? [] : [{ idCliente: 'C1', importoTotale: expectedTotal }] };
   const service = createArubaZipService(db, workflow);
   const preview = await service.preview(args);
   assert.equal(preview.fatture[0].stato, 'pronta');
@@ -280,4 +283,35 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   await receipts.register({ fatturaId: changedOfficial.id, data: todayInItaly(), importo: '10.00' });
   await assert.rejects(service.previewSingle(replacementFromZip), /pagata|incassi/i);
   await assert.rejects(service.replaceSingle({ ...replacementFromZip, confermaAvvisi: true }), /pagata|incassi/i);
+
+  const extras = createServiziExtra(db);
+  await extras.initialize();
+  const now = new Date().toISOString();
+  await db('gruppi_fatturazione_extra').insert({ id: 'G-EX', cliente_id: 'C1', mese: 10, anno: 2026,
+    tipo: 'extra', nome: 'Sgrosso', creata_at: now });
+  await db('servizi_extra').insert({ id: 'EX-1', cliente_id: 'C1', mese: 10, anno: 2026,
+    data_servizio: '2026-10-08', nome: 'Sgrosso', categoria: 'Sgrosso', descrizione: '',
+    imponibile_cent: 10000, gruppo_id: 'G-EX', bloccato_at: now, creato_at: now, modificato_at: now });
+  const extraGroupZip = new JSZip();
+  extraGroupZip.file('XML/extra.xml', invoiceXml('EX 1/26', '122.00'));
+  extraGroupZip.file('PDF/extra.xml - EX 1_26.pdf', Buffer.from('%PDF-1.4\nextra'));
+  const extraSingle = { mese: 10, anno: 2026, clienteId: 'C1', gruppoId: 'G-EX',
+    singleZip: await extraGroupZip.generateAsync({ type: 'nodebuffer' }) };
+  const extraSinglePreview = await service.previewSingle(extraSingle);
+  assert.deepEqual(extraSinglePreview.blocchi, []);
+  assert.equal(extraSinglePreview.importoPrevisto, 122);
+  assert.equal((await service.importSingle(extraSingle)).importate, 1);
+  const linkedGroup = await db('gruppi_fatturazione_extra').where({ id: 'G-EX' }).first();
+  const linkedInvoice = await db('fatture_aruba_elaborati').where({ id: linkedGroup.fattura_registrazione_id }).first();
+  assert.equal(linkedInvoice.numero_fattura, 'EX 1/26');
+  assert.equal(linkedInvoice.importo_totale, 122);
+  const extraReplacementZip = new JSZip();
+  extraReplacementZip.file('XML/extra2.xml', invoiceXml('EX 2/26', '122.00'));
+  extraReplacementZip.file('PDF/extra2.xml - EX 2_26.pdf', Buffer.from('%PDF-1.4\nextra replacement'));
+  const extraReplacement = { ...extraSingle, registrationId: linkedInvoice.id,
+    singleZip: await extraReplacementZip.generateAsync({ type: 'nodebuffer' }) };
+  assert.deepEqual((await service.previewSingle(extraReplacement)).blocchi, []);
+  assert.equal((await service.replaceSingle(extraReplacement)).importate, 1);
+  assert.equal((await db('gruppi_fatturazione_extra').where({ id: 'G-EX' }).first()).fattura_registrazione_id, linkedInvoice.id);
+  assert.equal((await db('fatture_aruba_elaborati').where({ id: linkedInvoice.id }).first()).numero_fattura, 'EX 2/26');
 });

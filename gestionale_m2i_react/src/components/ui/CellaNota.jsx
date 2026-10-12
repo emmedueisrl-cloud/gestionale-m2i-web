@@ -9,7 +9,7 @@ import ModernModal from './ModernModal';
  *   testo: string (nota salvata)
  *   onSave: async (testo) => void
  */
-export default function CellaNota({ testo, notaFissa = '', onShowFixedNote, onSave, readOnly = false, uniformHeight = false }) {
+export default function CellaNota({ testo, notaFissa = '', notaExtra = '', onShowFixedNote, onShowExtraNote, onSave, readOnly = false, uniformHeight = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(testo || '');
@@ -81,7 +81,7 @@ export default function CellaNota({ testo, notaFissa = '', onShowFixedNote, onSa
   };
 
   return (
-    <div className={`max-w-[220px] text-xs ${uniformHeight ? 'flex h-[60px] flex-col justify-center gap-1' : 'space-y-1'}`}>
+    <div className={`max-w-[220px] text-xs ${uniformHeight ? 'flex min-h-[60px] flex-col justify-center gap-1' : 'space-y-1'}`}>
       {notaFissa?.trim() && (
         <button
           type="button"
@@ -89,6 +89,15 @@ export default function CellaNota({ testo, notaFissa = '', onShowFixedNote, onSa
           className={`self-start rounded-md border border-indigo-500/40 bg-indigo-500/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-300 transition-colors hover:bg-indigo-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400 ${uniformHeight ? 'h-7 shrink-0' : ''}`}
         >
           Note fisse
+        </button>
+      )}
+      {notaExtra?.trim() && (
+        <button
+          type="button"
+          onClick={onShowExtraNote}
+          className={`self-start rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300 transition-colors hover:bg-amber-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400 ${uniformHeight ? 'h-7 shrink-0' : ''}`}
+        >
+          Note extra
         </button>
       )}
       {testo?.trim() ? (

@@ -7,6 +7,7 @@ const { reconcileRegistration } = require('./fatture_reconciliation');
 const { transferSentReceipts } = require('./incassi_insoluti');
 const { calcolaImportoXmlFattura } = require('./importo_xml_fattura');
 const { replacementBlocked } = require('./fatture_import_choice');
+const { freezeMonthlyDescription } = require('./descrizioni_fatture');
 
 const MAX_ENTRIES = 300;
 const MAX_UNCOMPRESSED = 100 * 1024 * 1024;
@@ -246,6 +247,18 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
 }
 
 function createArubaZipService(knex, workflow) {
+  const extraService = require('./servizi_extra').createServiziExtra(knex);
+  async function targetExtraGroup(args) {
+    if (!args.gruppoId) return null;
+    const group = (await extraService.groups(args.mese, args.anno, args.clienteId))
+      .find(item => item.id === String(args.gruppoId));
+    if (!group || group.tipo !== 'extra') throw new Error('Fattura extra non trovata per questo cliente e mese.');
+    if (!group.tuttiBlindati) throw new Error('Blinda tutti i servizi extra prima di caricare la fattura.');
+    if (args.registrationId ? Number(group.fatturaRegistrazioneId) !== Number(args.registrationId) : Boolean(group.fatturaRegistrazioneId)) {
+      throw new Error('La fattura extra è già collegata a un altro documento Aruba.');
+    }
+    return group;
+  }
   async function analyze({ xmlZip, pdfZip, singleZip, xmlFile, pdfFile, mese, anno, registrationId }) {
     const period = workflow.period('cliente', mese, anno);
     const pair = singleZip ? await readSingleArchive(singleZip)
@@ -381,7 +394,19 @@ function createArubaZipService(knex, workflow) {
               registrata_da: args.userId || null });
             registrationId = id;
             keepPdf = true;
-            if (item.tipoDocumento !== 'TD04') await transferSentReceipts(trx, key, { id, importo_totale: signedTotal });
+            if (item.tipoDocumento !== 'TD04') {
+              if (!args.gruppoId) await freezeMonthlyDescription(trx, {
+                clienteId: key.cliente_id, mese: key.mese, anno: key.anno
+              });
+              const monthlyGroup = await trx.schema.hasTable('gruppi_fatturazione_extra')
+                ? await trx('gruppi_fatturazione_extra').where({ ...key, tipo: 'mensile' })
+                  .whereNull('fattura_registrazione_id').first() : null;
+              if (!args.gruppoId && (!monthlyGroup || Number(monthlyGroup.totale_cent) === cents(signedTotal))) {
+                await transferSentReceipts(trx, key, { id, importo_totale: signedTotal });
+                if (monthlyGroup) await trx('gruppi_fatturazione_extra').where({ id: monthlyGroup.id })
+                  .update({ fattura_registrazione_id: id, inviata_at: monthlyGroup.inviata_at || new Date().toISOString() });
+              }
+            }
           } else if (!registration.allegato_path) {
             await trx('fatture_aruba_elaborati').where({ id: registrationId }).update({ allegato_path: pdfRelative });
             keepPdf = true;
@@ -408,6 +433,7 @@ function createArubaZipService(knex, workflow) {
           const reconciliation = await reconcileRegistration(trx, { id: registrationId,
             cliente_id: key.cliente_id, numero_fattura: item.numero,
             data_fattura: item.dataFattura, importo_totale: signedTotal });
+          if (args.gruppoId) await extraService.linkRegistration(args.gruppoId, registrationId, trx);
           return { stato: reconciliation.stato, registrationId };
         });
         results.push({ id: item.id, numero: item.numero, esito: outcome.stato, registrazioneId: outcome.registrationId });
@@ -427,6 +453,7 @@ function createArubaZipService(knex, workflow) {
   async function previewSingle(args) {
     const targetId = String(args.clienteId || '');
     if (!targetId) throw new Error('Cliente non valido.');
+    const extraGroup = await targetExtraGroup(args);
     if (args.registrationId) {
       const registration = await knex('fatture_aruba_elaborati').where({ id: args.registrationId }).first();
       if (!registration || String(registration.cliente_id) !== targetId ||
@@ -455,10 +482,16 @@ function createArubaZipService(knex, workflow) {
     }
     const warningCodes = new Set(['periodo', 'importo']);
     for (const issue of invoice.incongruenze) {
+      if (extraGroup && ['mese', 'importo'].includes(issue.code)) continue;
       if (!warningCodes.has(issue.code)) blockers.push(issue.message);
     }
+    const amountWarning = extraGroup && Math.abs(Math.round(Number(invoice.importo) * 100) -
+      Math.round(Number(extraGroup.totaleExtraPrevisto) * 100)) > 20
+      ? [`Importo del gruppo extra previsto ${Number(extraGroup.totaleExtraPrevisto).toFixed(2)} €, diverso dall’XML.`] : [];
     return { ...invoice, blocchi: [...new Set(blockers)],
-      avvisi: invoice.incongruenze.filter(issue => warningCodes.has(issue.code)).map(issue => issue.message) };
+      importoPrevisto: extraGroup ? extraGroup.totaleExtraPrevisto : invoice.importoPrevisto,
+      avvisi: [...invoice.incongruenze.filter(issue => warningCodes.has(issue.code) && !(extraGroup && issue.code === 'importo'))
+        .map(issue => issue.message), ...amountWarning] };
   }
 
   async function importSingle(args) {
@@ -469,7 +502,7 @@ function createArubaZipService(knex, workflow) {
     }
     return importSelected({ ...args, selected: [{ id: invoice.id,
       clienteId: args.clienteId, pdfId: invoice.pdfId,
-      reviewed: invoice.avvisi.length > 0 }] });
+      extra: Boolean(args.gruppoId), reviewed: Boolean(args.gruppoId) || invoice.avvisi.length > 0 }] });
   }
 
   async function replaceSingle(args) {

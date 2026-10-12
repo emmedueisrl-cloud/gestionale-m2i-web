@@ -76,6 +76,15 @@ test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async
   assert.equal((await service.list()).fatture.find(row => row.id === 'F1').stato, 'Parziale');
   await service.setDueDate({ fatturaId: 'F1', date: null });
   assert.equal((await service.list()).fatture.find(row => row.id === 'F1').scadenza, null);
+  await db.schema.createTable('documenti_rettifica_extra', table => {
+    table.text('id').primary(); table.integer('fattura_origine_id'); table.integer('totale_cent');
+  });
+  const registration = await db('fatture_aruba_elaborati').where({ fattura_id: 'F1' }).first();
+  await db('documenti_rettifica_extra').insert({ id: 'NC1', fattura_origine_id: registration.id, totale_cent: 2000 });
+  const credited = (await service.list()).fatture.find(row => row.id === 'F1');
+  assert.equal(credited.accreditato, 20);
+  assert.equal(credited.residuo, 49.5);
+  await assert.rejects(service.register({ fatturaId: 'F1', data: today, importo: '50' }), /superiore al residuo/);
 });
 
 test('incassi mostra solo le fatture elaborate, anche senza importazione generale', async t => {

@@ -24,6 +24,7 @@ export default function ElaboratoClienti() {
   const [note, setNote] = useState({}); // { [idCliente]: 'testo nota' }
   const [workflow, setWorkflow] = useState({ bloccati: [] });
   const [fatturato, setFatturato] = useState({});
+  const [serviziExtra, setServiziExtra] = useState([]);
   const [stickyTopRef, stickyTopHeight] = useElementHeight();
 
   const mesi = [
@@ -51,11 +52,13 @@ export default function ElaboratoClienti() {
       const noteMap = {};
       (noteArr || []).forEach(n => { noteMap[n.soggetto_id] = n.testo; });
       setNote(noteMap);
-      const [state, accounting] = await Promise.all([
+      const [state, accounting, extras] = await Promise.all([
         workflowRequest(`${workflowPeriod('cliente', mese, anno)}/stato`),
-        workflowRequest(contabilitaPeriod('cliente', mese, anno))
+        workflowRequest(contabilitaPeriod('cliente', mese, anno)),
+        workflowRequest(`servizi-extra/${anno}/${mese}`)
       ]);
       setWorkflow(state);
+      setServiziExtra(extras);
       setFatturato(Object.fromEntries(accounting.map(r => [r.idCliente, r])));
       const frozen = new Map(accounting.map(r => [r.idCliente, r]));
       setDati(prev => prev.map(r => {
@@ -165,11 +168,58 @@ export default function ElaboratoClienti() {
   };
 
   const toggleLock = async row => {
+    if (row.isExtra) {
+      try { await workflowRequest(`servizi-extra/${row.extraId}/${row.rigaBloccata ? 'sblocca' : 'blinda'}`, { method: 'POST', body: '{}' }); await caricaElaborato(); }
+      catch (err) { window.alert(err.message); }
+      return;
+    }
     const action = row.rigaBloccata ? 'sblocca' : 'blinda';
     if (!window.confirm(`${row.rigaBloccata ? 'Sbloccare' : 'Blindare'} la riga di ${row.ragioneSociale} per ${mese}/${anno}? ${row.rigaBloccata ? 'La riga tornerà modificabile solo se la fattura non è stata inviata né registrata.' : 'Importi e note diventeranno disponibili alla contabilità.'}`)) return;
     try { await workflowRequest(`${workflowPeriod('cliente', mese, anno)}/righe/${encodeURIComponent(row.idCliente)}/${action}`, { method: 'POST', body: '{}' }); await caricaElaborato(); }
     catch (err) { window.alert(err.message); }
   };
+
+  const valoreExtra = (extra, cliente) => {
+    const imponibile = Number(extra.imponibile);
+    const regime = String(cliente.tipoTassazione || 'IVA').trim().toUpperCase();
+    if (regime === 'REVERSE CHARGE') return imponibile;
+    if (regime === 'TRAT. ACC.' || regime === 'TRATTENUTA ACCONTO') return Math.round(imponibile * 100 * 1.18) / 100;
+    return Math.round(imponibile * 100 * (1 + (Number(cliente.percentualeTassazione) || 22) / 100)) / 100;
+  };
+  const extraPerCliente = serviziExtra.reduce((map, extra) => {
+    if (!map[extra.clienteId]) map[extra.clienteId] = [];
+    map[extra.clienteId].push(extra);
+    return map;
+  }, {});
+  for (const extras of Object.values(extraPerCliente)) extras.sort((a, b) =>
+    Number(b.gruppoTipo === 'mensile') - Number(a.gruppoTipo === 'mensile') ||
+    String(a.gruppoId).localeCompare(String(b.gruppoId)) || a.dataServizio.localeCompare(b.dataServizio));
+  const clientiVisibili = [...dati];
+  for (const [clienteId, extras] of Object.entries(extraPerCliente)) {
+    if (!clientiVisibili.some(row => String(row.idCliente) === String(clienteId))) {
+      const first = extras[0];
+      const row = { idCliente: clienteId, ragioneSociale: first.clienteNome || 'Cliente con soli extra',
+        soloExtra: true, isExtra: true, id: first.id, extraId: first.id, nomeExtra: first.nome,
+        gruppoNome: first.gruppoNome, gruppoTipo: first.gruppoTipo, inviataAt: first.inviataAt,
+        gruppoId: first.gruppoId, gruppoTotale: first.gruppoTotale,
+        fatturaRegistrazioneId: first.fatturaRegistrazioneId, rigaBloccata: Boolean(first.bloccatoAt),
+        oreLavorate: first.lavori.reduce((sum, work) => sum + work.giornate.reduce((part, day) => part + Number(day.ore), 0), 0),
+        tariffaOraria: 0, baseImponibile: Number(first.imponibile), maggiorazioni: 0,
+        sconti: 0, imponibile: Number(first.imponibile), tipoTassazione: first.tipoTassazione || 'IVA',
+        percentualeTassazione: first.percentualeTassazione || 0 };
+      row.importoTotale = valoreExtra(first, row);
+      clientiVisibili.push(row);
+    }
+  }
+  const righeExtra = row => (extraPerCliente[row.idCliente] || []).filter(extra => !row.soloExtra || extra.id !== row.extraId).map(extra => ({
+    ...row, id: extra.id, isExtra: true, extraId: extra.id, nomeExtra: extra.nome,
+    gruppoNome: extra.gruppoNome, gruppoTipo: extra.gruppoTipo, inviataAt: extra.inviataAt,
+    gruppoId: extra.gruppoId, gruppoTotale: extra.gruppoTotale,
+    fatturaRegistrazioneId: extra.fatturaRegistrazioneId, rigaBloccata: Boolean(extra.bloccatoAt),
+    oreLavorate: extra.lavori.reduce((sum, work) => sum + work.giornate.reduce((part, day) => part + Number(day.ore), 0), 0),
+    tariffaOraria: 0, baseImponibile: Number(extra.imponibile), maggiorazioni: 0, sconti: 0,
+    imponibile: Number(extra.imponibile), importoTotale: valoreExtra(extra, row)
+  }));
 
   const showInfoModal = (title, text) => {
     setModalState({
@@ -193,7 +243,7 @@ export default function ElaboratoClienti() {
       cardFullWidth: true,
       width: 190,
       render: (row) => (
-        <div className="flex min-w-0 items-center gap-1 group">
+        <div className="flex min-w-0 items-center justify-center gap-1 group">
           <span className="truncate text-xs">{row.ragioneSociale}</span>
           <div 
             title="Clicca per leggere il nome completo" 
@@ -217,14 +267,14 @@ export default function ElaboratoClienti() {
       accessor: 'tariffaOraria',
       cardLabel: 'Tariffa oraria',
       width: 88,
-      render: (row) => `€ ${parseFloat(row.tariffaOraria || 0).toFixed(2)}`
+      render: (row) => row.isExtra ? '—' : `€ ${parseFloat(row.tariffaOraria || 0).toFixed(2)}`
     },
     { 
       header: <>Base<br />Imponibile</>,
       accessor: 'baseImponibile',
       cardLabel: 'Base imponibile',
       width: 89,
-      render: (row) => `€ ${parseFloat(row.baseImponibile || 0).toFixed(2)}`
+      render: (row) => row.isExtra ? <span title={row.nomeExtra}>€ {parseFloat(row.baseImponibile || 0).toFixed(2)}</span> : `€ ${parseFloat(row.baseImponibile || 0).toFixed(2)}`
     },
     { 
       header: <>Sconti/<br />Magg.</>,
@@ -232,6 +282,7 @@ export default function ElaboratoClienti() {
       cardLabel: 'Sconti/Magg.',
       width: 90,
       render: (row) => {
+        if (row.isExtra) return <span className="text-slate-500">—</span>;
         const diff = parseFloat(row.maggiorazioni || 0) - parseFloat(row.sconti || 0);
         const notes = [row.noteMaggiorazioni, row.noteSconti].filter(Boolean).join(" | ");
         if (diff === 0 && !notes) return '€ 0.00';
@@ -282,8 +333,18 @@ export default function ElaboratoClienti() {
       render: (row) => <span className="font-bold text-slate-50">€ {parseFloat(row.importoTotale || 0).toFixed(2)}</span>
     },
     { header: <>Realmente<br />Fatturato</>, cardLabel: 'Realmente fatturato', accessor: 'importoRealmenteFatturato', width: 110, render: row => {
+      if (row.isExtra) {
+        if (row.gruppoTipo === 'mensile' && !row.soloExtra) return <span className="text-slate-500">↥ mensile</span>;
+        const first = (extraPerCliente[row.idCliente] || []).find(extra => extra.gruppoId === row.gruppoId);
+        if (first?.id !== row.extraId) return <span className="text-slate-500">↥ stessa fattura</span>;
+        const invoice = fatturato[row.idCliente]?.fatture?.find(item => Number(item.id) === Number(row.fatturaRegistrazioneId));
+        const amount = invoice?.importo ?? row.gruppoTotale;
+        return amount != null ? <strong className="text-emerald-300">€ {Number(amount).toFixed(2)}</strong> : <span className="text-slate-500">—</span>;
+      }
       const record = fatturato[row.idCliente];
-      return record?.fatture?.length ? <div><strong>€ {Number(record.importoRealmenteFatturato).toFixed(2)}</strong><div className="text-xs text-amber-300">({record.differenza >= 0 ? '+' : '−'}€ {Math.abs(record.differenza).toFixed(2)})</div></div> : <span className="text-slate-500">—</span>;
+      const separateIds = new Set((extraPerCliente[row.idCliente] || []).filter(extra => extra.gruppoTipo === 'extra').map(extra => Number(extra.fatturaRegistrazioneId)).filter(Boolean));
+      const ordinaryAmount = (record?.fatture || []).filter(invoice => !separateIds.has(Number(invoice.id))).reduce((sum, invoice) => sum + Number(invoice.importo), 0);
+      return ordinaryAmount ? <strong>€ {ordinaryAmount.toFixed(2)}</strong> : <span className="text-slate-500">—</span>;
     } },
     { 
       header: 'Note',
@@ -293,6 +354,7 @@ export default function ElaboratoClienti() {
       width: 135,
       sortable: false,
       render: (row) => (
+        row.isExtra ? <span className="text-xs text-slate-300" title={row.nomeExtra}><strong className="block text-indigo-300">{row.nomeExtra}</strong>{row.gruppoTipo === 'mensile' ? 'Con mensile' : String(row.gruppoNome || '').trim().toLocaleLowerCase('it-IT') !== String(row.nomeExtra || '').trim().toLocaleLowerCase('it-IT') ? row.gruppoNome : null}</span> :
         <CellaNota
           testo={note[row.idCliente] ?? row.notaMensile ?? ''}
           notaFissa={row.notaFissa || ''}
@@ -317,6 +379,10 @@ export default function ElaboratoClienti() {
       )
     },
     { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, render: row => {
+      if (row.isExtra) {
+        const colore = row.fatturaRegistrazioneId ? 'bg-emerald-700 text-white' : row.inviataAt ? 'bg-sky-700 text-white' : row.rigaBloccata ? 'bg-amber-400 text-slate-950' : 'bg-indigo-700 text-white';
+        return <button type="button" className={`rounded px-2 py-1 text-xs font-semibold disabled:opacity-70 ${colore}`} disabled={Boolean(row.inviataAt || row.fatturaRegistrazioneId || isChiuso)} onClick={() => toggleLock(row)}>{row.fatturaRegistrazioneId ? 'Registrata' : row.inviataAt ? 'Inviata' : row.rigaBloccata ? 'Sblocca' : 'Blinda'}</button>;
+      }
       if (isChiuso && !workflow.bloccati.includes(row.idCliente)) return <span className="text-emerald-300">Mese storico</span>;
       const registrata = Boolean(row.fatture?.length);
       const inviata = !registrata && Boolean(row.fatturaInviataAt);
@@ -335,6 +401,7 @@ export default function ElaboratoClienti() {
       cardLabel: 'Azioni',
       width: 72,
       render: (row) => (
+        row.isExtra ? <span className="text-xs text-indigo-300">Extra</span> :
         <div className="flex gap-1">
           <button 
             onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/contabilita/pdf/cliente/${anno}/${mese}/${encodeURIComponent(row.idCliente)}`)}
@@ -415,28 +482,28 @@ export default function ElaboratoClienti() {
       </div>
 
       {/* Riepilogo Mensile */}
-      {dati.length > 0 && (
+      {clientiVisibili.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
             <p className="text-xs text-slate-400 uppercase font-semibold tracking-wider mb-1">Clienti</p>
-            <p className="text-2xl font-bold text-slate-50">{dati.length}</p>
+            <p className="text-2xl font-bold text-slate-50">{clientiVisibili.length}</p>
           </div>
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
             <p className="text-xs text-slate-400 uppercase font-semibold tracking-wider mb-1">Ore Totali</p>
             <p className="text-2xl font-bold text-slate-50">
-              {dati.reduce((sum, r) => sum + parseFloat(r.oreLavorate || 0), 0).toFixed(1)}
+              {clientiVisibili.reduce((sum, r) => sum + parseFloat(r.oreLavorate || 0) + righeExtra(r).reduce((part, extra) => part + extra.oreLavorate, 0), 0).toFixed(1)}
             </p>
           </div>
           <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-xl p-4 shadow-sm">
             <p className="text-xs text-indigo-400 uppercase font-semibold tracking-wider mb-1">Totale Imponibile</p>
             <p className="text-2xl font-bold text-indigo-300">
-              € {dati.reduce((sum, r) => sum + parseFloat(r.imponibile || 0), 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              € {clientiVisibili.reduce((sum, r) => sum + parseFloat(r.imponibile || 0) + righeExtra(r).reduce((part, extra) => part + extra.imponibile, 0), 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 shadow-sm">
             <p className="text-xs text-emerald-400 uppercase font-semibold tracking-wider mb-1">Totale Tassato</p>
             <p className="text-2xl font-bold text-emerald-300">
-              € {dati.reduce((sum, r) => sum + parseFloat(r.importoTotale || 0), 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              € {clientiVisibili.reduce((sum, r) => sum + parseFloat(r.importoTotale || 0) + righeExtra(r).reduce((part, extra) => part + extra.importoTotale, 0), 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
         </div>
@@ -451,7 +518,8 @@ export default function ElaboratoClienti() {
         )}
         <DataTable 
           columns={columns} 
-          data={dati} 
+          data={clientiVisibili}
+          subRows={righeExtra}
           searchPlaceholder="Cerca cliente..."
           pagination={false}
           nowrap={false}

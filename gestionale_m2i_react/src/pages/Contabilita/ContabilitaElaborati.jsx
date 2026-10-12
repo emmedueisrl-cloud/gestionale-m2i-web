@@ -6,15 +6,32 @@ import CaricaBusteElaborato from './CaricaBusteElaborato';
 import PerUfficioPaghe from './PerUfficioPaghe';
 import PerConsulente from './PerConsulente';
 import ImportaFattureArubaZip from './ImportaFattureArubaZip';
+import GestioneFattureExtra from './GestioneFattureExtra';
 import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+const rigaFatturazioneExtra = (group, accountingRows) => {
+  const imponibile = Number(group.imponibileExtra) || 0;
+  const totale = Number(group.totaleExtraPrevisto) || 0;
+  const fattura = accountingRows.flatMap(row => row.fatture || [])
+    .find(item => String(item.id) === String(group.fatturaRegistrazioneId));
+  return { idCliente: group.clienteId, ragioneSociale: group.clienteNome,
+    gruppoExtraId: group.id, gruppoExtraTipo: group.tipo, nomeServizioExtra: group.nomiServizi?.join(', ') || group.nome,
+    descrizioneFattura: group.descrizioneFattura,
+    imponibile, importoTassa: totale - imponibile, importoTotale: totale,
+    tipoTassazione: group.tipoTassazione, tuttiBlindati: group.tuttiBlindati,
+    notaMensile: group.nomiServizi?.join(', ') || group.nome,
+    fatture: fattura ? [fattura] : [], importoRealmenteFatturato: fattura ? Number(fattura.importo) : 0,
+    fatturaInviataAt: group.inviataAt, extraRegistrazioneId: group.fatturaRegistrazioneId };
+};
 const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 export default function ContabilitaElaborati({ tipo }) {
   const [periodoIniziale] = useState(mesePredefinitoElaborati);
   const [mese, setMese] = useState(periodoIniziale.mese);
   const [anno, setAnno] = useState(periodoIniziale.anno);
   const [rows, setRows] = useState([]);
+  const [gruppiExtra, setGruppiExtra] = useState([]);
+  const [tuttiGruppiExtra, setTuttiGruppiExtra] = useState([]);
   const [buste, setBuste] = useState([]);
   const [mancanti, setMancanti] = useState(0);
   const [sezioneAttiva, setSezioneAttiva] = useState(0);
@@ -41,12 +58,15 @@ export default function ContabilitaElaborati({ tipo }) {
   const load = useCallback(async () => {
     setError('');
     try {
-      const [accountingRows, missing, payroll] = await Promise.all([
+      const [accountingRows, missing, payroll, extraGroups] = await Promise.all([
         workflowRequest(contabilitaPeriod(tipo, mese, anno)),
         workflowRequest(`${contabilitaPeriod(tipo, mese, anno)}/mancanti`),
-        tipo === 'dipendente' ? workflowRequest(`buste-paga/mese?mese=${mese}&anno=${anno}`) : Promise.resolve(null)
+        tipo === 'dipendente' ? workflowRequest(`buste-paga/mese?mese=${mese}&anno=${anno}`) : Promise.resolve(null),
+        tipo === 'cliente' ? workflowRequest(`servizi-extra/${anno}/${mese}/gruppi`) : Promise.resolve([])
       ]);
       setRows(accountingRows);
+      setGruppiExtra(extraGroups.filter(group => group.servizi?.length));
+      setTuttiGruppiExtra(extraGroups);
       setMancanti(Number(missing.mancanti) || 0);
       setBuste(payroll?.buste || []);
     }
@@ -65,10 +85,27 @@ export default function ContabilitaElaborati({ tipo }) {
   const markInvoiceSent = async row => {
     setBusy(true); setError(''); setMessage(null);
     try {
-      await workflowRequest('contabilita/fatture/inviata', { method: 'POST', body: JSON.stringify({ clienteId: row.idCliente, mese, anno }) });
+      if (row.gruppoExtraId && row.gruppoExtraTipo === 'extra') {
+        await workflowRequest(`servizi-extra/gruppi/${row.gruppoExtraId}/inviata`, { method: 'POST', body: '{}' });
+      } else {
+        await workflowRequest('contabilita/fatture/inviata', { method: 'POST', body: JSON.stringify({ clienteId: row.idCliente, mese, anno }) });
+      }
       showMessage(`Fattura di ${row.ragioneSociale} segnata come inviata. Puoi ancora registrarla.`);
       await load();
     } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  const saveDescription = async (row, descrizione) => {
+    setBusy(true); setError('');
+    try {
+      await workflowRequest('contabilita/fatture/descrizione', { method: 'PUT', body: JSON.stringify({
+        tipo: row.gruppoExtraId ? 'extra' : 'cliente', soggettoId: row.gruppoExtraId || row.idCliente,
+        mese, anno, descrizione
+      }) });
+      await load();
+      showMessage('Descrizione della fattura salvata.');
+    } catch (err) { setError(err.message); throw err; }
     finally { setBusy(false); }
   };
 
@@ -77,6 +114,7 @@ export default function ContabilitaElaborati({ tipo }) {
     form.append('clienteId', selected.idCliente);
     form.append('mese', String(mese)); form.append('anno', String(anno));
     if (selectedRegistration) form.append('registrazioneId', String(selectedRegistration.id));
+    if (selected.gruppoExtraId && selected.gruppoExtraTipo === 'extra') form.append('gruppoId', selected.gruppoExtraId);
     form.append('zip', zipFattura);
     return form;
   };
@@ -154,12 +192,23 @@ export default function ContabilitaElaborati({ tipo }) {
     finally { setBusy(false); }
   };
 
+  const registrazioniExtra = new Set(gruppiExtra.map(group => group.fatturaRegistrazioneId).filter(Boolean).map(String));
+  const righeOrdinarie = rows.map(row => {
+    const fatture = (row.fatture || []).filter(fattura => !registrazioniExtra.has(String(fattura.id)));
+    const importoRealmenteFatturato = fatture.reduce((sum, fattura) => sum + Number(fattura.importo || 0), 0);
+    return { ...row, fatture, importoRealmenteFatturato,
+      differenza: fatture.length ? Number((importoRealmenteFatturato - Number(row.importoTotale || 0)).toFixed(2)) : null };
+  }).filter(row => !(row.rigaExtra && !row.fatture.length && !row.documentiAruba?.length));
   const gruppi = tipo === 'cliente' ? [
-    { titolo: 'Fatture da elaborare', etichetta: 'Da elaborare', contatore: 'fatture', elaborate: false, righe: rows.filter(row => !row.fatture?.length && !row.documentiAruba?.length && !row.fatturaInviataAt), vuoto: 'Nessuna fattura da elaborare.' },
-    { titolo: 'Fatture elaborate', etichetta: 'Elaborate', contatore: 'fatture', elaborate: true, righe: rows.filter(row => row.fatture?.length || row.documentiAruba?.length || row.fatturaInviataAt), vuoto: 'Nessuna fattura elaborata per questo mese.' }
+    { titolo: 'Fatture da elaborare', etichetta: 'Da elaborare', contatore: 'righe', elaborate: false,
+      righe: [...righeOrdinarie.filter(row => !row.fatture?.length && !row.documentiAruba?.length && !row.fatturaInviataAt),
+        ...gruppiExtra.filter(group => !group.inviataAt && !group.fatturaRegistrazioneId).map(group => rigaFatturazioneExtra(group, rows))], vuoto: 'Nessuna fattura da elaborare.' },
+    { titolo: 'Fatture elaborate', etichetta: 'Elaborate', contatore: 'fatture', elaborate: true,
+      righe: [...righeOrdinarie.filter(row => row.fatture?.length || row.documentiAruba?.length || row.fatturaInviataAt),
+        ...gruppiExtra.filter(group => group.inviataAt || group.fatturaRegistrazioneId).map(group => rigaFatturazioneExtra(group, rows))], vuoto: 'Nessuna fattura elaborata per questo mese.' }
   ] : [];
   const searchTerm = search.trim().toLocaleLowerCase('it-IT');
-  const matchesClient = row => !searchTerm || [row.ragioneSociale, ...(row.fatture || []).map(fattura => fattura.numero)]
+  const matchesClient = row => !searchTerm || [row.ragioneSociale, row.nomeServizioExtra, row.descrizioneFattura, ...(row.fatture || []).map(fattura => fattura.numero)]
     .some(value => String(value || '').toLocaleLowerCase('it-IT').includes(searchTerm));
   const matchesEmployee = row => !searchTerm || String(row.cognomeNome || '').toLocaleLowerCase('it-IT').includes(searchTerm);
   const visibleGroup = tipo === 'cliente' ? {
@@ -239,8 +288,8 @@ export default function ContabilitaElaborati({ tipo }) {
     </div>
     {error && <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-red-800">{error}</div>}
     {message?.section === sezioneAttiva && message.period === `${anno}-${mese}` && message.tipo === tipo && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-800">{message.text}</div>}
-    <div className="flex flex-wrap items-center gap-3"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" />{tipo === 'cliente' && <ImportaFattureArubaZip mese={mese} anno={anno} onChanged={async () => { setSezioneAttiva(1); await load(); }} />}</div>
-    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} busy={busy} euro={euro} /> :
+    <div className="flex flex-wrap items-center gap-3"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" />{tipo === 'cliente' && <><ImportaFattureArubaZip mese={mese} anno={anno} onChanged={async () => { setSezioneAttiva(1); await load(); }} /><GestioneFattureExtra mese={mese} anno={anno} gruppi={tuttiGruppiExtra} onChanged={load} /></>}</div>
+    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onSaveDescription={saveDescription} busy={busy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
     {selectedConsultant && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -272,7 +321,7 @@ export default function ContabilitaElaborati({ tipo }) {
         <h2 className="text-lg font-bold">{selectedRegistration ? 'Sostituisci fattura Aruba' : 'Fattura Aruba'} · {selected.ragioneSociale}</h2>
         {selectedRegistration && <p className="text-sm font-semibold text-amber-900">Fattura attuale: {selectedRegistration.numero} · {selectedRegistration.data} · {euro(selectedRegistration.importo)}</p>}
         <p className="text-sm text-slate-600">Seleziona lo ZIP Aruba della fattura: il gestionale leggerà l’XML e allegherà il PDF. {selectedRegistration && 'I documenti precedenti resteranno nello storico delle rettifiche.'}</p>
-        <p className="text-sm font-semibold">Importo previsto per il mese: {euro(Number(selected.importoTotale || 0) - Number(selected.importoRealmenteFatturato || 0) + Number(selectedRegistration?.importo || 0))}</p>
+        <p className="text-sm font-semibold">{selected.gruppoExtraId ? 'Importo previsto per la fattura extra' : 'Importo previsto per il mese'}: {euro(Number(selected.importoTotale || 0) - Number(selected.importoRealmenteFatturato || 0) + Number(selectedRegistration?.importo || 0))}</p>
         <label className="block text-sm font-medium">ZIP Aruba (XML + PDF)<input required type="file" accept=".zip,application/zip" className="mt-1 block w-full rounded border border-slate-300 p-2 text-sm" onChange={e => { setZipFattura(e.target.files?.[0] || null); setAnteprimaFattura(null); }} /></label>
         <p className="text-xs text-slate-500">Massimo 20 MB per archivio.</p>
         {erroreFattura && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{erroreFattura}</p>}

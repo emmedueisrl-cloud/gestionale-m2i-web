@@ -8,24 +8,39 @@ const number = value => Number(value || 0).toLocaleString('it-IT', { maximumFrac
 const notes = (row, keys) => keys.map(([key, label]) => row[key] ? `${label}: ${row[key]}` : '').filter(Boolean).join('\n') || '—';
 const fontDir = path.join(__dirname, 'node_modules/pdfmake/fonts/Roboto');
 
-function tableData(tipo, section, rows, buste, mese, anno) {
+function tableData(tipo, section, rows, buste, mese, anno, extraGroups = []) {
   const index = Number(section);
   if (!Number.isInteger(index) || index < 0 || index > (tipo === 'dipendente' ? 2 : 1) || !['cliente', 'dipendente'].includes(tipo)) {
     throw new Error('Sezione non valida.');
   }
   const period = `${months[Number(mese) - 1]} ${anno}`;
   if (tipo === 'cliente') {
-    const filtered = rows.filter(row => index === 1 ? row.fatture?.length || row.fatturaInviataAt : !row.fatture?.length && !row.fatturaInviataAt);
+    const linkedExtras = new Set(extraGroups.map(group => group.fatturaRegistrazioneId).filter(Boolean).map(String));
+    const ordinaryRows = rows.map(row => ({ ...row,
+      fatture: (row.fatture || []).filter(invoice => !linkedExtras.has(String(invoice.id))) }))
+      .filter(row => !(row.rigaExtra && !row.fatture.length && !row.documentiAruba?.length));
+    const filtered = ordinaryRows.filter(row => index === 1 ? row.fatture?.length || row.fatturaInviataAt : !row.fatture?.length && !row.fatturaInviataAt);
+    const visibleExtras = extraGroups.filter(group => group.servizi?.length && (index === 1
+      ? group.inviataAt || group.fatturaRegistrazioneId
+      : !group.inviataAt && !group.fatturaRegistrazioneId));
     return {
       period, section: index ? 'Fatture elaborate' : 'Fatture da elaborare',
       columns: ['Cliente (ragione sociale)', 'Totale imponibile', 'R. FIS.', 'Tassa', 'Totale fattura', 'Note'],
       widths: [36, 19, 10, 16, 19, 65],
-      rows: filtered.map(row => {
+      rows: [...filtered.map(row => {
         const regime = String(row.tipoTassazione || 'IVA').trim().toUpperCase();
         const tax = Number.isFinite(Number(row.importoTassa)) ? Number(row.importoTassa) : Number(row.importoTotale || 0) - Number(row.imponibile || 0);
         return [row.ragioneSociale || '', euro(row.imponibile), regime === 'REVERSE CHARGE' ? 'R.G' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
           euro(tax), euro(row.importoTotale), notes(row, [['notaFissa', 'Nota fissa'], ['notaMensile', 'Nota del mese']])];
-      })
+      }), ...visibleExtras.map(group => {
+        const regime = String(group.tipoTassazione || 'IVA').trim().toUpperCase();
+        const imponibile = Number(group.imponibileExtra) || 0;
+        const totale = Number(group.totaleExtraPrevisto) || 0;
+        const label = group.tipo === 'mensile' ? 'Quota extra unita al mensile (non è una fattura separata)' : 'Fattura extra separata';
+        return [group.clienteNome || group.clienteId, euro(imponibile),
+          regime === 'REVERSE CHARGE' ? 'R.G' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
+          euro(totale - imponibile), euro(totale), `${label}: ${group.nomiServizi?.join(', ') || group.nome}`];
+      })]
     };
   }
   if (index === 1) return {

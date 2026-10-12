@@ -19,7 +19,8 @@ export default function DataTable({
   stickyTopOffset = 0,
   selectable = false,
   selectedRows = [],
-  onSelectionChange = null
+  onSelectionChange = null,
+  subRows = null
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -183,6 +184,12 @@ export default function DataTable({
                   <div className="min-w-0 break-words text-sm text-slate-100">{col.cardRender ? col.cardRender(row) : col.render ? col.render(row) : row[col.accessor]}</div>
                 </div>
               ))}
+              {subRows && subRows(row).map((child, childIndex) => <div key={child.id || childIndex} className="col-span-full grid grid-cols-2 gap-2 border-t border-indigo-500/40 pt-2">
+                {columns.slice(1).map((col, colIndex) => <div key={colIndex} className="min-w-0 text-xs">
+                  <div className="text-slate-400">{col.cardLabel || col.header}</div>
+                  <div className="break-words text-slate-100">{col.cardRender ? col.cardRender(child) : col.render ? col.render(child) : child[col.accessor]}</div>
+                </div>)}
+              </div>)}
             </div>
           )) : <div className="py-12 text-center text-slate-400">Nessun dato trovato corrispondente alla ricerca.</div>}
         </div>
@@ -229,8 +236,8 @@ export default function DataTable({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {currentData.length > 0 ? (
-              currentData.map((row, rowIndex) => (
-                <tr key={row.id || rowIndex} className={`hover:bg-indigo-500/20 transition-colors ${uniformRows ? 'h-[76px]' : ''} ${selectedRows.includes(row.id) ? 'bg-indigo-500/10' : ''}`}>
+              currentData.flatMap((parent, rowIndex) => [parent, ...(subRows ? subRows(parent) : [])].map((row, childIndex) => (
+                <tr key={`${parent.id || rowIndex}-${row.id || childIndex}`} className={`hover:bg-indigo-500/20 transition-colors ${uniformRows ? 'h-[76px]' : ''} ${selectedRows.includes(row.id) ? 'bg-indigo-500/10' : ''}`}>
                   {selectable && (
                     <td className={compact ? 'px-1.5 py-2' : 'px-6 py-3'}>
                       <input 
@@ -241,13 +248,13 @@ export default function DataTable({
                       />
                     </td>
                   )}
-                  {columns.map((col, colIndex) => (
-                    <td key={colIndex} className={`${compact ? 'px-1.5 py-2 break-words' : 'px-6 py-3'} text-slate-200 ${col.className || ''}`}>
+                  {columns.map((col, colIndex) => childIndex > 0 && colIndex === 0 ? null : (
+                    <td key={colIndex} rowSpan={colIndex === 0 && subRows ? 1 + subRows(parent).length : undefined} className={`${compact ? 'px-1.5 py-2 break-words' : 'px-6 py-3'} text-slate-200 ${col.className || ''} ${colIndex === 0 && subRows ? 'align-middle text-center border-r border-slate-700' : ''}`}>
                       {col.render ? col.render(row) : row[col.accessor]}
                     </td>
                   ))}
                 </tr>
-              ))
+              )))
             ) : (
               <tr>
                 <td colSpan={columns.length} className="px-6 py-12 text-center text-slate-400">

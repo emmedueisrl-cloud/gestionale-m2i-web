@@ -7,7 +7,8 @@ const columns = [
   ['R. FIS.', '7%'],
   ['Tassa', '9%'],
   ['Totale\nfattura', '11%'],
-  ['Note', '34%'],
+  ['Descrizione', '20%'],
+  ['Note', '14%'],
   ['Azioni', '8%']
 ];
 
@@ -19,8 +20,11 @@ const regimeBreve = value => {
   return regime;
 };
 
-export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, busy, euro }) {
+export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onSaveDescription, busy, euro }) {
   const [detailsRow, setDetailsRow] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [draftDescription, setDraftDescription] = useState('');
+  const [descriptionError, setDescriptionError] = useState('');
   useEffect(() => {
     if (!detailsRow) return;
     const closeOnEscape = event => { if (event.key === 'Escape') setDetailsRow(null); };
@@ -53,7 +57,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
               ? (index % 2 ? 'bg-green-400' : 'bg-emerald-200')
               : (index % 2 ? 'bg-sky-200' : 'bg-white');
             const paroleNome = String(row.ragioneSociale || '').trim().split(/\s+/);
-            return <tr key={row.idCliente} className={`${rowColor} h-24`}>
+            return <tr key={row.gruppoExtraId || row.idCliente} className={`${rowColor} h-24`}>
               <td className={`${cell} break-words`}>
                 <div className="max-h-24 overflow-y-auto">
                 <div className="font-semibold text-slate-900"><span className="text-[17px]">{paroleNome.slice(0, 3).join(' ')}</span>{paroleNome.length > 3 && <> <span>{paroleNome.slice(3).join(' ')}</span></>}</div>
@@ -63,24 +67,33 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
               <td className={`${cell} whitespace-nowrap`} title={row.tipoTassazione || 'IVA'}>{regimeBreve(row.tipoTassazione)}</td>
               <td className={numberCell}>{euro(tassa)}</td>
               <td className={`${numberCell} font-semibold`}>{euro(totale)}</td>
+              <td className={`${cell} break-words text-left text-sm`}>
+                {editingId === (row.gruppoExtraId || row.idCliente) ? <div className="space-y-1">
+                  <textarea aria-label={`Descrizione fattura di ${row.ragioneSociale}`} autoFocus maxLength={500} rows={3} value={draftDescription} onChange={event => setDraftDescription(event.target.value)} className="w-full rounded border border-indigo-400 bg-white p-1 text-sm" />
+                  {descriptionError && <p role="alert" className="text-xs text-red-700">{descriptionError}</p>}
+                  <div className="flex gap-1"><button type="button" disabled={busy || !draftDescription.trim()} onClick={async () => { try { await onSaveDescription(row, draftDescription); setEditingId(null); setDescriptionError(''); } catch (error) { setDescriptionError(error.message); } }} className="rounded bg-indigo-700 px-2 py-1 text-xs text-white disabled:opacity-50">Salva</button><button type="button" onClick={() => setEditingId(null)} className="rounded bg-slate-200 px-2 py-1 text-xs">Annulla</button></div>
+                </div> : <><span className="whitespace-pre-wrap">{row.descrizioneFattura || '—'}</span>{!elaborate && !row.fatturaInviataAt && !registered && row.gruppoExtraTipo !== 'mensile' && <button type="button" onClick={() => { setEditingId(row.gruppoExtraId || row.idCliente); setDraftDescription(row.descrizioneFattura || ''); setDescriptionError(''); }} className="mt-1 block text-xs font-semibold text-indigo-700 underline">Modifica</button>}</>}
+              </td>
               <td className={`${cell} break-words px-3 text-left text-[18px] text-slate-800`}>
                 <div className="max-h-28 space-y-1 overflow-y-auto whitespace-pre-wrap">
-                  {row.notaFissa && <p><span className="font-semibold">Nota fissa:</span> {row.notaFissa}</p>}
-                  {row.notaMensile && <p><span className="font-semibold">Nota del mese:</span> {row.notaMensile}</p>}
-                  {!row.notaFissa && !row.notaMensile && <span className="text-slate-500">—</span>}
+                  {row.gruppoExtraId ? <><p className="font-semibold">{row.nomeServizioExtra}</p>{row.gruppoExtraTipo === 'mensile' && <p className="text-sm">Unito alla fattura mensile</p>}</> : <>
+                    {row.notaFissa && <p><span className="font-semibold">Nota fissa:</span> {row.notaFissa}</p>}
+                    {row.notaMensile && <p><span className="font-semibold">Nota del mese:</span> {row.notaMensile}</p>}
+                    {!row.notaFissa && !row.notaMensile && <span className="text-slate-500">—</span>}
+                  </>}
                 </div>
               </td>
               <td className={cell}>
                 <div className="flex items-center justify-center gap-2">
-                  {registered ? <>
+                  {row.gruppoExtraId && row.gruppoExtraTipo === 'mensile' ? <span className="text-xs font-semibold text-slate-700">Con la fattura mensile</span> : registered ? <>
                     <span role="status" title="Documenti registrati" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-2 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Documenti registrati</span></span>
                     <button type="button" onClick={() => setDetailsRow(row)} aria-label={`Apri documenti e allegati di ${row.ragioneSociale}`} title="Apri documenti e allegati" className={`rounded-full bg-white p-1.5 ring-1 hover:bg-red-50 ${hasDifference ? 'text-red-700 ring-red-700' : 'text-indigo-700 ring-indigo-500'}`}>
                       {hasDifference ? <CircleAlert className="h-5 w-5" aria-hidden="true" /> : <FilePlus2 className="h-5 w-5" aria-hidden="true" />}
                     </button>
                   </> : <>
-                    <button type="button" onClick={() => onRegistra(row)} aria-label={`Registra fattura di ${row.ragioneSociale}`} title="Registra fattura" className="rounded-lg bg-white/70 p-1.5 text-indigo-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700"><FilePlus2 className="h-5 w-5" aria-hidden="true" /></button>
+                    <button type="button" disabled={Boolean(row.gruppoExtraId && !row.tuttiBlindati)} onClick={() => onRegistra(row)} aria-label={`Registra fattura di ${row.ragioneSociale}`} title={row.gruppoExtraId && !row.tuttiBlindati ? 'Blinda prima i servizi extra' : 'Registra fattura'} className="rounded-lg bg-white/70 p-1.5 text-indigo-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"><FilePlus2 className="h-5 w-5" aria-hidden="true" /></button>
                     {row.fatturaInviataAt ? <span role="status" title="Fattura inviata" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-1 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Fattura inviata</span></span> :
-                      !elaborate && <button type="button" disabled={busy} onClick={() => onInviata(row)} aria-label={`Segna come inviata la fattura di ${row.ragioneSociale}`} title="Fattura inviata" className="rounded-lg bg-white/70 p-1.5 text-emerald-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 disabled:opacity-50"><Send className="h-5 w-5" aria-hidden="true" /></button>}
+                      !elaborate && <button type="button" disabled={busy || Boolean(row.gruppoExtraId && !row.tuttiBlindati)} onClick={() => onInviata(row)} aria-label={`Segna come inviata la fattura di ${row.ragioneSociale}`} title={row.gruppoExtraId && !row.tuttiBlindati ? 'Blinda prima i servizi extra' : 'Fattura inviata'} className="rounded-lg bg-white/70 p-1.5 text-emerald-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 disabled:opacity-50"><Send className="h-5 w-5" aria-hidden="true" /></button>}
                     {row.storicoPreesistente && <span title="Storico: verifica prima di registrare" aria-label="Storico: verifica prima di registrare" className="text-amber-800"><CircleAlert className="h-5 w-5" aria-hidden="true" /></span>}
                   </>}
                 </div>

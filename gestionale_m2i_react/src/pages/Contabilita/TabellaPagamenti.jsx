@@ -18,7 +18,7 @@ function DettagliPagamento({ row }) {
   const [espanso, setEspanso] = useState(false);
   const [puoEspandere, setPuoEspandere] = useState(false);
   const contenutoRef = useRef(null);
-  const note = [row.notaFissa, row.notaMensile, row.noteMaggiorazioni, row.noteDetrazioni, row.noteGenerali].join('\u0000');
+  const note = [row.notaFissa, row.notaMensile, row.notaExtra, row.noteMaggiorazioni, row.noteDetrazioni, row.noteGenerali].join('\u0000');
 
   useLayoutEffect(() => {
     const contenuto = contenutoRef.current;
@@ -36,6 +36,7 @@ function DettagliPagamento({ row }) {
       <div ref={contenutoRef}>
         {row.notaFissa && <p>Nota fissa: {row.notaFissa}</p>}
         {row.notaMensile && <p>Nota del mese: {row.notaMensile}</p>}
+        {row.notaExtra && <p>Nota extra: {row.notaExtra}</p>}
         {row.noteMaggiorazioni && <p>Maggiorazione: {row.noteMaggiorazioni}</p>}
         {row.noteDetrazioni && <p>Detrazione: {row.noteDetrazioni}</p>}
         {row.noteGenerali && <p>Note: {row.noteGenerali}</p>}
@@ -63,7 +64,7 @@ export default function TabellaPagamenti({ righe, vuoto, euro, onNotaConsulente,
         <tbody className="text-[13px] leading-snug">
           {!righe.length && <tr><td colSpan={columns.length} className="px-4 py-6 text-center text-sm text-slate-600">{vuoto}</td></tr>}
           {righeOrdinate.map((row, index) => {
-            const hasDetails = Boolean(row.notaFissa || row.notaMensile || row.noteMaggiorazioni || row.noteDetrazioni || row.noteGenerali);
+            const hasDetails = Boolean(row.notaFissa || row.notaMensile || row.notaExtra || row.noteMaggiorazioni || row.noteDetrazioni || row.noteGenerali);
             const cell = 'border-r border-r-slate-200 border-b-2 border-b-slate-400 px-2 py-2 align-middle last:border-r-0';
             const numberCell = `${cell} whitespace-nowrap text-[16px]`;
             const rowColor = index % 2 ? 'bg-sky-200' : 'bg-white';

@@ -296,7 +296,9 @@ export default function ElaboratoDipendenti() {
         <CellaNota
           testo={note[row.idDipendente] ?? row.notaMensile ?? ''}
           notaFissa={row.notaFissa || ''}
+          notaExtra={row.notaExtra || ''}
           onShowFixedNote={() => showInfoModal(`Note fisse · ${row.cognomeNome}`, <span className="block whitespace-pre-wrap break-words text-left">{row.notaFissa}</span>)}
+          onShowExtraNote={() => showInfoModal(`Note extra · ${row.cognomeNome}`, <span className="block whitespace-pre-wrap break-words text-left">{row.notaExtra}</span>)}
           readOnly={isChiuso || row.rigaBloccata}
           uniformHeight
           onSave={async (testo) => {
