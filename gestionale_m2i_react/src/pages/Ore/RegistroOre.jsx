@@ -363,17 +363,17 @@ export default function RegistroOre() {
   };
   const updateEntry = (gIndex, entryId, field, value) => {
     if (isReadOnly || giorniData[gIndex]?.find(e => e.id === entryId)?.bloccata) return;
-    const d = giorniData.map(entries => entries.map(e => ({ ...e })));
-    const entry = d[gIndex].find(e => e.id === entryId);
-    if (entry) {
+    setGiorniData(prev => prev.map((entries, index) => index !== gIndex ? entries : entries.map(entry => {
+      if (entry.id !== entryId) return entry;
       if (field === 'ore') {
         const val = value.replace(',', '.');
-        if (!isNaN(val) || val === '' || val === '.') entry[field] = val;
-      } else {
-        entry[field] = value;
+        return !isNaN(val) || val === '' || val === '.' ? { ...entry, ore: val } : entry;
       }
-    }
-    setGiorniData(d);
+      if (field === 'causale') {
+        return { ...entry, causale: value, idCliente: causaliConCliente.includes(value) ? entry.idCliente : '' };
+      }
+      return { ...entry, [field]: value };
+    })));
     setIsDirty(true);
   };
 
@@ -941,11 +941,7 @@ export default function RegistroOre() {
                         <select 
                           value={entry.causale}
                           onChange={(e) => {
-                            const nuovaCausale = e.target.value;
-                            updateEntry(selectedDayIndex, entry.id, 'causale', nuovaCausale);
-                            if (!causaliConCliente.includes(nuovaCausale)) {
-                              updateEntry(selectedDayIndex, entry.id, 'idCliente', '');
-                            }
+                            updateEntry(selectedDayIndex, entry.id, 'causale', e.target.value);
                           }}
                           disabled={isReadOnly || entry.bloccata}
                           className={`w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none 
