@@ -225,13 +225,12 @@ async function listPublic() {
       ...row,
       incaricato: agendaImpegnoId ? `${cognomeCaposquadra || ''} ${nomeCaposquadra || ''}`.trim() : row.incaricato || ''
     })));
-  return attachNotes(rows, true);
+  return attachNotes(rows);
 }
 
-async function attachNotes(rows, publicOnly = false) {
+async function attachNotes(rows) {
   if (!rows.length) return rows;
   const query = knex('appuntamenti_note').whereIn('appuntamento_id', rows.map(row => row.id));
-  if (publicOnly) query.where('visibile_pubblico', true);
   const notes = await query
     .select('id', 'appuntamento_id as appuntamentoId', 'testo', 'creata_il as creataIl', 'autore', 'tipo', 'modificata_il as modificataIl', 'modificata_da as modificataDa')
     .orderBy('creata_il', 'asc').orderBy('id', 'asc');
@@ -425,10 +424,10 @@ async function addInternalNote(id, body, author) {
   const autore = String(author || '').trim();
   if (!autore || autore.length > 254) throw new Error('Autore della nota non valido.');
   return knex.transaction(async trx => {
-    const appointment = await trx('appuntamenti_preventivi').where('id', id).first('id');
+    const appointment = await trx('appuntamenti_preventivi').where('id', id).first('id', 'origine_pubblica');
     if (!appointment) return null;
     const creataIl = new Date().toISOString();
-    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore, visibile_pubblico: false, tipo: 'post' });
+    const [noteId] = await trx('appuntamenti_note').insert({ appuntamento_id: appointment.id, testo, creata_il: creataIl, autore, visibile_pubblico: Boolean(appointment.origine_pubblica), tipo: 'post' });
     return { id: noteId, appuntamentoId: appointment.id, testo, creataIl, autore, tipo: 'post' };
   });
 }
