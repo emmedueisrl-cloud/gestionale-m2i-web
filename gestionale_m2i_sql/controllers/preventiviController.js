@@ -66,6 +66,8 @@ exports.generatePreventivo = async (req, res) => {
     } = req.body;
     const corpo = testo_corpo === undefined ? DEFAULT_CONTENT.testo_corpo : testo_corpo;
     if (typeof corpo !== 'string' || !corpo.trim() || corpo.length > 20000) return res.status(400).json({ error: 'Testo del preventivo non valido (massimo 20000 caratteri).' });
+    const costoNumerico = Number(costo_mensile);
+    if (!Number.isFinite(costoNumerico) || costoNumerico < 0) return res.status(400).json({ error: 'Inserisci un prezzo valido.' });
     if ([titolo_documento, riga_data, destinatario_label, oggetto_label].some(value => value !== undefined && (typeof value !== 'string' || value.length > 200))) return res.status(400).json({ error: 'Testo dell’intestazione non valido.' });
     if (typeof ragione_sociale_prospect !== 'string' || !ragione_sociale_prospect.trim()) return res.status(400).json({ error: 'Inserisci il cliente o prospect.' });
     const appointmentId = appuntamento_id == null || appuntamento_id === '' ? null : Number(appuntamento_id);
@@ -104,7 +106,7 @@ exports.generatePreventivo = async (req, res) => {
       oggetto: oggetto || DEFAULT_CONTENT.oggetto,
       servizi: servizi_inclusi || DEFAULT_CONTENT.servizi_inclusi,
       tipo_prezzo: tipo_prezzo === 'Orario' ? 'orario' : 'mensile',
-      costo: `€ ${Number(costo_mensile).toLocaleString('it-IT', { minimumFractionDigits: 2 })}`,
+      costo: `€ ${costoNumerico.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       numero: numero_preventivo,
       data: dataItaliana
     };
@@ -150,6 +152,7 @@ exports.generatePreventivo = async (req, res) => {
           margin: [0, 5, 0, 5], fontSize: 14
         },
         { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: '#004aad' }], margin: [0, 0, 0, 20] },
+        ...(!corpo.includes('{{costo}}') ? [{ text: `Costo del servizio ${valoriTesto.tipo_prezzo}: ${valoriTesto.costo}`, bold: true, margin: [0, 0, 0, 14] }] : []),
         ...testoCompilato.split(/\n\s*\n/).filter(Boolean).map(paragrafo => ({ text: paragrafo.trim(), margin: [0, 0, 0, 14] }))
       ],
       footer: function(currentPage, pageCount) {

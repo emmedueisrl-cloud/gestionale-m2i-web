@@ -219,6 +219,7 @@ CREATE TABLE appuntamenti_preventivi (
     origine_pubblica INTEGER NOT NULL DEFAULT 0,
     numero_appuntamento INTEGER NOT NULL DEFAULT 1,
     appuntamento_precedente_id INTEGER,
+    data_ora_originale TEXT,
     agenda_impegno_id INTEGER,
     senza_orario INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -232,6 +233,8 @@ CREATE TABLE appuntamenti_note (
     testo TEXT NOT NULL,
     creata_il TEXT NOT NULL,
     autore TEXT NOT NULL DEFAULT '',
+    modificata_il TEXT,
+    modificata_da TEXT,
     visibile_pubblico INTEGER NOT NULL DEFAULT 1,
     tipo TEXT NOT NULL DEFAULT 'post'
 );

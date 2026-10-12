@@ -136,7 +136,7 @@ app.post('/api/public/appuntamenti/:token/:id/rifissa', async (req, res) => {
     if (!await publicAppuntamenti.isValid(req.params.token)) return res.status(404).json({ error: 'Link non valido.' });
     const result = await appuntamentiPreventivi.rebookPublic(req.params.id, req.body);
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
-    res.status(201).json(result);
+    res.status(200).json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
 app.use('/api', auth.requireAuth);
@@ -1304,6 +1304,13 @@ app.post('/api/appuntamenti-preventivi/:id/note', async (req, res) => {
     const note = await appuntamentiPreventivi.addInternalNote(req.params.id, req.body, req.authUser.email);
     if (!note) return res.status(404).json({ error: 'Appuntamento non trovato.' });
     res.status(201).json(note);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.put('/api/appuntamenti-preventivi/:id/note/:noteId', async (req, res) => {
+  try {
+    const note = await appuntamentiPreventivi.updatePostNote(req.params.id, req.params.noteId, req.body, req.authUser.email);
+    if (!note) return res.status(404).json({ error: 'Nota non trovata.' });
+    res.json(note);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
 app.delete('/api/appuntamenti-preventivi/:id/note-scheda', async (req, res) => {

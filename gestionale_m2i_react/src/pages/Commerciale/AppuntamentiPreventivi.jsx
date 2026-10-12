@@ -6,7 +6,7 @@ import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { notePostAppuntamento } from '../../utils/noteAppuntamento';
 
 const API = `${import.meta.env.VITE_API_URL || ''}/api/appuntamenti-preventivi`;
-const emptyForm = { dataOra: '', nominativo: '', referente: '', telefono: '', email: '', incaricato: '', luogo: '', note: '', stato: 'Programmato', esito: '' };
+const emptyForm = { dataOra: '', nominativo: '', referente: '', telefono: '', email: '', incaricato: '', attivita: '', luogo: '', note: '', stato: 'Programmato', esito: '', senzaOrario: false, marketing: false };
 const STATO_RICHIESTO_MARKETING = 'Richiesto da Marketing';
 const STATI = [STATO_RICHIESTO_MARKETING, 'Da svolgere', 'Passato', 'Programmato', 'Svolto', 'Annullato', 'Esitato'];
 
@@ -55,6 +55,7 @@ export default function AppuntamentiPreventivi() {
   const [publicToken, setPublicToken] = useState('');
   const [linkMessage, setLinkMessage] = useState('');
   const [notaTesto, setNotaTesto] = useState('');
+  const [notaInModifica, setNotaInModifica] = useState(null);
   const [notaError, setNotaError] = useState('');
   const [riferimenti, setRiferimenti] = useState(null);
   const [riferimentiError, setRiferimentiError] = useState('');
@@ -115,6 +116,18 @@ export default function AppuntamentiPreventivi() {
       const nota = await request(`${API}/${id}/note`, { method: 'POST', body: JSON.stringify({ testo: notaTesto }) });
       setAppuntamenti(previous => previous.map(item => item.id === id ? { ...item, noteStoriche: [...(item.noteStoriche || []), nota] } : item));
       setNotaTesto('');
+    } catch (err) { setNotaError(err.message); }
+    finally { setSaving(false); }
+  };
+
+  const salvaModificaNota = async event => {
+    event.preventDefault();
+    setSaving(true);
+    setNotaError('');
+    try {
+      const aggiornata = await request(`${API}/${notaInModifica.appuntamentoId}/note/${notaInModifica.id}`, { method: 'PUT', body: JSON.stringify({ testo: notaInModifica.testo }) });
+      setAppuntamenti(previous => previous.map(item => item.id === notaInModifica.appuntamentoId ? { ...item, noteStoriche: item.noteStoriche.map(note => note.id === aggiornata.id ? aggiornata : note) } : item));
+      setNotaInModifica(null);
     } catch (err) { setNotaError(err.message); }
     finally { setSaving(false); }
   };
@@ -194,7 +207,7 @@ export default function AppuntamentiPreventivi() {
 
   const rifissa = async event => {
     event.preventDefault();
-    if (rifissaForm.commercialeDipendenteId && typeof rifissaForm.inAgenda !== 'boolean') {
+      if (rifissaForm.commercialeDipendenteId && typeof rifissaForm.inAgenda !== 'boolean') {
       setActionError('Scegli se inserire l’appuntamento nell’Agenda Caposquadra.');
       return;
     }
@@ -273,24 +286,23 @@ export default function AppuntamentiPreventivi() {
       const notePost = notePostAppuntamento(a.note, a.noteStoriche);
       const inLavorazione = ['Programmato', 'Da svolgere', 'Passato'].includes(a.stato);
       return <article key={a.id} id={`appuntamento-${a.id}`} className={`rounded-xl border bg-slate-800 shadow-sm ${aperto ? 'border-indigo-500/50' : 'border-slate-700'}`}>
-        <div className="grid grid-cols-2 items-center gap-3 p-4 text-sm text-slate-100 lg:h-[76px] lg:grid-cols-[100px_170px_90px_210px_190px_150px_350px] lg:gap-2.5 lg:overflow-hidden">
+        <div className="grid grid-cols-2 items-center gap-3 p-4 text-sm text-slate-100 lg:min-h-[76px] lg:grid-cols-[100px_170px_90px_210px_190px_150px_430px] lg:gap-2.5">
           <span className="col-span-2 flex flex-col gap-0.5 whitespace-nowrap lg:col-span-1"><span className="flex items-center gap-1.5 text-indigo-200"><CalendarDays size={15} className="shrink-0 lg:hidden" />{a.dataOra.slice(0, 10).split('-').reverse().join('/')}</span><span className="flex items-center gap-1.5 text-slate-300"><Clock3 size={15} className="shrink-0 lg:hidden" />{a.senzaOrario ? 'In giornata' : data.time}</span></span>
           <strong className="col-span-2 min-w-0 break-words lg:col-span-1 lg:truncate" title={a.nominativo}>{a.nominativo}</strong>
           <span className="col-span-2 flex flex-wrap items-center gap-1 lg:col-span-1"><span className="mr-1 font-semibold text-slate-400 lg:hidden">Origine:</span><span className={`w-fit rounded px-2 py-0.5 text-[11px] font-bold ${a.marketing ? 'bg-fuchsia-500/20 text-fuchsia-200' : 'bg-slate-600/60 text-slate-200'}`}>{a.marketing ? 'Marketing' : 'Interno'}</span>{a.numeroAppuntamento > 1 && <span className="rounded bg-indigo-500/25 px-2 py-0.5 text-[11px] font-bold text-indigo-100">{a.numeroAppuntamento}° app</span>}</span>
           <span className="col-span-2 flex min-w-0 items-start gap-1.5 break-words text-slate-300 lg:col-span-1 lg:block lg:truncate" title={a.luogo || ''}><MapPin size={15} className="mt-0.5 shrink-0 lg:hidden" />{a.luogo || '—'}</span>
           <span className="col-span-2 min-w-0 break-words text-slate-300 lg:col-span-1 lg:truncate" title={a.incaricato || ''}><span className="mr-1 font-semibold text-slate-400 lg:hidden">Commerciale:</span>{a.incaricato || '—'}</span>
           <span className={`w-fit max-w-full rounded-full px-2 py-1 text-xs font-semibold lg:truncate ${a.stato === 'Svolto' ? 'bg-emerald-500/20 text-emerald-300' : a.stato === 'Annullato' ? 'bg-red-500/20 text-red-300' : a.stato === 'Esitato' ? 'bg-sky-500/20 text-sky-300' : a.stato === STATO_RICHIESTO_MARKETING ? 'bg-fuchsia-500/20 text-fuchsia-200' : a.stato === 'Passato' ? 'bg-slate-600/50 text-slate-200' : 'bg-amber-500/20 text-amber-300'}`}>{a.stato}</span>
-          <div className="col-span-2 flex flex-wrap items-center gap-1.5 lg:col-span-1 lg:flex-nowrap lg:justify-end">
+          <div className="col-span-2 flex flex-wrap items-center gap-1.5 lg:col-span-1 lg:justify-end">
             <button type="button" onClick={() => { setDettagliAperti(aperto ? null : a.id); setNotaTesto(''); setNotaError(''); }} aria-expanded={aperto} aria-label={`${aperto ? 'Chiudi' : 'Apri'} dettagli di ${a.nominativo}`} title="Dettagli, note e preventivi" className="rounded-lg bg-slate-700 p-2 text-slate-200 hover:bg-slate-600"><ChevronDown size={16} className={`transition-transform ${aperto ? 'rotate-180' : ''}`} /></button>
             <a href={`${API}/${a.id}/stampa`} target="_blank" rel="noreferrer" title="Apri scheda appuntamento e presentazione aziendale in PDF" className="flex items-center gap-1 rounded-lg bg-slate-700 px-2 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-600"><Printer size={15} /> Stampa</a>
             {a.stato === STATO_RICHIESTO_MARKETING ? <button type="button" onClick={() => apriAccettazione(a)} title="Accetta appuntamento" className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30"><Check size={15} /> Accetta</button> : inLavorazione && <>
               <button type="button" onClick={() => { setActionError(''); setEsitoForm({ id: a.id, esito: '' }); }} className="rounded-lg bg-emerald-500/20 px-2 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30">Esita</button>
-              <button type="button" onClick={() => { setActionError(''); setRifissaForm({ id: a.id, dataOra: a.dataOra, commercialeDipendenteId: a.commercialeDipendenteId || a.idCaposquadra, inAgenda: null }); }} className="rounded-lg bg-indigo-500/20 px-2 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30">Rifissa</button>
               <button type="button" onClick={() => annullaAppuntamento(a)} disabled={saving} className="rounded-lg bg-red-500/15 px-2 py-2 text-xs font-semibold text-red-200 hover:bg-red-500/25 disabled:opacity-50">Elimina</button>
             </>}
-            {a.agendaImpegnoId ? <Link to={`/admin/ore/agenda?dipendente=${encodeURIComponent(a.idCaposquadra || '')}&data=${a.dataOra.slice(0, 10)}`} title="Gestisci dall’agenda" aria-label={`Gestisci dall’agenda ${a.nominativo}`} className="rounded-lg bg-indigo-500/15 p-2 text-indigo-200 hover:bg-indigo-500/25"><CalendarDays size={16} /></Link> : inLavorazione && !a.marketing && <>
-              <button type="button" onClick={() => { setError(''); setForm({ ...a }); }} title="Modifica" aria-label={`Modifica ${a.nominativo}`} className="rounded-lg bg-indigo-500/15 p-2 text-indigo-200 hover:bg-indigo-500/25"><Pencil size={16} /></button>
-            </>}
+            <button type="button" onClick={() => { setActionError(''); setRifissaForm({ id: a.id, dataOra: a.dataOra, commercialeDipendenteId: a.commercialeDipendenteId || a.idCaposquadra, inAgenda: Boolean(a.agendaImpegnoId) }); }} className="rounded-lg bg-indigo-500/20 px-2 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/30">Rifissa</button>
+            {a.agendaImpegnoId && <Link to={`/admin/ore/agenda?dipendente=${encodeURIComponent(a.idCaposquadra || '')}&data=${a.dataOra.slice(0, 10)}`} title="Apri nell’agenda" aria-label={`Apri nell’agenda ${a.nominativo}`} className="rounded-lg bg-indigo-500/15 p-2 text-indigo-200 hover:bg-indigo-500/25"><CalendarDays size={16} /></Link>}
+            <button type="button" onClick={() => { setError(''); setForm({ ...a, marketing: Boolean(a.marketing), senzaOrario: Boolean(a.senzaOrario) }); }} title="Modifica" aria-label={`Modifica ${a.nominativo}`} className="rounded-lg bg-indigo-500/15 p-2 text-indigo-200 hover:bg-indigo-500/25"><Pencil size={16} /></button>
           </div>
         </div>
         {aperto && <div className="border-t border-slate-700 p-4">
@@ -302,10 +314,13 @@ export default function AppuntamentiPreventivi() {
         {a.attivita && <p className="mt-3 break-words text-sm text-slate-300"><strong>Attività:</strong> {a.attivita}</p>}
         <div className="mt-4 border-t border-slate-700 pt-3">
           <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Note appuntamento</h4>
-          {a.note ? <div className="mt-2 flex items-start justify-between gap-3 rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><p className="whitespace-pre-wrap break-words text-slate-200">{a.note}</p><button type="button" onClick={() => eliminaNota(a.id)} disabled={saving} className="shrink-0 rounded p-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50" title="Elimina nota appuntamento" aria-label="Elimina nota appuntamento"><Trash2 size={16} /></button></div> : <p className="mt-2 text-sm text-slate-500">Nessuna nota nella scheda appuntamento.</p>}
+          {a.note ? <div className="mt-2 flex items-start justify-between gap-3 rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><p className="whitespace-pre-wrap break-words text-slate-200">{a.note}</p><div className="flex shrink-0 gap-1"><button type="button" onClick={() => { setError(''); setForm({ ...a, marketing: Boolean(a.marketing), senzaOrario: Boolean(a.senzaOrario) }); }} disabled={saving} className="rounded p-1 text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50" title="Modifica nota appuntamento" aria-label="Modifica nota appuntamento"><Pencil size={16} /></button><button type="button" onClick={() => eliminaNota(a.id)} disabled={saving} className="rounded p-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50" title="Elimina nota appuntamento" aria-label="Elimina nota appuntamento"><Trash2 size={16} /></button></div></div> : <p className="mt-2 text-sm text-slate-500">Nessuna nota nella scheda appuntamento.</p>}
           <div className="mt-5 space-y-2 border-t border-slate-700 pt-4">
             <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">Note post appuntamento</h4>
-            {notePost.map(note => <div key={note.id} className="flex items-start justify-between gap-3 rounded-lg bg-slate-900/60 px-3 py-2 text-sm"><div><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{new Date(note.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>Autore: {note.autore || 'Marketing'}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p></div><button type="button" onClick={() => eliminaNota(a.id, note.id)} disabled={saving} className="shrink-0 rounded p-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50" title="Elimina nota post appuntamento" aria-label={`Elimina nota di ${note.autore || 'Marketing'} del ${new Date(note.creataIl).toLocaleDateString('it-IT')}`}><Trash2 size={16} /></button></div>)}
+            {notePost.map(note => <div key={note.id} className="flex items-start justify-between gap-3 rounded-lg bg-slate-900/60 px-3 py-2 text-sm">
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{new Date(note.creataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</time><span>Autore: {note.autore || 'Marketing'}</span></div><p className="mt-1 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p>{note.modificataIl && <p className="mt-1 text-xs text-slate-400">Modificata il {new Date(note.modificataIl).toLocaleString('it-IT', { timeZone: 'Europe/Rome' })} da {note.modificataDa}</p>}</div>
+              <div className="flex shrink-0 gap-1"><button type="button" onClick={() => { setNotaError(''); setNotaInModifica({ appuntamentoId: a.id, id: note.id, testo: note.testo }); }} disabled={saving} className="rounded p-1 text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50" title="Modifica nota" aria-label={`Modifica nota di ${note.autore || 'Marketing'}`}><Pencil size={16} /></button><button type="button" onClick={() => eliminaNota(a.id, note.id)} disabled={saving} className="rounded p-1 text-red-300 hover:bg-red-500/20 disabled:opacity-50" title="Elimina nota post appuntamento" aria-label={`Elimina nota di ${note.autore || 'Marketing'} del ${new Date(note.creataIl).toLocaleDateString('it-IT')}`}><Trash2 size={16} /></button></div>
+            </div>)}
             {notePost.length === 0 && <p className="text-sm text-slate-500">Nessuna nota post appuntamento.</p>}
           </div>
           <form onSubmit={event => salvaNota(event, a.id)} className="pt-4"><label className="block text-sm font-semibold text-slate-300">Aggiungi nota post appuntamento<textarea required maxLength={2000} rows={3} value={notaTesto} onChange={event => setNotaTesto(event.target.value)} placeholder="Scrivi una nota post appuntamento…" className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-slate-100" /></label><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-400">Data, ora e autore verranno registrati automaticamente.</span><button type="submit" disabled={saving || !notaTesto.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">Salva nota</button></div>{notaError && <p role="alert" className="mt-2 text-sm text-red-300">{notaError}</p>}</form>
@@ -351,8 +366,8 @@ export default function AppuntamentiPreventivi() {
         <span className="mr-1 text-sm font-semibold text-slate-300">Stato · metti prima:</span>
         {['Tutti', ...STATI].map(stato => <button key={stato} type="button" aria-pressed={statoInCima === stato} onClick={() => setStatoInCima(stato)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${statoInCima === stato ? 'border-indigo-400 bg-indigo-500/25 text-white' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{stato} <span className="text-xs opacity-75">{stato === 'Tutti' ? appuntamenti.length : appuntamenti.filter(a => a.stato === stato).length}</span></button>)}
       </div>
-      <div className="lg:overflow-x-auto"><div className="mx-auto w-full lg:min-w-[1350px] lg:max-w-[1360px]">
-        <div className="mb-2 hidden grid-cols-[100px_170px_90px_210px_190px_150px_350px] gap-2.5 px-4 text-xs font-bold uppercase tracking-wide text-slate-400 lg:grid"><span>Data e ora</span><span>Azienda</span><span>Origine</span><span>Via</span><span>Commerciale</span><span>Stato</span><span className="text-right">Azioni</span></div>
+      <div className="lg:overflow-x-auto"><div className="mx-auto w-full lg:min-w-[1450px] lg:max-w-[1460px]">
+        <div className="mb-2 hidden grid-cols-[100px_170px_90px_210px_190px_150px_430px] gap-2.5 px-4 text-xs font-bold uppercase tracking-wide text-slate-400 lg:grid"><span>Data e ora</span><span>Azienda</span><span>Origine</span><span>Via</span><span>Commerciale</span><span>Stato</span><span className="text-right">Azioni</span></div>
         {renderList(appuntamentiInOrdine, 'Nessun appuntamento.')}
       </div></div>
     </section>}
@@ -377,14 +392,29 @@ export default function AppuntamentiPreventivi() {
         {!form.id && <p className="text-sm text-slate-300">L’appuntamento sarà salvato solo in questa sezione, senza comparire nell’Agenda Caposquadra.</p>}
         {error && <p role="alert" className="rounded-lg bg-red-500/10 p-2 text-sm text-red-300">{error}</p>}
         <label className="block text-sm font-medium">Data e ora<input required type="datetime-local" value={form.dataOra} onChange={event => setForm({ ...form, dataOra: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(form.senzaOrario)} onChange={event => setForm({ ...form, senzaOrario: event.target.checked })} /> Senza orario preciso (in giornata)</label>
         <label className="block text-sm font-medium">Cliente o potenziale cliente<div className="relative mt-1"><UserRound size={17} className="absolute left-3 top-3 text-slate-400" /><input required maxLength={255} value={form.nominativo} onChange={event => setForm({ ...form, nominativo: event.target.value })} className="w-full rounded-lg border border-slate-600 bg-slate-900 p-2 pl-10" /></div></label>
         <label className="block text-sm font-medium">Referente<input maxLength={255} value={form.referente || ''} onChange={event => setForm({ ...form, referente: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Telefono<input type="tel" autoComplete="tel" maxLength={50} value={form.telefono || ''} onChange={event => setForm({ ...form, telefono: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Email<input type="email" autoComplete="email" maxLength={254} value={form.email || ''} onChange={event => setForm({ ...form, email: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
-        <label className="block text-sm font-medium">Chi lo svolge<input required maxLength={200} value={form.incaricato || ''} onChange={event => setForm({ ...form, incaricato: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
+        <label className="block text-sm font-medium">Chi lo svolge<input maxLength={200} value={form.incaricato || ''} onChange={event => setForm({ ...form, incaricato: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
+        {form.agendaImpegnoId && <p className="text-xs text-amber-200">Se cambi il commerciale con un nome diverso dal caposquadra assegnato, l’appuntamento verrà scollegato dall’Agenda Caposquadra.</p>}
+        <label className="block text-sm font-medium">Attività<input maxLength={300} value={form.attivita || ''} onChange={event => setForm({ ...form, attivita: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Luogo<input maxLength={500} value={form.luogo} onChange={event => setForm({ ...form, luogo: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
         <label className="block text-sm font-medium">Note<textarea rows={3} maxLength={2000} value={form.note} onChange={event => setForm({ ...form, note: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>
+        <label className="block text-sm font-medium">Stato<select value={form.stato} onChange={event => setForm({ ...form, stato: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2">{STATI.map(stato => <option key={stato} value={stato}>{stato}</option>)}</select></label>
+        {form.stato === 'Esitato' && <label className="block text-sm font-medium">Esito<textarea required rows={3} maxLength={2000} value={form.esito || ''} onChange={event => setForm({ ...form, esito: event.target.value })} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 p-2" /></label>}
+        {form.id && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(form.marketing)} onChange={event => setForm({ ...form, marketing: event.target.checked })} /> Visibile nel link Marketing</label>}
         <div className="flex justify-end gap-2"><button type="button" onClick={() => setForm(null)} disabled={saving} className="rounded-lg border border-slate-600 px-4 py-2 hover:bg-slate-700">Annulla</button><button type="submit" disabled={saving} className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-500 disabled:opacity-50">{saving ? 'Salvataggio...' : 'Salva'}</button></div>
+      </form>
+    </div>}
+
+    {notaInModifica && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" onMouseDown={() => { if (!saving) setNotaInModifica(null); }}>
+      <form onSubmit={salvaModificaNota} role="dialog" aria-modal="true" aria-label="Modifica nota" onMouseDown={event => event.stopPropagation()} className="w-full max-w-lg space-y-4 rounded-2xl border border-slate-700 bg-slate-800 p-5 text-slate-100 shadow-2xl">
+        <h2 className="text-xl font-bold">Modifica nota</h2>
+        <label className="block text-sm font-medium">Testo<textarea required maxLength={2000} rows={5} value={notaInModifica.testo} onChange={event => setNotaInModifica({ ...notaInModifica, testo: event.target.value })} className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 p-3" /></label>
+        {notaError && <p role="alert" className="text-sm text-red-300">{notaError}</p>}
+        <div className="flex justify-end gap-2"><button type="button" onClick={() => setNotaInModifica(null)} disabled={saving} className="rounded-lg border border-slate-600 px-4 py-2">Annulla</button><button type="submit" disabled={saving || !notaInModifica.testo.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold disabled:opacity-50">Salva nota</button></div>
       </form>
     </div>}
 
