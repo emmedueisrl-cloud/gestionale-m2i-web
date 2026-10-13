@@ -7,6 +7,7 @@ import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
 import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
+import DatiFatturazioneCliente, { campiFatturazioneCliente } from '../../components/clienti/DatiFatturazioneCliente';
 
 const dataOdiernaItaliana = () => {
   const parti = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -74,7 +75,8 @@ export default function NuovoCliente() {
     quotazioneTipo: 'Mensile',
     tipoTassazione: 'IVA',
     percentualeTassazione: '22',
-    tassazioneAltro: ''
+    tassazioneAltro: '',
+    ...Object.fromEntries(campiFatturazioneCliente.map(key => [key, '']))
   });
 
   useEffect(() => {
@@ -585,6 +587,8 @@ export default function NuovoCliente() {
             </div>
           </div>
         </section>
+
+        <DatiFatturazioneCliente dati={dati} handleChange={handleChange} />
 
         {/* Sezione Gestione Chiavi */}
         <section>

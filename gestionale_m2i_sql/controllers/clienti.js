@@ -4,6 +4,17 @@ const { knex, generaIDIncrementale, getVal } = require('../db');
 const { validaOutbound } = require('../operatori');
 const fs = require('fs');
 const path = require('path');
+const { CLIENT_FIELDS } = require('../fatturazione_anagrafiche');
+
+function datiFatturazione(dati) {
+  const result = {};
+  for (const field of Object.keys(CLIENT_FIELDS)) {
+    if (field.startsWith('fatturazione_') && Object.prototype.hasOwnProperty.call(dati, field)) {
+      result[field] = String(dati[field] ?? '').trim();
+    }
+  }
+  return result;
+}
 
 function validaDataCessazione(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
@@ -324,6 +335,7 @@ module.exports = {
         note_fisse_elaborato: getVal(dati, "noteFisseElaborato"),
         causale_fattura: String(getVal(dati, 'causaleFattura') || 'SERVIZIO DI PULIZIA').trim().slice(0, 300),
         periodo_causale_fattura: 'corrente',
+        ...datiFatturazione(dati),
         foto_servizio: JSON.stringify(getVal(dati, "fotoServizio") || []),
         possesso_chiavi: getVal(dati, "possessoChiavi") || "NO",
         copie: parseInt(getVal(dati, "copie"), 10) || 0,
@@ -463,6 +475,7 @@ module.exports = {
           note_fisse_elaborato: getVal(dati, "noteFisseElaborato"),
           causale_fattura: String(getVal(dati, 'causaleFattura') || 'SERVIZIO DI PULIZIA').trim().slice(0, 300),
           periodo_causale_fattura: 'corrente',
+          ...datiFatturazione(dati),
           foto_servizio: JSON.stringify(getVal(dati, "fotoServizio") || []),
           possesso_chiavi: getVal(dati, "possessoChiavi") || "NO",
           copie: parseInt(getVal(dati, "copie"), 10) || 0,

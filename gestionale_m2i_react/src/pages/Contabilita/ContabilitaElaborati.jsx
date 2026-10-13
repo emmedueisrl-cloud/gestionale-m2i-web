@@ -109,6 +109,18 @@ export default function ContabilitaElaborati({ tipo }) {
     finally { setBusy(false); }
   };
 
+  const saveAdjustment = async (row, importo) => {
+    setBusy(true); setError('');
+    try {
+      await workflowRequest('contabilita/fatture/rettifica', { method: 'PUT', body: JSON.stringify({
+        clienteId: row.idCliente, mese, anno, importo
+      }) });
+      await load();
+      showMessage('Rettifica della fattura salvata. Imponibile, imposta e totale aggiornati.');
+    } catch (err) { setError(err.message); throw err; }
+    finally { setBusy(false); }
+  };
+
   const invoicePayload = () => {
     const form = new FormData();
     form.append('clienteId', selected.idCliente);
@@ -289,7 +301,7 @@ export default function ContabilitaElaborati({ tipo }) {
     {error && <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-red-800">{error}</div>}
     {message?.section === sezioneAttiva && message.period === `${anno}-${mese}` && message.tipo === tipo && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-800">{message.text}</div>}
     <div className="flex flex-wrap items-center gap-3"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" />{tipo === 'cliente' && <><ImportaFattureArubaZip mese={mese} anno={anno} onChanged={async () => { setSezioneAttiva(1); await load(); }} /><GestioneFattureExtra mese={mese} anno={anno} gruppi={tuttiGruppiExtra} onChanged={load} /></>}</div>
-    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onSaveDescription={saveDescription} busy={busy} euro={euro} /> :
+    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} busy={busy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
     {selectedConsultant && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">

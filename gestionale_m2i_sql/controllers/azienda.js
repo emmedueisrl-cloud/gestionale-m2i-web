@@ -1,4 +1,5 @@
 const { knex } = require('../db');
+const { ISSUER_FIELDS } = require('../fatturazione_anagrafiche');
 
 module.exports = {
   async recuperaDatiAzienda() {
@@ -23,6 +24,11 @@ module.exports = {
       capitale_sociale: dati.capitaleSociale,
       codice_ateco: dati.codiceAteco
     };
+    for (const field of Object.keys(ISSUER_FIELDS)) {
+      if (field.startsWith('fatturazione_') && Object.prototype.hasOwnProperty.call(dati, field)) {
+        updateData[field] = String(dati[field] ?? '').trim();
+      }
+    }
 
     if (dati.timbro_path) {
       updateData.timbro_path = dati.timbro_path;

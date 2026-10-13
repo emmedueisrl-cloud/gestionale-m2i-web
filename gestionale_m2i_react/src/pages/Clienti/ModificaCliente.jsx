@@ -9,6 +9,7 @@ import FileUploader from '../../components/ui/FileUploader';
 import GestioneChiaviCliente from '../../components/clienti/GestioneChiaviCliente';
 import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
+import DatiFatturazioneCliente, { campiFatturazioneCliente } from '../../components/clienti/DatiFatturazioneCliente';
 
 function ModificaCliente() {
   const navigate = useNavigate();
@@ -82,7 +83,8 @@ function ModificaCliente() {
     quotazioneTipo: 'Mensile',
     tipoTassazione: 'IVA',
     percentualeTassazione: '22',
-    tassazioneAltro: ''
+    tassazioneAltro: '',
+    ...Object.fromEntries(campiFatturazioneCliente.map(key => [key, '']))
   });
 
   useEffect(() => {
@@ -173,7 +175,8 @@ function ModificaCliente() {
           quotazioneTipo: datiCliente.quotazione_tipo || 'Mensile',
           tipoTassazione: datiCliente.tipo_tassazione || 'IVA',
           percentualeTassazione: datiCliente.percentuale_tassazione !== null && datiCliente.percentuale_tassazione !== undefined ? datiCliente.percentuale_tassazione : '22',
-          tassazioneAltro: datiCliente.tassazione_altro || ''
+          tassazioneAltro: datiCliente.tassazione_altro || '',
+          ...Object.fromEntries(campiFatturazioneCliente.map(key => [key, datiCliente[key] || '']))
         });
         setFotoEsistenti(Array.isArray(datiCliente.foto_servizio) ? datiCliente.foto_servizio : []);
         setNuoveFoto([]);
@@ -735,6 +738,8 @@ function ModificaCliente() {
               </div>
             </div>
           </section>
+
+          <DatiFatturazioneCliente dati={dati} handleChange={handleChange} />
 
           {/* Sezione Gestione Chiavi */}
           <GestioneChiaviCliente 

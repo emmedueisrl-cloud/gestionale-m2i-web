@@ -10,7 +10,8 @@ const ImpostazioniLayout = () => {
     { path: '/admin/impostazioni/autodiagnosi', label: '🩺 Autodiagnosi' },
     { path: '/admin/impostazioni/operatori', label: '👥 Operatori' },
     { path: '/admin/impostazioni/backup', label: '💾 Backup Dati' },
-    { path: '/admin/impostazioni/utenti', label: '👤 Account Utenti' }
+    { path: '/admin/impostazioni/utenti', label: '👤 Account Utenti' },
+    { path: '/admin/impostazioni/caricamento-dati', label: '📄 Caricamento dati fatturazione' }
   ];
 
   return (

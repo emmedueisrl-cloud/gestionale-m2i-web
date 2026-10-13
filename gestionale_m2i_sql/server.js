@@ -30,6 +30,7 @@ const arubaZip = createArubaZipService(knex, workflowElaborati);
 const consulenteEmail = require('./consulente_email');
 const tableExport = require('./tabella_contabilita_export');
 const { ensureIndexes } = require('./db_indexes');
+const fatturazioneAnagrafiche = require('./fatturazione_anagrafiche');
 const autodiagnosi = require('./autodiagnosi');
 const operatori = require('./operatori');
 
@@ -208,6 +209,20 @@ const requireAdmin = (req, res, next) => {
   if (req.authUser?.role !== 'admin') return res.status(403).json({ error: 'Permesso amministratore richiesto.' });
   next();
 };
+
+const uploadAnagrafiche = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 30 * 1024 * 1024, files: 100, parts: 130 },
+  fileFilter: (_req, file, cb) => cb(null, /\.(xml|zip)$/i.test(file.originalname || ''))
+});
+app.get('/api/fatturazione-anagrafiche/stato', requireAdmin, handleWorkflow(() => fatturazioneAnagrafiche.status(knex), 'Stato anagrafiche fatturazione'));
+app.post('/api/fatturazione-anagrafiche/anteprima', requireAdmin, uploadAnagrafiche.array('files', 100), handleWorkflow(async req =>
+  fatturazioneAnagrafiche.preview(knex, await fatturazioneAnagrafiche.readFiles(req.files), JSON.parse(req.body.mappings || '{}')), 'Anteprima anagrafiche XML'));
+app.post('/api/fatturazione-anagrafiche/importa', requireAdmin, uploadAnagrafiche.array('files', 100), handleWorkflow(async req => {
+  let options;
+  try { options = JSON.parse(req.body.options || '{}'); } catch { throw new Error('Scelte di importazione non valide.'); }
+  return fatturazioneAnagrafiche.apply(knex, await fatturazioneAnagrafiche.readFiles(req.files), options);
+}, 'Importazione anagrafiche XML'));
 
 app.get('/api/autodiagnosi', requireAdmin, async (req, res) => {
   try {
@@ -410,6 +425,8 @@ app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
 app.put('/api/contabilita/fatture/descrizione', handleWorkflow(req =>
   descrizioniFatture.save(knex, req.body || {})));
+app.put('/api/contabilita/fatture/rettifica', handleWorkflow(req =>
+  workflowElaborati.saveInvoiceAdjustment({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWorkflow(req =>
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));
@@ -1487,6 +1504,7 @@ Promise.resolve().then(async () => {
   await preventiviProforme.ensureTable();
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
+  await fatturazioneAnagrafiche.ensureColumns(knex);
   await descrizioniFatture.initialize(knex);
   await workflowElaborati.initialize();
   await serviziExtra.initialize();

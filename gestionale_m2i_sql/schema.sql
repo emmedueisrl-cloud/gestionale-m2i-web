@@ -54,7 +54,7 @@ CREATE TABLE clienti (
     note TEXT,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,
     creato_da TEXT
-, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text, causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA', periodo_causale_fattura TEXT NOT NULL DEFAULT 'corrente');
+, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text, causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA', periodo_causale_fattura TEXT NOT NULL DEFAULT 'corrente', fatturazione_paese TEXT, fatturazione_id_paese_iva TEXT, fatturazione_natura TEXT, fatturazione_riferimento_normativo TEXT, fatturazione_esigibilita_iva TEXT, fatturazione_tipo_ritenuta TEXT, fatturazione_aliquota_ritenuta TEXT, fatturazione_causale_pagamento TEXT, fatturazione_modalita_pagamento TEXT);
 
 CREATE TABLE clienti_periodi_attivita (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -523,7 +523,19 @@ CREATE TABLE m2i_azienda_dati (
       amministratore_unico TEXT,
       capitale_sociale TEXT,
       codice_ateco TEXT,
-      timbro_path TEXT
+      timbro_path TEXT,
+      fatturazione_indirizzo TEXT,
+      fatturazione_cap TEXT,
+      fatturazione_citta TEXT,
+      fatturazione_provincia TEXT,
+      fatturazione_paese TEXT,
+      fatturazione_id_paese_iva TEXT,
+      fatturazione_regime TEXT,
+      fatturazione_iban TEXT,
+      fatturazione_ufficio_rea TEXT,
+      fatturazione_numero_rea TEXT,
+      fatturazione_socio_unico TEXT,
+      fatturazione_stato_liquidazione TEXT
     );
 
 CREATE TABLE m2i_azienda_documenti (
@@ -575,6 +587,16 @@ CREATE TABLE righe_bloccate_elaborati (
   tipo TEXT NOT NULL, mese INTEGER NOT NULL, anno INTEGER NOT NULL,
   soggetto_id TEXT NOT NULL, snapshot TEXT NOT NULL, bloccata_at TEXT NOT NULL,
   PRIMARY KEY (tipo, mese, anno, soggetto_id)
+);
+
+CREATE TABLE rettifiche_fatturazione_mensili (
+  cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE RESTRICT,
+  mese INTEGER NOT NULL, anno INTEGER NOT NULL,
+  prezzo_cent INTEGER NOT NULL, rettifica_cent INTEGER NOT NULL,
+  imponibile_cent INTEGER NOT NULL, iva_cent INTEGER NOT NULL,
+  ritenuta_cent INTEGER NOT NULL, totale_cent INTEGER NOT NULL,
+  tipo_tassazione TEXT NOT NULL, modificato_at TEXT NOT NULL,
+  PRIMARY KEY (cliente_id, mese, anno)
 );
 
 CREATE TABLE fatture_aruba_elaborati (

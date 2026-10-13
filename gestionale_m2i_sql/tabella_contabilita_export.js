@@ -25,21 +25,28 @@ function tableData(tipo, section, rows, buste, mese, anno, extraGroups = []) {
       : !group.inviataAt && !group.fatturaRegistrazioneId));
     return {
       period, section: index ? 'Fatture elaborate' : 'Fatture da elaborare',
-      columns: ['Cliente (ragione sociale)', 'Totale imponibile', 'R. FIS.', 'Tassa', 'Totale fattura', 'Note'],
-      widths: [36, 19, 10, 16, 19, 65],
+      columns: ['Cliente (ragione sociale)', 'Prezzo servizio', 'Rettifica +/-', 'Imponibile', 'R. FIS.', 'IVA / ritenuta', 'Totale fattura', 'Descrizione', 'Note'],
+      widths: [28, 16, 15, 16, 9, 20, 16, 40, 45],
       rows: [...filtered.map(row => {
         const regime = String(row.tipoTassazione || 'IVA').trim().toUpperCase();
-        const tax = Number.isFinite(Number(row.importoTassa)) ? Number(row.importoTassa) : Number(row.importoTotale || 0) - Number(row.imponibile || 0);
-        return [row.ragioneSociale || '', euro(row.imponibile), regime === 'REVERSE CHARGE' ? 'R.G' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
-          euro(tax), euro(row.importoTotale), notes(row, [['notaFissa', 'Nota fissa'], ['notaMensile', 'Nota del mese']])];
+        const tax = row.importoIva != null && Number.isFinite(Number(row.importoIva)) ? Number(row.importoIva)
+          : Number.isFinite(Number(row.importoTassa)) ? Number(row.importoTassa) : Number(row.importoTotale || 0) - Number(row.imponibile || 0);
+        const correction = Number(row.rettificaFatturazione) || 0;
+        return [row.ragioneSociale || '', euro(row.prezzoServizio ?? row.imponibile),
+          `${correction > 0 ? '+' : ''}${euro(correction)}`, euro(row.imponibile),
+          regime === 'REVERSE CHARGE' ? 'R.G' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
+          `${euro(tax)}${Number(row.importoRitenuta) > 0 ? `\nRitenuta -${euro(row.importoRitenuta)}` : ''}`,
+          euro(row.importoTotale), row.descrizioneFattura || '',
+          notes(row, [['notaFissa', 'Nota fissa'], ['notaMensile', 'Nota del mese']])];
       }), ...visibleExtras.map(group => {
         const regime = String(group.tipoTassazione || 'IVA').trim().toUpperCase();
         const imponibile = Number(group.imponibileExtra) || 0;
         const totale = Number(group.totaleExtraPrevisto) || 0;
         const label = group.tipo === 'mensile' ? 'Quota extra unita al mensile (non è una fattura separata)' : 'Fattura extra separata';
-        return [group.clienteNome || group.clienteId, euro(imponibile),
+        return [group.clienteNome || group.clienteId, euro(imponibile), euro(0), euro(imponibile),
           regime === 'REVERSE CHARGE' ? 'R.G' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
-          euro(totale - imponibile), euro(totale), `${label}: ${group.nomiServizi?.join(', ') || group.nome}`];
+          euro(totale - imponibile), euro(totale), group.descrizioneFattura || '',
+          `${label}: ${group.nomiServizi?.join(', ') || group.nome}`];
       })]
     };
   }

@@ -53,6 +53,7 @@ const ImpostazioniLayout = lazy(() => import('./pages/Impostazioni/ImpostazioniL
 const LogSistema = lazy(() => import('./pages/Impostazioni/LogSistema'));
 const BackupSistema = lazy(() => import('./pages/Impostazioni/BackupSistema'));
 const Utenti = lazy(() => import('./pages/Impostazioni/Utenti'));
+const CaricamentoDati = lazy(() => import('./pages/Impostazioni/CaricamentoDati'));
 const Autodiagnosi = lazy(() => import('./pages/Impostazioni/Autodiagnosi'));
 const Operatori = lazy(() => import('./pages/Impostazioni/Operatori'));
 const ContabilitaElaborati = lazy(() => import('./pages/Contabilita/ContabilitaElaborati'));
@@ -137,6 +138,7 @@ function App() {
           <Route path="operatori" element={<Operatori />} />
           <Route path="backup" element={<BackupSistema />} />
           <Route path="utenti" element={<Utenti />} />
+          <Route path="caricamento-dati" element={<CaricamentoDati />} />
         </Route>
 
         {/* Tutte le altre route per ora mostrano "In costruzione" */}

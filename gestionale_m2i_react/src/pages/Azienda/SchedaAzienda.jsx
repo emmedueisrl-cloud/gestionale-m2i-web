@@ -35,7 +35,11 @@ export default function SchedaAzienda() {
     codiceAteco: '',
     timbro_path: '',
     legaleRappresentante: '',
-    indirizzoRappresentante: ''
+    indirizzoRappresentante: '',
+    fatturazione_indirizzo: '', fatturazione_cap: '', fatturazione_citta: '',
+    fatturazione_provincia: '', fatturazione_paese: '', fatturazione_id_paese_iva: '', fatturazione_regime: '',
+    fatturazione_iban: '', fatturazione_ufficio_rea: '', fatturazione_numero_rea: '',
+    fatturazione_socio_unico: '', fatturazione_stato_liquidazione: ''
   });
   
   const [documenti, setDocumenti] = useState([]);
@@ -67,7 +71,8 @@ export default function SchedaAzienda() {
           amministratoreUnico: resDati.amministratore_unico || '',
           capitaleSociale: resDati.capitale_sociale || '',
           codiceAteco: resDati.codice_ateco || '',
-          timbro_path: resDati.timbro_path || ''
+          timbro_path: resDati.timbro_path || '',
+          ...Object.fromEntries(['fatturazione_indirizzo', 'fatturazione_cap', 'fatturazione_citta', 'fatturazione_provincia', 'fatturazione_paese', 'fatturazione_id_paese_iva', 'fatturazione_regime', 'fatturazione_iban', 'fatturazione_ufficio_rea', 'fatturazione_numero_rea', 'fatturazione_socio_unico', 'fatturazione_stato_liquidazione'].map(key => [key, resDati[key] || '']))
         });
       }
       const resDocs = await recuperaDocumentiAzienda();
@@ -272,6 +277,22 @@ export default function SchedaAzienda() {
                 <label className="block text-sm font-medium text-slate-300 mb-1">Telefono Aziendale</label>
                 <input type="text" name="telefono" value={dati.telefono} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200" />
               </div>
+            </div>
+          </div>
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6">
+            <h2 className="mb-4 font-bold text-slate-100">Dati fatturazione elettronica M2I</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                ['fatturazione_indirizzo', 'Indirizzo fiscale'], ['fatturazione_cap', 'CAP'],
+                ['fatturazione_citta', 'Comune'], ['fatturazione_provincia', 'Provincia'],
+                ['fatturazione_paese', 'Paese (es. IT)'], ['fatturazione_id_paese_iva', 'Paese partita IVA (es. IT)'],
+                ['fatturazione_regime', 'Regime fiscale (es. RF01)'],
+                ['fatturazione_iban', 'IBAN incasso'], ['fatturazione_ufficio_rea', 'Ufficio REA'],
+                ['fatturazione_numero_rea', 'Numero REA'], ['fatturazione_socio_unico', 'Socio unico'],
+                ['fatturazione_stato_liquidazione', 'Stato liquidazione']
+              ].map(([key, label]) => <label key={key} className="text-sm text-slate-300">{label}
+                <input name={key} value={dati[key] || ''} onChange={handleChange} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/50 p-2 text-slate-100" />
+              </label>)}
             </div>
           </div>
         </div>

@@ -23,7 +23,7 @@ before(async () => {
     { id: 'C_SENT', ragione_sociale: 'Inviata', partita_iva: 'TEST_SENT' },
     { id: 'C_REGISTERED', ragione_sociale: 'Registrata', partita_iva: 'TEST_REGISTERED' }
   ]);
-  for (const [mese, anno] of [[8, 2026], [9, 2026], [10, 2026], [11, 2026]]) {
+  for (const [mese, anno] of [[7, 2026], [8, 2026], [9, 2026], [10, 2026], [11, 2026]]) {
     for (const [id, name] of [['C_PENDING', 'Da elaborare'], ['C_SENT', 'Inviata'], ['C_REGISTERED', 'Registrata']]) {
       await knex('righe_bloccate_elaborati').insert({ tipo: 'cliente', mese, anno, soggetto_id: id,
         snapshot: JSON.stringify({ idCliente: id, ragioneSociale: name, imponibile: 100, importoTotale: 100 }),
@@ -32,6 +32,37 @@ before(async () => {
   }
 });
 after(() => knex.destroy());
+
+test('rettifica firmata del mese ricalcola IVA e totale e non modifica fatture inviate', async () => {
+  const maggiorazione = await workflow.saveInvoiceAdjustment({ mese: 7, anno: 2026, clienteId: 'C_PENDING', importo: '10,00' });
+  assert.equal(maggiorazione.prezzoServizio, 100);
+  assert.equal(maggiorazione.imponibile, 110);
+  assert.equal(maggiorazione.importoIva, 24.2);
+  assert.equal(maggiorazione.importoTotale, 134.2);
+  const row = (await workflow.accountingRows('cliente', 7, 2026)).find(item => item.idCliente === 'C_PENDING');
+  assert.equal(row.rettificaFatturazione, 10);
+  assert.equal(row.importoTotale, 134.2);
+  const detrazione = await workflow.saveInvoiceAdjustment({ mese: 7, anno: 2026, clienteId: 'C_PENDING', importo: '-10.00' });
+  assert.equal(detrazione.imponibile, 90);
+  assert.equal(detrazione.importoTotale, 109.8);
+  await workflow.markInvoiceSent({ mese: 7, anno: 2026, clienteId: 'C_SENT' });
+  await assert.rejects(() => workflow.saveInvoiceAdjustment({ mese: 7, anno: 2026, clienteId: 'C_SENT', importo: '5' }), /già inviata/);
+  await workflow.saveInvoiceAdjustment({ mese: 7, anno: 2026, clienteId: 'C_PENDING', importo: '' });
+  assert.equal(await knex('rettifiche_fatturazione_mensili').where({ cliente_id: 'C_PENDING', mese: 7, anno: 2026 }).first(), undefined);
+});
+
+test('la rettifica usa reverse charge e aliquota ritenuta della scheda cliente', async () => {
+  await knex('clienti').where({ id: 'C_REGISTERED' }).update({ tipo_tassazione: 'REVERSE CHARGE' });
+  const reverse = await workflow.saveInvoiceAdjustment({ mese: 7, anno: 2026, clienteId: 'C_REGISTERED', importo: '10' });
+  assert.equal(reverse.importoIva, 0);
+  assert.equal(reverse.importoTotale, 110);
+  await knex('clienti').where({ id: 'C_PENDING' }).update({ tipo_tassazione: 'TRAT. ACC.', percentuale_tassazione: 4,
+    fatturazione_aliquota_ritenuta: '4' });
+  const ritenuta = await workflow.saveInvoiceAdjustment({ mese: 7, anno: 2026, clienteId: 'C_PENDING', importo: '10' });
+  assert.equal(ritenuta.importoIva, 24.2);
+  assert.equal(ritenuta.importoRitenuta, 4.4);
+  assert.equal(ritenuta.importoTotale, 129.8);
+});
 
 test('la riga da elaborare si sblinda, anche se un altro cliente ha una fattura inviata', async () => {
   await workflow.markInvoiceSent({ mese: 8, anno: 2026, clienteId: 'C_SENT' });

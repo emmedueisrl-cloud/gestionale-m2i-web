@@ -56,7 +56,7 @@ test('servizio extra: dipendenti facoltativi, nota, blindatura e fattura Aruba s
   assert.equal(pendingGroup.tuttiBlindati, false);
   const printable = tableData('cliente', 0, [], [], 10, 2026, [pendingGroup]);
   assert.equal(printable.rows.length, 1);
-  assert.match(printable.rows[0][5], /Fattura extra separata: Sgrosso/);
+  assert.match(printable.rows[0][8], /Fattura extra separata: Sgrosso/);
   const work = { dipendenteId: 'D1', modalita: 'solo_nota', compenso: '50',
     giornate: [{ data: '2026-10-12', ore: 3 }] };
   await service.save({ ...input, id: created.id, gruppoId: created.gruppoId, lavori: [work] });

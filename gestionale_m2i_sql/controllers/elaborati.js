@@ -461,6 +461,7 @@ module.exports = {
       await trx('mesi_chiusi_clienti').where({ mese, anno }).del();
       await trx('dettaglio_mesi_chiusi_clienti').where({ mese, anno }).del();
       await trx('righe_bloccate_elaborati').where({ tipo: 'cliente', mese, anno }).del();
+      await trx('rettifiche_fatturazione_mensili').where({ mese, anno }).del();
     });
     await knex('log_attivita').insert({
       categoria: "Elaborati", icona: "🔓", colore: "#f59e0b",
