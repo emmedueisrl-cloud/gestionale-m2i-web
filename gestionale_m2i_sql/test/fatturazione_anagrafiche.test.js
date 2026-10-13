@@ -3,13 +3,13 @@ const assert = require('node:assert/strict');
 const knexFactory = require('knex');
 const importer = require('../fatturazione_anagrafiche');
 
-function xml({ taxCode = '90097800586', address = 'VIA NUOVA 3', civic = '' } = {}) {
+function xml({ taxCode = '90097800586', address = 'VIA NUOVA 3', civic = '', name = 'CLIENTE APS' } = {}) {
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
   <p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
     <FatturaElettronicaHeader>
       <DatiTrasmissione><CodiceDestinatario>0000000</CodiceDestinatario><PECDestinatario>cliente@pec.it</PECDestinatario></DatiTrasmissione>
       <CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>15989811003</IdCodice></IdFiscaleIVA><CodiceFiscale>15989811003</CodiceFiscale><Anagrafica><Denominazione>M2I SRL</Denominazione></Anagrafica><RegimeFiscale>RF01</RegimeFiscale></DatiAnagrafici><Sede><Indirizzo>VIA VECCHIA 9</Indirizzo><CAP>00118</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CedentePrestatore>
-      <CessionarioCommittente><DatiAnagrafici><CodiceFiscale>${taxCode}</CodiceFiscale><Anagrafica><Denominazione>CLIENTE APS</Denominazione></Anagrafica></DatiAnagrafici><Sede><Indirizzo>${address}</Indirizzo>${civic ? `<NumeroCivico>${civic}</NumeroCivico>` : ''}<CAP>00100</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CessionarioCommittente>
+      <CessionarioCommittente><DatiAnagrafici><CodiceFiscale>${taxCode}</CodiceFiscale><Anagrafica><Denominazione>${name}</Denominazione></Anagrafica></DatiAnagrafici><Sede><Indirizzo>${address}</Indirizzo>${civic ? `<NumeroCivico>${civic}</NumeroCivico>` : ''}<CAP>00100</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CessionarioCommittente>
     </FatturaElettronicaHeader>
     <FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>2026-09-30</Data><Numero>1</Numero></DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA><ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo></DatiBeniServizi><DatiPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento></DettaglioPagamento></DatiPagamento></FatturaElettronicaBody>
   </p:FatturaElettronica>`);
@@ -104,5 +104,29 @@ test('salva separatamente il civico se presente come elemento distinto nell’XM
     assert.equal(saved.civico_sede, '5');
     const field = (await importer.preview(db, invoices)).customers[0].fields.find(f => f.field === 'civico_sede');
     assert.equal(field.stato, 'uguale');
+  } finally { await db.destroy(); }
+});
+
+test('nomi diversi negli XML conservano il nome della scheda, salvo scelta esplicita', async () => {
+  const db = await setup();
+  try {
+    const invoices = [
+      ...await importer.parseXml(xml({ name: 'CONDOMINIO' }), 'uno.xml'),
+      ...await importer.parseXml(xml({ name: 'CONDOMINIO PELLINI' }), 'due.xml')
+    ];
+    const customer = (await importer.preview(db, invoices)).customers[0];
+    assert.equal(customer.name, 'CLIENTE APS');
+    assert.deepEqual(customer.internal[0].values, ['CONDOMINIO', 'CONDOMINIO PELLINI']);
+    assert.equal(customer.internal[0].current, 'CLIENTE APS');
+
+    const first = await importer.apply(db, invoices);
+    assert.equal(first.unresolved.filter(item => item.key === customer.key).length, 0);
+    assert.equal((await db('clienti').where({ id: 'C1' }).first()).ragione_sociale, 'CLIENTE APS');
+
+    const second = await importer.apply(db, invoices, {
+      resolutions: { [customer.key]: { ragione_sociale: 'xml:1' } }
+    });
+    assert.equal(second.unresolved.filter(item => item.key === customer.key).length, 0);
+    assert.equal((await db('clienti').where({ id: 'C1' }).first()).ragione_sociale, 'CONDOMINIO PELLINI');
   } finally { await db.destroy(); }
 });

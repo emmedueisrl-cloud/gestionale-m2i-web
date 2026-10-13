@@ -31,6 +31,8 @@ const consulenteEmail = require('./consulente_email');
 const tableExport = require('./tabella_contabilita_export');
 const { ensureIndexes } = require('./db_indexes');
 const fatturazioneAnagrafiche = require('./fatturazione_anagrafiche');
+const { createArubaExport } = require('./fatture_aruba_export');
+const arubaExport = createArubaExport(knex, workflowElaborati, serviziExtra);
 const autodiagnosi = require('./autodiagnosi');
 const operatori = require('./operatori');
 
@@ -423,6 +425,20 @@ app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/ore-abbinate/:i
   employeeCostReport.deletePairedHours({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
 app.post('/api/contabilita/fatture/inviata', handleWorkflow(req =>
   workflowElaborati.markInvoiceSent({ ...req.body, userId: req.authUser.id })));
+app.post('/api/contabilita/fatture/export-aruba/anteprima', handleWorkflow(async req => {
+  const result = await arubaExport.prepare(req.body || {});
+  return { count: result.invoices.length, errors: result.errors, issuerAddress: result.issuerAddress,
+    invoices: result.invoices.map(({ key, client, number }) => ({ key, client, number })) };
+}));
+app.post('/api/contabilita/fatture/export-aruba/scarica', async (req, res) => {
+  try {
+    const result = await arubaExport.download(req.body || {});
+    res.setHeader('Cache-Control', 'no-store');
+    if (result.errors) return res.status(422).json({ error: 'Correggi le fatture segnalate prima di scaricare gli XML.', errors: result.errors });
+    res.type('application/zip').setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    res.send(result.buffer);
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 app.put('/api/contabilita/fatture/descrizione', handleWorkflow(req =>
   descrizioniFatture.save(knex, req.body || {})));
 app.put('/api/contabilita/fatture/rettifica', handleWorkflow(req =>

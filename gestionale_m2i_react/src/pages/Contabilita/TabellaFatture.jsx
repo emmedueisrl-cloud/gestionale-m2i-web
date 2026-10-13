@@ -22,7 +22,7 @@ const regimeBreve = value => {
   return regime;
 };
 
-export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onSaveDescription, onSaveAdjustment, busy, euro }) {
+export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onSaveDescription, onSaveAdjustment, selectedKeys = [], onSelect, busy, euro }) {
   const [detailsRow, setDetailsRow] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [draftDescription, setDraftDescription] = useState('');
@@ -44,12 +44,13 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
     </div>
     <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-sm">
       <table className="w-full min-w-[1350px] table-fixed border-collapse text-center text-[13px] text-slate-800">
-        <colgroup>{columns.map(([label, width]) => <col key={label} style={{ width }} />)}</colgroup>
+        <colgroup>{!elaborate && <col style={{ width: '4%' }} />}{columns.map(([label, width]) => <col key={label} style={{ width }} />)}</colgroup>
         <thead className="bg-slate-100 text-slate-900"><tr>
+          {!elaborate && <th scope="col" className="border-b border-r border-slate-300 px-2 py-3">Seleziona</th>}
           {columns.map(([label]) => <th key={label} scope="col" className="whitespace-pre-line border-b border-r border-slate-300 px-2 py-3 align-middle font-semibold uppercase last:border-r-0">{label}</th>)}
         </tr></thead>
         <tbody className="text-[17px] leading-snug">
-          {!righe.length && <tr><td colSpan={columns.length} className="px-4 py-6 text-center text-sm text-slate-600">{vuoto}</td></tr>}
+          {!righe.length && <tr><td colSpan={columns.length + (elaborate ? 0 : 1)} className="px-4 py-6 text-center text-sm text-slate-600">{vuoto}</td></tr>}
           {righe.map((row, index) => {
             const fatture = row.fatture || [];
             const totale = Number(row.importoTotale) || 0;
@@ -63,7 +64,11 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
               ? (index % 2 ? 'bg-green-400' : 'bg-emerald-200')
               : (index % 2 ? 'bg-sky-200' : 'bg-white');
             const paroleNome = String(row.ragioneSociale || '').trim().split(/\s+/);
+            const selectionKey = row.gruppoExtraId ? `extra:${row.gruppoExtraId}` : `cliente:${row.idCliente}`;
+            const selectable = !row.rigaExtra && !registered && !row.fatturaInviataAt &&
+              (!row.gruppoExtraId || row.gruppoExtraTipo === 'extra' && row.tuttiBlindati);
             return <tr key={row.gruppoExtraId || row.idCliente} className={`${rowColor} h-24`}>
+              {!elaborate && <td className={cell}><input type="checkbox" aria-label={`Seleziona fattura di ${row.ragioneSociale}`} title={row.gruppoExtraTipo === 'mensile' ? 'Incluso nella fattura mensile del cliente' : !selectable ? 'Fattura non pronta per l’esportazione' : 'Seleziona per Aruba'} checked={selectedKeys.includes(selectionKey)} disabled={!selectable || busy} onChange={event => onSelect(selectionKey, event.target.checked)} className="h-5 w-5 accent-indigo-700" /></td>}
               <td className={`${cell} break-words`}>
                 <div className="max-h-24 overflow-y-auto">
                 <div className="font-semibold text-slate-900"><span className="text-[17px]">{paroleNome.slice(0, 3).join(' ')}</span>{paroleNome.length > 3 && <> <span>{paroleNome.slice(3).join(' ')}</span></>}</div>

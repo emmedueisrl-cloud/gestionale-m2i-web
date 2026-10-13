@@ -50,6 +50,12 @@ export default function ContabilitaElaborati({ tipo }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [selectedExportKeys, setSelectedExportKeys] = useState([]);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportDate, setExportDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [firstInvoiceNumber, setFirstInvoiceNumber] = useState('');
+  const [exportPreview, setExportPreview] = useState(null);
+  const [exportError, setExportError] = useState('');
   const base = import.meta.env.VITE_API_URL || '';
   const exportUrl = formato => `${base}/api/contabilita/tabella/${tipo}/${sezioneAttiva}/${anno}/${mese}.${formato}`;
   const showMessage = text => setMessage({ text, section: sezioneAttiva, period: `${anno}-${mese}`, tipo });
@@ -73,6 +79,7 @@ export default function ContabilitaElaborati({ tipo }) {
     catch (err) { setError(err.message); }
   }, [tipo, mese, anno]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setSelectedExportKeys([]); setExportOpen(false); setExportPreview(null); }, [tipo, mese, anno]);
 
   const openInvoice = (row, registration = null) => {
     setSelected(row);
@@ -229,6 +236,46 @@ export default function ContabilitaElaborati({ tipo }) {
     vuoto: searchTerm ? 'Nessun cliente o numero fattura corrisponde alla ricerca.' : gruppi[sezioneAttiva].vuoto
   } : null;
   const visibleEmployees = rows.filter(matchesEmployee);
+  const exportKey = row => row.gruppoExtraId ? `extra:${row.gruppoExtraId}` : `cliente:${row.idCliente}`;
+  const selectableForExport = row => !row.rigaExtra && !row.fatture?.length && !row.documentiAruba?.length &&
+    !row.fatturaInviataAt && (!row.gruppoExtraId || row.gruppoExtraTipo === 'extra' && row.tuttiBlindati);
+  const visibleExportKeys = tipo === 'cliente' && sezioneAttiva === 0
+    ? visibleGroup.righe.filter(selectableForExport).map(exportKey) : [];
+  const selectedCurrentKeys = selectedExportKeys.filter(key => gruppi[0]?.righe.some(row => exportKey(row) === key && selectableForExport(row)));
+  const setExportSelection = (key, checked) => {
+    setSelectedExportKeys(previous => checked ? [...new Set([...previous, key])] : previous.filter(item => item !== key));
+    setExportPreview(null);
+  };
+  const exportPayload = () => ({ mese, anno, keys: selectedCurrentKeys, data: exportDate, primoNumero: firstInvoiceNumber.trim() });
+  const previewExport = async event => {
+    event.preventDefault(); setBusy(true); setExportError(''); setExportPreview(null);
+    try { setExportPreview(await workflowRequest('contabilita/fatture/export-aruba/anteprima', {
+      method: 'POST', body: JSON.stringify(exportPayload()) })); }
+    catch (err) { setExportError(err.message); }
+    finally { setBusy(false); }
+  };
+  const downloadExport = async () => {
+    setBusy(true); setExportError('');
+    try {
+      const response = await fetch(`${base}/api/contabilita/fatture/export-aruba/scarica`, {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exportPayload()) });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        if (result.errors) setExportPreview({ count: 0, errors: result.errors });
+        throw new Error(result.error || `Download non riuscito (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = `Fatture_Aruba_${anno}_${String(mese).padStart(2, '0')}.zip`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setExportOpen(false);
+      showMessage(`${selectedCurrentKeys.length} XML scaricati nello ZIP. Estrai i file XML e caricali su Aruba dopo aver verificato numeri e importi.`);
+    } catch (err) { setExportError(err.message); }
+    finally { setBusy(false); }
+  };
   const visiblePayroll = buste.filter(busta => !searchTerm || `${busta.cognome || ''} ${busta.nome || ''}`.toLocaleLowerCase('it-IT').includes(searchTerm));
   const totaleGruppo = gruppo => gruppo.righe.reduce((sum, row) => sum + (Number(row.importoTotale) || 0), 0);
   const riepilogoPaghe = buste.reduce((totali, busta) => {
@@ -301,9 +348,33 @@ export default function ContabilitaElaborati({ tipo }) {
     {error && <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-red-800">{error}</div>}
     {message?.section === sezioneAttiva && message.period === `${anno}-${mese}` && message.tipo === tipo && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-800">{message.text}</div>}
     <div className="flex flex-wrap items-center gap-3"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" />{tipo === 'cliente' && <><ImportaFattureArubaZip mese={mese} anno={anno} onChanged={async () => { setSezioneAttiva(1); await load(); }} /><GestioneFattureExtra mese={mese} anno={anno} gruppi={tuttiGruppiExtra} onChanged={load} /></>}</div>
-    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} busy={busy} euro={euro} /> :
+    {tipo === 'cliente' && sezioneAttiva === 0 && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+      <button type="button" disabled={!visibleExportKeys.length || busy} onClick={() => setSelectedExportKeys(previous => [...new Set([...previous, ...visibleExportKeys])])} className="rounded bg-white px-3 py-2 font-semibold text-indigo-800 shadow-sm disabled:opacity-50">Seleziona tutti {searchTerm ? 'i risultati' : ''}</button>
+      <button type="button" disabled={!selectedCurrentKeys.length || busy} onClick={() => setSelectedExportKeys([])} className="rounded bg-white px-3 py-2 font-semibold text-slate-700 shadow-sm disabled:opacity-50">Deseleziona tutti</button>
+      <span className="text-sm font-semibold text-slate-700">{selectedCurrentKeys.length} selezionate</span>
+      <button type="button" disabled={!selectedCurrentKeys.length || busy} onClick={() => { setExportPreview(null); setExportError(''); setExportOpen(true); }} className="ml-auto rounded bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">Scarica XML per Aruba</button>
+    </div>}
+    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} selectedKeys={selectedCurrentKeys} onSelect={setExportSelection} busy={busy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
+    {exportOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <form onSubmit={previewExport} className="max-h-[90vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-xl bg-white p-5 text-slate-900 shadow-xl">
+        <h2 className="text-xl font-bold">XML per Aruba · {selectedCurrentKeys.length} fatture</h2>
+        <p className="text-sm text-slate-600">Inserisci la data e il primo numero definitivo. Le fatture successive avranno numeri consecutivi. Il download non segna le fatture come inviate.</p>
+        <label className="block text-sm font-semibold">Data fattura<input required type="date" value={exportDate} onChange={event => { setExportDate(event.target.value); setExportPreview(null); }} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
+        <label className="block text-sm font-semibold">Primo numero fattura<input required type="text" maxLength={20} placeholder="FPR 618/26" value={firstInvoiceNumber} onChange={event => { setFirstInvoiceNumber(event.target.value); setExportPreview(null); }} className="mt-1 block w-full rounded border border-slate-300 p-2" /></label>
+        <p className="text-xs text-slate-600">Lo ZIP contiene singoli XML: estraili e seleziona i file XML nella funzione “Carica fattura” di Aruba. Verifica la numerazione prima di inviare a SdI.</p>
+        {exportError && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{exportError}</p>}
+        {exportPreview && <div className="max-h-56 space-y-2 overflow-y-auto rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+          {exportPreview.issuerAddress && <p><strong>Sede fiscale M2I:</strong> {exportPreview.issuerAddress}</p>}
+          {exportPreview.errors.length ? exportPreview.errors.map(item => <p key={item.key} className="text-red-800"><strong>{item.client}:</strong> {item.issues.join('; ')}</p>) : <p className="font-semibold text-emerald-800">{exportPreview.count} XML pronti. Controlla data e numeri prima del download.</p>}
+          {exportPreview.invoices?.map(item => <p key={item.key}>{item.number} · {item.client}</p>)}
+        </div>}
+        <div className="flex flex-wrap gap-2"><button type="submit" disabled={busy} className="rounded bg-slate-200 px-4 py-2 font-semibold disabled:opacity-50">Controlla XML</button>
+          {exportPreview && !exportPreview.errors.length && <button type="button" disabled={busy} onClick={downloadExport} className="rounded bg-indigo-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Preparazione...' : 'Scarica ZIP XML'}</button>}
+          <button type="button" disabled={busy} onClick={() => setExportOpen(false)} className="rounded border border-slate-300 px-4 py-2">Annulla</button></div>
+      </form>
+    </div>}
     {selectedConsultant && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <form onSubmit={saveConsultantNote} className="w-full max-w-lg space-y-4 rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-xl">
         <h2 className="text-lg font-semibold">Note per consulente · {selectedConsultant.cognomeNome}</h2>

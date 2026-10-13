@@ -206,10 +206,11 @@ async function preview(db, invoices, mappings = {}) {
     const selected = requested ? clients.find(c => c.id === requested) : clients.find(c => c.id === match.id);
     if (requested && !selected) throw new Error(`Cliente scelto per ${key} non disponibile.`);
     return {
-      key, name: extracted.values.ragione_sociale || key, invoices: rows.length,
+      key, name: extracted.values.ragione_sociale || selected?.ragione_sociale || key, invoices: rows.length,
       files: [...new Set(rows.map(row => row.filename))], match,
       clientId: selected?.id || null, clientName: selected?.ragione_sociale || '',
-      internal: extracted.internal, fields: compare(selected, extracted.values, CLIENT_FIELDS)
+      internal: extracted.internal.map(conflict => ({ ...conflict, current: val(selected?.[conflict.field]) })),
+      fields: compare(selected, extracted.values, CLIENT_FIELDS)
     };
   });
   return {
@@ -261,6 +262,7 @@ async function apply(db, invoices, options = {}) {
     throw new Error('Gli XML contengono emittenti con identificativi fiscali discordanti.');
   }
   const accepted = options.accepted || {};
+  const resolutions = options.resolutions || {};
   const results = { companyFields: 0, clientsUpdated: 0, fieldsUpdated: 0, unresolved: [] };
   await db.transaction(async trx => {
     if (plan.issuer.internal.length) results.unresolved.push({ key: 'issuer', name: 'M2I', reason: 'XML emittente discordanti fra loro' });
@@ -279,8 +281,10 @@ async function apply(db, invoices, options = {}) {
         results.unresolved.push({ key: customer.key, name: customer.name, reason: 'Scheda cliente non individuata' });
         continue;
       }
-      if (customer.internal.length) results.unresolved.push({ key: customer.key, name: customer.name, reason: 'XML discordanti fra loro' });
-      if (customer.internal.some(x => ['partita_iva', 'codice_fiscale'].includes(x.field))) continue;
+      if (customer.internal.some(x => ['partita_iva', 'codice_fiscale'].includes(x.field))) {
+        results.unresolved.push({ key: customer.key, name: customer.name, reason: 'Identificativi fiscali discordanti negli XML' });
+        continue;
+      }
       const fiscalConflicts = customer.fields.filter(f =>
         ['partita_iva', 'codice_fiscale'].includes(f.field) && f.stato === 'diverso' &&
         !accepted[customer.key]?.includes(f.field));
@@ -292,6 +296,23 @@ async function apply(db, invoices, options = {}) {
       for (const field of customer.fields) {
         if (field.stato === 'nuovo' || (field.stato === 'diverso' && accepted[customer.key]?.includes(field.field))) updates[field.field] = field.xml;
       }
+      const pendingConflicts = [];
+      for (const conflict of customer.internal) {
+        const choice = resolutions[customer.key]?.[conflict.field]
+          || (conflict.field === 'ragione_sociale' && conflict.current ? 'keep' : '');
+        if (choice === 'keep' && conflict.current) continue;
+        if (/^xml:\d+$/.test(choice)) {
+          const index = Number(choice.slice(4));
+          if (index >= conflict.values.length) throw new Error(`Valore XML non valido per ${conflict.label}.`);
+          updates[conflict.field] = conflict.values[index];
+          continue;
+        }
+        if (choice) throw new Error(`Scelta non valida per ${conflict.label}.`);
+        pendingConflicts.push(conflict.label);
+      }
+      if (pendingConflicts.length) results.unresolved.push({
+        key: customer.key, name: customer.name, reason: `Valori discordanti da scegliere: ${pendingConflicts.join(', ')}`
+      });
       // L'indirizzo XML sostituisce quello della scheda. Se il civico non è un campo
       // separato nell'XML, evita di conservare un vecchio civico già incluso nell'indirizzo.
       if (Object.hasOwn(updates, 'indirizzo_sede') && !customer.fields.some(field => field.field === 'civico_sede')) {
