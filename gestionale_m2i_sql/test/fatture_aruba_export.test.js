@@ -23,12 +23,19 @@ const row = { idCliente: 'c1', ragioneSociale: 'Cliente Test', imponibile: 100,
   descrizioneFattura: 'Servizio di pulizia Ottobre 2026' };
 const base = { company, client, row, lines: [{ description: row.descrizioneFattura, amount: 100 }],
   date: '2026-10-13', number: 'FPR 618/26', progressivo: 'A1B2C3' };
-const parse = xml => xml2js.parseStringPromise(xml, { explicitArray: false });
+const parse = xml => xml2js.parseStringPromise(xml, { explicitArray: false,
+  tagNameProcessors: [xml2js.processors.stripPrefix] });
 
 test('genera un XML FPR12 con dati IVA e importi coerenti', async () => {
-  const doc = await parse(buildInvoice(base));
+  const xml = buildInvoice(base);
+  const doc = await parse(xml);
   const root = doc.FatturaElettronica;
   assert.equal(root.$.versione, 'FPR12');
+  const namespaceDoc = await xml2js.parseStringPromise(xml, { explicitArray: false, xmlns: true,
+    tagNameProcessors: [xml2js.processors.stripPrefix] });
+  assert.equal(namespaceDoc.FatturaElettronica.$ns.uri, 'http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2');
+  assert.equal(namespaceDoc.FatturaElettronica.FatturaElettronicaHeader.$ns.uri, '');
+  assert.equal(namespaceDoc.FatturaElettronica.FatturaElettronicaBody.$ns.uri, '');
   assert.equal(root.FatturaElettronicaHeader.DatiTrasmissione.IdTrasmittente.IdCodice, '01879020517');
   assert.equal(root.FatturaElettronicaHeader.CedentePrestatore.Sede.Indirizzo, company.fatturazione_indirizzo);
   assert.equal(root.FatturaElettronicaBody.DatiGenerali.DatiGeneraliDocumento.Numero, 'FPR 618/26');

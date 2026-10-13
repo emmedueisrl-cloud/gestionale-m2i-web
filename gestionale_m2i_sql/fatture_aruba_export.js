@@ -91,8 +91,8 @@ function buildInvoice({ company, client, row, lines, date, number, progressivo }
       DettaglioPagamento: payment };
   }
   return new Builder({ headless: false, renderOpts: { pretty: true }, xmldec: { version: '1.0', encoding: 'UTF-8' } })
-    .buildObject({ FatturaElettronica: { $: {
-      'xmlns': 'http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2', versione: 'FPR12' },
+    .buildObject({ 'p:FatturaElettronica': { $: {
+      'xmlns:p': 'http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2', versione: 'FPR12' },
     FatturaElettronicaHeader: { DatiTrasmissione: transmission,
       CedentePrestatore: party(company, true), CessionarioCommittente: party(client, false) },
     FatturaElettronicaBody: body } });

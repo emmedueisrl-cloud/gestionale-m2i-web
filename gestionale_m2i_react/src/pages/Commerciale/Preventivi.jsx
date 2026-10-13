@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, FileText, Search, Download, Trash2, CalendarDays, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowDownUp, ArrowUp, Plus, FileText, Search, Download, Trash2, CalendarDays, Upload, X } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import AppuntamentiPreventivi from './AppuntamentiPreventivi';
 import ProformePreventivoModal from './ProformePreventivoModal';
+import { sortRows } from '../../utils/sortRows';
 
 const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
+const COLONNE_PREVENTIVI = [
+  { key: 'numero', label: 'Numero', value: item => item.numero_preventivo },
+  { key: 'data', label: 'Data', value: item => item.data_preventivo },
+  { key: 'cliente', label: 'Cliente / Prospect', value: item => item.ragione_sociale_prospect },
+  { key: 'importo', label: 'Importo', value: item => item.tipo_prezzo === 'Allegato' ? null : item.costo_mensile, numeric: true },
+  { key: 'appuntamento', label: 'Appuntamento', value: item => item.appuntamento_id ? item.appuntamento_nominativo || item.ragione_sociale_prospect : null }
+];
 
 function CaricaPreventivoModal({ onClose, onSuccess }) {
   const [appuntamenti, setAppuntamenti] = useState([]);
@@ -86,6 +94,7 @@ const Preventivi = () => {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [proformeOpen, setProformeOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [ordinamentoPreventivi, setOrdinamentoPreventivi] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -128,6 +137,9 @@ const Preventivi = () => {
     p.ragione_sociale_prospect?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.numero_preventivo?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  const colonnaOrdinata = COLONNE_PREVENTIVI.find(colonna => colonna.key === ordinamentoPreventivi?.key);
+  const preventiviInOrdine = colonnaOrdinata ? sortRows(filtered, colonnaOrdinata.value, ordinamentoPreventivi.direction, colonnaOrdinata.numeric) : filtered;
+  const cambiaOrdinamento = key => setOrdinamentoPreventivi(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }));
 
   return (
     <div className="p-6 w-full pb-12">
@@ -184,11 +196,7 @@ const Preventivi = () => {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-900/80 border-b border-slate-700">
-                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Numero</th>
-                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Data</th>
-                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Cliente / Prospect</th>
-                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Importo</th>
-                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Appuntamento</th>
+                {COLONNE_PREVENTIVI.map(colonna => <th key={colonna.key} scope="col" aria-sort={ordinamentoPreventivi?.key === colonna.key ? ordinamentoPreventivi.direction === 'asc' ? 'ascending' : 'descending' : 'none'} className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider"><button type="button" onClick={() => cambiaOrdinamento(colonna.key)} className="flex items-center gap-1 whitespace-nowrap text-left hover:text-indigo-200">{colonna.label}{ordinamentoPreventivi?.key === colonna.key ? ordinamentoPreventivi.direction === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} /> : <ArrowDownUp size={13} className="opacity-60" />}</button></th>)}
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Azioni</th>
               </tr>
             </thead>
@@ -203,7 +211,7 @@ const Preventivi = () => {
                   </td>
                 </tr>
               ) : (
-                filtered.map(p => (
+                preventiviInOrdine.map(p => (
                   <tr key={p.id} className="hover:bg-slate-700/30 transition-colors">
                     <td className="p-4">
                       <strong className="text-slate-200">{p.numero_preventivo}</strong>
@@ -220,7 +228,7 @@ const Preventivi = () => {
                     <td className="p-4">
                       <span className="font-bold text-amber-400">{p.tipo_prezzo === 'Allegato' ? 'Da PDF' : `€ ${Number(p.costo_mensile).toLocaleString('it-IT', {minimumFractionDigits: 2})}`}</span>
                     </td>
-                    <td className="p-4">{p.appuntamento_id ? <Link to="/admin/preventivi?sezione=appuntamenti" className="text-sm font-semibold text-indigo-300 hover:text-indigo-200">Appuntamento #{p.appuntamento_id}</Link> : <span className="text-slate-500">—</span>}</td>
+                    <td className="p-4">{p.appuntamento_id ? <Link to={`/admin/preventivi?sezione=appuntamenti&appuntamento=${p.appuntamento_id}`} className="text-sm font-semibold text-indigo-300 hover:text-indigo-200">{p.appuntamento_nominativo || p.ragione_sociale_prospect}</Link> : <span className="text-slate-500">—</span>}</td>
                     <td className="p-4">
                       <div className="flex gap-2 justify-end">
                         {p.allegato_preventivo && (

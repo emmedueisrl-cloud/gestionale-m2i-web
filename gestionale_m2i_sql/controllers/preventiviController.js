@@ -25,7 +25,10 @@ exports.ensurePreventiviIds = async () => {
 
 exports.getAllPreventivi = async (req, res) => {
   try {
-    const preventivi = await knex('preventivi').orderBy('id', 'desc');
+    const preventivi = await knex('preventivi as p')
+      .leftJoin('appuntamenti_preventivi as a', 'p.appuntamento_id', 'a.id')
+      .select('p.*', 'a.nominativo as appuntamento_nominativo')
+      .orderBy('p.id', 'desc');
     res.json(preventivi);
   } catch (error) {
     console.error("Errore recupero preventivi:", error);

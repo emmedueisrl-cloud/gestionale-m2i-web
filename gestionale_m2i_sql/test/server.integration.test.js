@@ -610,7 +610,9 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const attachedQuote = await uploadQuote.json();
     assert.equal(attachedQuote.appuntamento_id, appointmentId);
     assert.equal(attachedQuote.numero_preventivo, 'OFFERTA-TEST');
-    assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === attachedQuote.id)?.appuntamento_id, appointmentId);
+    const preventivoCollegato = (await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === attachedQuote.id);
+    assert.equal(preventivoCollegato?.appuntamento_id, appointmentId);
+    assert.equal(preventivoCollegato?.appuntamento_nominativo, 'Cliente aggiornato');
     assert.equal((await fetch(`${base}${attachedQuote.allegato_preventivo}`, { headers: { Cookie: cookie } })).status, 200);
     assert.equal((await fetch(`${base}/api/preventivi/${attachedQuote.id}/appuntamento`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ appuntamentoId: null }) })).status, 200);
     assert.equal((await fetch(`${base}/api/preventivi/${attachedQuote.id}/appuntamento`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ appuntamentoId: appointmentId }) })).status, 200);

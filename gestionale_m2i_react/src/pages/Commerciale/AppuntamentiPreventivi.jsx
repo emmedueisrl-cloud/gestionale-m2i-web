@@ -1,14 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, Trash2, UserRound, X } from 'lucide-react';
+import { ArrowDown, ArrowDownUp, ArrowUp, CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, Trash2, UserRound, X } from 'lucide-react';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { notePostAppuntamento } from '../../utils/noteAppuntamento';
+import { sortRows } from '../../utils/sortRows';
 
 const API = `${import.meta.env.VITE_API_URL || ''}/api/appuntamenti-preventivi`;
 const emptyForm = { dataOra: '', nominativo: '', referente: '', telefono: '', email: '', incaricato: '', attivita: '', luogo: '', note: '', stato: 'Programmato', esito: '', senzaOrario: false, marketing: false };
 const STATO_RICHIESTO_MARKETING = 'Richiesto da Marketing';
 const STATI = [STATO_RICHIESTO_MARKETING, 'Da svolgere', 'Passato', 'Programmato', 'Svolto', 'Annullato', 'Esitato'];
+const COLONNE_APPUNTAMENTI = [
+  { key: 'dataOra', label: 'Data e ora', value: item => item.dataOra },
+  { key: 'nominativo', label: 'Azienda', value: item => item.nominativo },
+  { key: 'origine', label: 'Origine', value: item => item.marketing ? 'Marketing' : 'Interno' },
+  { key: 'luogo', label: 'Via', value: item => item.luogo },
+  { key: 'incaricato', label: 'Commerciale', value: item => item.incaricato },
+  { key: 'stato', label: 'Stato', value: item => item.stato }
+];
 
 async function request(url, options) {
   const response = await fetch(url, {
@@ -51,6 +60,7 @@ export default function AppuntamentiPreventivi() {
   const [linkForm, setLinkForm] = useState(null);
   const [newQuoteFor, setNewQuoteFor] = useState(null);
   const [statoInCima, setStatoInCima] = useState('Tutti');
+  const [ordinamentoAppuntamenti, setOrdinamentoAppuntamenti] = useState(null);
   const [dettagliAperti, setDettagliAperti] = useState(null);
   const [publicToken, setPublicToken] = useState('');
   const [linkMessage, setLinkMessage] = useState('');
@@ -267,10 +277,17 @@ export default function AppuntamentiPreventivi() {
   const prossimi = appuntamenti.filter(isProssimo);
   const precedenti = appuntamenti.filter(a => !isProssimo(a)).reverse();
   const tuttiInOrdine = [...prossimi, ...precedenti];
-  const appuntamentiInOrdine = statoInCima === 'Tutti' ? tuttiInOrdine : [
+  const appuntamentiPerStato = statoInCima === 'Tutti' ? tuttiInOrdine : [
     ...tuttiInOrdine.filter(a => a.stato === statoInCima),
     ...tuttiInOrdine.filter(a => a.stato !== statoInCima)
   ];
+  const appuntamentiInOrdine = ordinamentoAppuntamenti
+    ? sortRows(appuntamenti, COLONNE_APPUNTAMENTI.find(colonna => colonna.key === ordinamentoAppuntamenti.key).value, ordinamentoAppuntamenti.direction)
+    : appuntamentiPerStato;
+  const cambiaOrdinamento = key => {
+    setStatoInCima('Tutti');
+    setOrdinamentoAppuntamenti(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }));
+  };
   const publicUrl = publicToken ? `${window.location.origin}/inserisci-appuntamento/${publicToken}` : '';
   const copiaLink = async () => {
     try {
@@ -364,10 +381,11 @@ export default function AppuntamentiPreventivi() {
     {loading ? <p className="text-slate-400">Caricamento appuntamenti...</p> : <section>
       <div className="mb-14 flex flex-wrap items-center gap-2" role="group" aria-label="Ordina gli appuntamenti per stato">
         <span className="mr-1 text-sm font-semibold text-slate-300">Stato · metti prima:</span>
-        {['Tutti', ...STATI].map(stato => <button key={stato} type="button" aria-pressed={statoInCima === stato} onClick={() => setStatoInCima(stato)} className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${statoInCima === stato ? 'border-indigo-400 bg-indigo-500/25 text-white' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{stato} <span className="text-xs opacity-75">{stato === 'Tutti' ? appuntamenti.length : appuntamenti.filter(a => a.stato === stato).length}</span></button>)}
+        {['Tutti', ...STATI].map(stato => <button key={stato} type="button" aria-pressed={!ordinamentoAppuntamenti && statoInCima === stato} onClick={() => { setStatoInCima(stato); setOrdinamentoAppuntamenti(null); }} className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors ${!ordinamentoAppuntamenti && statoInCima === stato ? 'border-indigo-400 bg-indigo-500/25 text-white' : 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>{stato} <span className="text-xs opacity-75">{stato === 'Tutti' ? appuntamenti.length : appuntamenti.filter(a => a.stato === stato).length}</span></button>)}
       </div>
+      <div className="mb-3 flex items-center gap-2 lg:hidden"><label className="text-sm text-slate-300">Ordina per <select value={ordinamentoAppuntamenti?.key || ''} onChange={event => event.target.value ? cambiaOrdinamento(event.target.value) : setOrdinamentoAppuntamenti(null)} className="ml-2 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-slate-100"><option value="">Ordine predefinito</option>{COLONNE_APPUNTAMENTI.map(colonna => <option key={colonna.key} value={colonna.key}>{colonna.label}</option>)}</select></label><button type="button" disabled={!ordinamentoAppuntamenti} onClick={() => setOrdinamentoAppuntamenti(previous => ({ ...previous, direction: previous.direction === 'asc' ? 'desc' : 'asc' }))} className="rounded-lg border border-slate-600 px-2 py-1.5 text-sm text-slate-200 disabled:opacity-50">{ordinamentoAppuntamenti?.direction === 'desc' ? 'Decrescente' : 'Crescente'}</button></div>
       <div className="lg:overflow-x-auto"><div className="mx-auto w-full lg:min-w-[1450px] lg:max-w-[1460px]">
-        <div className="mb-2 hidden grid-cols-[100px_170px_90px_210px_190px_150px_430px] gap-2.5 px-4 text-xs font-bold uppercase tracking-wide text-slate-400 lg:grid"><span>Data e ora</span><span>Azienda</span><span>Origine</span><span>Via</span><span>Commerciale</span><span>Stato</span><span className="text-right">Azioni</span></div>
+        <div className="mb-2 hidden grid-cols-[100px_170px_90px_210px_190px_150px_430px] gap-2.5 px-4 text-xs font-bold uppercase tracking-wide text-slate-400 lg:grid">{COLONNE_APPUNTAMENTI.map(colonna => <button key={colonna.key} type="button" onClick={() => cambiaOrdinamento(colonna.key)} aria-label={`Ordina per ${colonna.label}, ${ordinamentoAppuntamenti?.key === colonna.key && ordinamentoAppuntamenti.direction === 'asc' ? 'decrescente' : 'crescente'}`} className="flex items-center gap-1 text-left hover:text-indigo-200">{colonna.label}{ordinamentoAppuntamenti?.key === colonna.key ? ordinamentoAppuntamenti.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : <ArrowDownUp size={12} className="opacity-60" />}</button>)}<span className="text-right">Azioni</span></div>
         {renderList(appuntamentiInOrdine, 'Nessun appuntamento.')}
       </div></div>
     </section>}
