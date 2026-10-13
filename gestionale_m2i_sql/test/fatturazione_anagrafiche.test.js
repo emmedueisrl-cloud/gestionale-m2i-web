@@ -3,13 +3,13 @@ const assert = require('node:assert/strict');
 const knexFactory = require('knex');
 const importer = require('../fatturazione_anagrafiche');
 
-function xml({ taxCode = '90097800586', address = 'VIA NUOVA 3' } = {}) {
+function xml({ taxCode = '90097800586', address = 'VIA NUOVA 3', civic = '' } = {}) {
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
   <p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
     <FatturaElettronicaHeader>
       <DatiTrasmissione><CodiceDestinatario>0000000</CodiceDestinatario><PECDestinatario>cliente@pec.it</PECDestinatario></DatiTrasmissione>
       <CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>15989811003</IdCodice></IdFiscaleIVA><CodiceFiscale>15989811003</CodiceFiscale><Anagrafica><Denominazione>M2I SRL</Denominazione></Anagrafica><RegimeFiscale>RF01</RegimeFiscale></DatiAnagrafici><Sede><Indirizzo>VIA VECCHIA 9</Indirizzo><CAP>00118</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CedentePrestatore>
-      <CessionarioCommittente><DatiAnagrafici><CodiceFiscale>${taxCode}</CodiceFiscale><Anagrafica><Denominazione>CLIENTE APS</Denominazione></Anagrafica></DatiAnagrafici><Sede><Indirizzo>${address}</Indirizzo><CAP>00100</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CessionarioCommittente>
+      <CessionarioCommittente><DatiAnagrafici><CodiceFiscale>${taxCode}</CodiceFiscale><Anagrafica><Denominazione>CLIENTE APS</Denominazione></Anagrafica></DatiAnagrafici><Sede><Indirizzo>${address}</Indirizzo>${civic ? `<NumeroCivico>${civic}</NumeroCivico>` : ''}<CAP>00100</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CessionarioCommittente>
     </FatturaElettronicaHeader>
     <FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>2026-09-30</Data><Numero>1</Numero></DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA><ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo></DatiBeniServizi><DatiPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento></DettaglioPagamento></DatiPagamento></FatturaElettronicaBody>
   </p:FatturaElettronica>`);
@@ -71,5 +71,38 @@ test('rifiuta XML con entità e partita IVA emittente discordante', async () => 
     const invoices = await importer.parseXml(xml(), 'fattura.xml');
     await db('m2i_azienda_dati').where({ id: 1 }).update({ partita_iva: '12345678901' });
     await assert.rejects(importer.apply(db, invoices), /partita IVA emittente/);
+  } finally { await db.destroy(); }
+});
+
+test('non ripropone un indirizzo XML già presente quando la scheda contiene anche il civico', async () => {
+  const db = await setup();
+  try {
+    await db('clienti').where({ id: 'C1' }).update({
+      indirizzo_sede: 'VIA ENRICO BONDI, 261/263', civico_sede: '261-263'
+    });
+    const invoices = await importer.parseXml(xml({ address: 'VIA ENRICO BONDI, 261/263' }), 'fattura.xml');
+    const customer = (await importer.preview(db, invoices)).customers[0];
+    assert.equal(customer.fields.find(f => f.field === 'indirizzo_sede').stato, 'uguale');
+
+    const changed = await importer.parseXml(xml({ address: 'VIA ENRICO BONDI, 265' }), 'nuova.xml');
+    await importer.apply(db, changed, { accepted: { [customer.key]: ['indirizzo_sede'] } });
+    const saved = await db('clienti').where({ id: 'C1' }).first();
+    assert.equal(saved.indirizzo_sede, 'VIA ENRICO BONDI, 265');
+    assert.equal(saved.civico_sede, '');
+    assert.equal((await importer.preview(db, changed)).customers[0].fields.find(f => f.field === 'indirizzo_sede').stato, 'uguale');
+  } finally { await db.destroy(); }
+});
+
+test('salva separatamente il civico se presente come elemento distinto nell’XML', async () => {
+  const db = await setup();
+  try {
+    await db('clienti').where({ id: 'C1' }).update({ indirizzo_sede: 'VIA NUOVA', civico_sede: '' });
+    const invoices = await importer.parseXml(xml({ address: 'VIA NUOVA', civic: '5' }), 'civico.xml');
+    await importer.apply(db, invoices);
+    const saved = await db('clienti').where({ id: 'C1' }).first();
+    assert.equal(saved.indirizzo_sede, 'VIA NUOVA');
+    assert.equal(saved.civico_sede, '5');
+    const field = (await importer.preview(db, invoices)).customers[0].fields.find(f => f.field === 'civico_sede');
+    assert.equal(field.stato, 'uguale');
   } finally { await db.destroy(); }
 });

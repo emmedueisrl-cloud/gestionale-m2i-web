@@ -4,7 +4,7 @@ const xml2js = require('xml2js');
 const CLIENT_FIELDS = {
   ragione_sociale: 'Ragione sociale', partita_iva: 'Partita IVA', codice_fiscale: 'Codice fiscale',
   tipo_tassazione: 'Trattamento fiscale', percentuale_tassazione: 'Aliquota IVA',
-  indirizzo_sede: 'Indirizzo', cap: 'CAP', citta: 'Comune', provincia: 'Provincia',
+  indirizzo_sede: 'Indirizzo', civico_sede: 'Numero civico', cap: 'CAP', citta: 'Comune', provincia: 'Provincia',
   fatturazione_paese: 'Paese', fatturazione_id_paese_iva: 'Paese partita IVA',
   codice_sdi: 'Codice destinatario', pec: 'PEC destinatario',
   fatturazione_natura: 'Natura IVA', fatturazione_riferimento_normativo: 'Riferimento normativo',
@@ -62,7 +62,8 @@ function extractParty(party, issuer = false) {
     });
   } else {
     Object.assign(result, {
-      indirizzo_sede: [text(sede, 'Indirizzo'), text(sede, 'NumeroCivico')].filter(Boolean).join(' '),
+      indirizzo_sede: text(sede, 'Indirizzo'),
+      civico_sede: text(sede, 'NumeroCivico'),
       fatturazione_paese: text(sede, 'Nazione')
     });
   }
@@ -165,12 +166,14 @@ function collect(rows, kind) {
 }
 
 function compare(current, extracted, fields) {
-  return Object.entries(extracted).map(([field, value]) => ({
-    field, label: fields[field], attuale: val(field === 'indirizzo_sede' && current?.civico_sede
-      ? `${current.indirizzo_sede || ''} ${current.civico_sede}` : current?.[field]), xml: value,
-    stato: !val(current?.[field]) ? 'nuovo' : equal(field === 'indirizzo_sede' && current?.civico_sede
-      ? `${current.indirizzo_sede || ''} ${current.civico_sede}` : current[field], value, field) ? 'uguale' : 'diverso'
-  }));
+  return Object.entries(extracted).map(([field, value]) => {
+    const stored = val(current?.[field]);
+    const civic = field === 'indirizzo_sede' ? val(current?.civico_sede) : '';
+    const combined = civic && !nameKey(stored).endsWith(nameKey(civic)) ? `${stored} ${civic}`.trim() : stored;
+    const same = equal(stored, value, field) || (field === 'indirizzo_sede' && equal(combined, value, field));
+    return { field, label: fields[field], attuale: same ? stored : combined, xml: value,
+      stato: !stored ? 'nuovo' : same ? 'uguale' : 'diverso' };
+  });
 }
 
 function matchClient(profile, clients) {
@@ -288,6 +291,11 @@ async function apply(db, invoices, options = {}) {
       const updates = {};
       for (const field of customer.fields) {
         if (field.stato === 'nuovo' || (field.stato === 'diverso' && accepted[customer.key]?.includes(field.field))) updates[field.field] = field.xml;
+      }
+      // L'indirizzo XML sostituisce quello della scheda. Se il civico non è un campo
+      // separato nell'XML, evita di conservare un vecchio civico già incluso nell'indirizzo.
+      if (Object.hasOwn(updates, 'indirizzo_sede') && !customer.fields.some(field => field.field === 'civico_sede')) {
+        updates.civico_sede = '';
       }
       if (Object.keys(updates).length) {
         await trx('clienti').where({ id: customer.clientId }).update(updates);

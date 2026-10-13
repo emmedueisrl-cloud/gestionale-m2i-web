@@ -527,29 +527,6 @@ export default function NuovoCliente() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-1 text-amber-400">Tipo Tassazione</label>
-              <select name="tipoTassazione" value={dati.tipoTassazione} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-amber-500/30 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-slate-100 font-bold">
-                <option value="IVA">IVA</option>
-                <option value="TRAT. ACC.">TRAT. ACC.</option>
-                <option value="REVERSE CHARGE">REVERSE CHARGE</option>
-                <option value="ALTRO">ALTRO</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-200 mb-1 text-amber-400">% Tassazione</label>
-              {['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(dati.tipoTassazione)
-                ? <p className="rounded-lg border border-amber-500/30 bg-slate-900/80 p-2.5 text-sm text-amber-200">IVA 22% − ritenuta 4% dell’imponibile</p>
-                : <input type="number" step="0.01" name="percentualeTassazione" value={dati.percentualeTassazione} onChange={handleChange} disabled={dati.tipoTassazione === 'REVERSE CHARGE'} className={`w-full p-2.5 bg-slate-900/80 border border-amber-500/30 rounded-lg outline-none text-slate-100 font-bold ${dati.tipoTassazione === 'REVERSE CHARGE' ? 'opacity-50 cursor-not-allowed' : 'focus:ring-2 focus:ring-amber-500'}`} placeholder="Es. 22" />}
-            </div>
-            {dati.tipoTassazione === 'ALTRO' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-200 mb-1 text-amber-400">Specifica Altro</label>
-                <input type="text" name="tassazioneAltro" value={dati.tassazioneAltro} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-amber-500/30 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-slate-100 font-bold" placeholder="Specifica..." />
-              </div>
-            )}
-          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1">Banca d'Appoggio</label>
