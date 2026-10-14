@@ -247,12 +247,6 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     senzaTelefono.append('nominativo', 'Cliente senza telefono');
     senzaTelefono.append('referente', 'Referente presente');
     assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: senzaTelefono })).status, 400);
-    const senzaEmail = new FormData();
-    senzaEmail.append('dataOra', '2026-10-15T09:30');
-    senzaEmail.append('nominativo', 'Cliente senza email');
-    senzaEmail.append('referente', 'Referente presente');
-    senzaEmail.append('telefono', '333 555 1111');
-    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: senzaEmail })).status, 400);
     const invioPubblico = await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: schedaPubblica });
     assert.equal(invioPubblico.status, 201);
     const { id: idPubblico } = await invioPubblico.json();
@@ -1031,6 +1025,16 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     });
     assert.equal(crossOrigin.status, 403);
     assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200);
+    const senzaEmail = new FormData();
+    senzaEmail.append('dataOra', '2026-10-15T09:30');
+    senzaEmail.append('nominativo', 'Cliente senza email');
+    senzaEmail.append('referente', 'Referente presente');
+    senzaEmail.append('telefono', '333 555 1111');
+    const invioSenzaEmail = await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: senzaEmail });
+    assert.equal(invioSenzaEmail.status, 201);
+    const { id: idSenzaEmail } = await invioSenzaEmail.json();
+    const salvatoSenzaEmail = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idSenzaEmail);
+    assert.equal(salvatoSenzaEmail?.email, '');
     assert.equal((await fetch(`${base}/api/auth/logout`, { method: 'POST', headers: { Cookie: cookie } })).status, 204);
     assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 401);
   } finally {

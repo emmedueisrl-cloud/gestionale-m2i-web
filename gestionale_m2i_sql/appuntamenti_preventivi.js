@@ -381,7 +381,6 @@ async function createPublic(body, file) {
   const data = validate({ ...body, stato: STATO_RICHIESTO_MARKETING, esito: '' });
   if (!data.referente) throw new Error('Inserisci il referente con cui parleremo.');
   if (!data.telefono) throw new Error('Inserisci il telefono del referente.');
-  if (!data.email) throw new Error('Inserisci l’email del referente.');
   data.origine_pubblica = true;
   data.data_ora_originale = data.data_ora;
   let filePath;
