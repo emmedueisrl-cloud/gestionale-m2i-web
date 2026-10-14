@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowDownUp, ArrowUp, CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, Trash2, UserRound, X } from 'lucide-react';
+import { ArrowDown, ArrowDownUp, ArrowUp, CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, Search, Trash2, UserRound, X } from 'lucide-react';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { notePostAppuntamento } from '../../utils/noteAppuntamento';
@@ -59,8 +59,8 @@ export default function AppuntamentiPreventivi() {
   const [uploadForm, setUploadForm] = useState(null);
   const [linkForm, setLinkForm] = useState(null);
   const [newQuoteFor, setNewQuoteFor] = useState(null);
-  const [statoInCima, setStatoInCima] = useState('Tutti');
   const [ordinamentoAppuntamenti, setOrdinamentoAppuntamenti] = useState(null);
+  const [ricercaAppuntamenti, setRicercaAppuntamenti] = useState('');
   const [dettagliAperti, setDettagliAperti] = useState(null);
   const [publicToken, setPublicToken] = useState('');
   const [linkMessage, setLinkMessage] = useState('');
@@ -277,15 +277,13 @@ export default function AppuntamentiPreventivi() {
   const prossimi = appuntamenti.filter(isProssimo);
   const precedenti = appuntamenti.filter(a => !isProssimo(a)).reverse();
   const tuttiInOrdine = [...prossimi, ...precedenti];
-  const appuntamentiPerStato = statoInCima === 'Tutti' ? tuttiInOrdine : [
-    ...tuttiInOrdine.filter(a => a.stato === statoInCima),
-    ...tuttiInOrdine.filter(a => a.stato !== statoInCima)
-  ];
   const appuntamentiInOrdine = ordinamentoAppuntamenti
     ? sortRows(appuntamenti, COLONNE_APPUNTAMENTI.find(colonna => colonna.key === ordinamentoAppuntamenti.key).value, ordinamentoAppuntamenti.direction)
-    : appuntamentiPerStato;
+    : tuttiInOrdine;
+  const ricerca = ricercaAppuntamenti.trim().toLocaleLowerCase('it-IT');
+  const appuntamentiVisibili = ricerca ? appuntamentiInOrdine.filter(a => [a.nominativo, a.referente, a.telefono, a.email, a.luogo, a.incaricato, a.operatore, a.stato, a.dataOra]
+    .some(value => String(value || '').toLocaleLowerCase('it-IT').includes(ricerca))) : appuntamentiInOrdine;
   const cambiaOrdinamento = key => {
-    setStatoInCima('Tutti');
     setOrdinamentoAppuntamenti(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }));
   };
   const publicUrl = publicToken ? `${window.location.origin}/inserisci-appuntamento/${publicToken}` : '';
@@ -296,14 +294,14 @@ export default function AppuntamentiPreventivi() {
     } catch { setLinkMessage('Impossibile copiare il link. Riprova.'); }
   };
 
-  const renderList = (items, empty) => items.length ? <div className="space-y-3">
+  const renderList = (items, empty) => items.length ? <div className="space-y-5 pb-1">
     {items.map(a => {
       const data = formatDate(a.dataOra);
       const aperto = dettagliAperti === a.id;
       const notePost = notePostAppuntamento(a.note, a.noteStoriche);
       const inLavorazione = ['Programmato', 'Da svolgere', 'Passato'].includes(a.stato);
-      return <article key={a.id} id={`appuntamento-${a.id}`} className={`overflow-hidden rounded-2xl border bg-slate-800/90 shadow-[0_12px_30px_rgba(2,6,23,0.18)] transition-colors ${aperto ? 'border-indigo-400/70' : 'border-slate-700/80 hover:border-slate-500'}`}>
-        <div className="grid grid-cols-2 items-start gap-x-4 gap-y-4 px-5 py-5 text-sm text-slate-100 lg:grid-cols-[125px_minmax(170px,1.2fr)_105px_minmax(170px,1.2fr)_minmax(145px,1fr)_145px] lg:items-center lg:gap-x-5">
+      return <article key={a.id} id={`appuntamento-${a.id}`} className={`overflow-hidden rounded-2xl border-2 border-l-[6px] bg-[#23324b] shadow-[0_10px_26px_rgba(0,0,0,0.35)] transition-colors ${aperto ? 'border-indigo-400 border-l-indigo-300' : `border-[#52637e] hover:border-slate-300/70 ${a.stato === 'Annullato' ? 'border-l-rose-400' : a.stato === 'Esitato' || a.stato === 'Svolto' ? 'border-l-emerald-400' : a.stato === STATO_RICHIESTO_MARKETING ? 'border-l-fuchsia-400' : 'border-l-amber-400'}`}`}>
+        <div className="grid grid-cols-2 items-start gap-x-4 gap-y-4 px-5 py-5 text-sm text-slate-100 lg:grid-cols-[125px_minmax(170px,1.2fr)_105px_minmax(170px,1.2fr)_minmax(145px,1fr)_145px] lg:items-center lg:gap-x-5 lg:py-6">
           <div className="col-span-2 min-w-0 lg:col-span-1"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Data e ora</span><span className="flex items-center gap-2 font-semibold text-white"><CalendarDays size={16} className="shrink-0 text-indigo-300" />{a.dataOra.slice(0, 10).split('-').reverse().join('/')}</span><span className="ml-6 mt-1 flex items-center gap-1 text-slate-300"><Clock3 size={14} className="lg:hidden" />{a.senzaOrario ? 'In giornata' : data.time}</span></div>
           <div className="col-span-2 min-w-0 lg:col-span-1"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Azienda</span><strong className="block break-words text-base leading-snug text-white" title={a.nominativo}>{a.nominativo}</strong></div>
           <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Origine</span><span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-bold ${a.marketing ? 'bg-fuchsia-500/15 text-fuchsia-200' : 'bg-slate-600/60 text-slate-200'}`}>{a.marketing ? 'Marketing' : 'Interno'}</span>{a.numeroAppuntamento > 1 && <span className="mt-1 block text-xs font-semibold text-indigo-200">{a.numeroAppuntamento}° app</span>}</div>
@@ -311,7 +309,7 @@ export default function AppuntamentiPreventivi() {
           <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Commerciale</span><span className="block break-words font-medium leading-snug text-slate-200" title={a.incaricato || ''}>{a.incaricato || '—'}</span></div>
           <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Stato</span><span className={`inline-flex max-w-full rounded-full px-3 py-1.5 text-xs font-bold leading-tight ${a.stato === 'Svolto' ? 'bg-emerald-500/20 text-emerald-300' : a.stato === 'Annullato' ? 'bg-red-500/20 text-red-300' : a.stato === 'Esitato' ? 'bg-sky-500/20 text-sky-300' : a.stato === STATO_RICHIESTO_MARKETING ? 'bg-fuchsia-500/20 text-fuchsia-200' : a.stato === 'Passato' ? 'bg-slate-600/50 text-slate-200' : 'bg-amber-500/20 text-amber-300'}`}>{a.stato}</span></div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t border-slate-700/70 bg-slate-900/30 px-5 py-3">
+        <div className="flex flex-wrap items-center gap-2 border-t border-[#52637e] bg-[#17243a] px-5 py-3.5">
           <button type="button" onClick={() => { setDettagliAperti(aperto ? null : a.id); setNotaTesto(''); setNotaError(''); }} aria-expanded={aperto} aria-label={`${aperto ? 'Chiudi' : 'Apri'} dettagli di ${a.nominativo}`} className="flex items-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/20"><ChevronDown size={16} className={`transition-transform ${aperto ? 'rotate-180' : ''}`} /> {aperto ? 'Chiudi dettagli' : 'Dettagli e note'}</button>
           <a href={`${API}/${a.id}/stampa`} target="_blank" rel="noreferrer" title="Apri scheda appuntamento e presentazione aziendale in PDF" className="flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-700/70 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-600"><Printer size={16} /> Stampa</a>
           {a.stato === STATO_RICHIESTO_MARKETING ? <button type="button" onClick={() => apriAccettazione(a)} className="flex items-center gap-2 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30"><Check size={16} /> Accetta</button> : inLavorazione && <>
@@ -322,7 +320,7 @@ export default function AppuntamentiPreventivi() {
           {a.agendaImpegnoId && <Link to={`/admin/ore/agenda?dipendente=${encodeURIComponent(a.idCaposquadra || '')}&data=${a.dataOra.slice(0, 10)}`} className="flex items-center gap-2 rounded-lg bg-slate-700/70 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-600"><CalendarDays size={16} /> Agenda</Link>}
           <button type="button" onClick={() => { setError(''); setForm({ ...a, marketing: Boolean(a.marketing), senzaOrario: Boolean(a.senzaOrario) }); }} aria-label={`Modifica ${a.nominativo}`} className="ml-auto flex items-center gap-2 rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700"><Pencil size={16} /> Modifica</button>
         </div>
-        {aperto && <div className="border-t border-slate-700 p-4">
+        {aperto && <div className="border-t border-[#52637e] bg-[#1c2a40] p-5">
         <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-indigo-300">{a.marketing ? 'Visibile nel link esterno' : a.agendaImpegnoId ? 'Creato dall’Agenda Caposquadra' : 'Creato in Appuntamenti'}</p>{!a.marketing && <button type="button" onClick={() => passaAMarketing(a)} disabled={saving} className="rounded-lg bg-fuchsia-500/20 px-3 py-2 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/30 disabled:opacity-50">Passa a Marketing</button>}</div>
         {a.schedaPdf && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-sm text-indigo-100"><FileText size={18} /><strong>Scheda appuntamento PDF</strong><a href={`${import.meta.env.VITE_API_URL || ''}${a.schedaPdf}`} target="_blank" rel="noreferrer" className="underline hover:text-white">Apri</a><a href={`${import.meta.env.VITE_API_URL || ''}${a.schedaPdf}`} download className="flex items-center gap-1 underline hover:text-white"><Download size={15} /> Scarica</a></div>}
         {a.referente && <p className="mt-3 break-words text-sm text-slate-300"><strong>Referente:</strong> {a.referente}</p>}
@@ -365,30 +363,32 @@ export default function AppuntamentiPreventivi() {
     })}
   </div> : <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">{empty}</p>;
 
-  return <div className="space-y-6">
-    <div className="rounded-2xl border border-slate-700/80 bg-gradient-to-br from-slate-800 via-slate-800 to-indigo-950/40 p-5 shadow-[0_20px_50px_rgba(2,6,23,0.16)] sm:p-7">
-      <div className="flex flex-wrap items-start justify-between gap-5">
-        <div><p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-indigo-300">Gestione commerciale</p><h2 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">Appuntamenti</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">Organizza gli incontri, segui l’avanzamento e prepara i preventivi collegati.</p></div>
-        <button type="button" onClick={() => { setError(''); setForm({ ...emptyForm }); }} className="flex items-center gap-2 rounded-xl bg-indigo-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-950/30 hover:bg-indigo-400"><Plus size={18} /> Crea appuntamento</button>
+  return <div className="space-y-4">
+    <div className="rounded-2xl border border-slate-700/80 bg-gradient-to-br from-slate-800 via-slate-800 to-indigo-950/40 px-4 py-3.5 shadow-[0_12px_30px_rgba(2,6,23,0.12)] sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><p className="text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-300">Gestione commerciale</p><h2 className="text-xl font-extrabold tracking-tight text-white">Appuntamenti</h2></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={copiaLink} disabled={!publicUrl} className="flex items-center gap-2 rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/25 disabled:opacity-50"><Copy size={15} /> Copia link inserimento</button>
+          <button type="button" onClick={apriRiferimenti} className="rounded-lg border border-slate-600 bg-slate-700/50 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700">Riferimenti aziendali</button>
+          <button type="button" onClick={() => { setError(''); setForm({ ...emptyForm }); }} className="flex items-center gap-2 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-400"><Plus size={17} /> Crea appuntamento</button>
+        </div>
       </div>
-      <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-600/50 pt-5">
-        <button type="button" onClick={copiaLink} disabled={!publicUrl} className="flex items-center gap-2 rounded-xl border border-indigo-400/40 bg-indigo-500/15 px-4 py-2.5 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/25 disabled:opacity-50"><Copy size={16} /> Copia link inserimento</button>
-        <button type="button" onClick={apriRiferimenti} className="rounded-xl border border-slate-600 bg-slate-700/50 px-4 py-2.5 text-sm font-semibold text-slate-100 hover:bg-slate-700">Riferimenti aziendali</button>
-        {linkMessage && <p role="status" className="text-sm text-slate-300">{linkMessage}</p>}
-      </div>
+      {linkMessage && <p role="status" className="mt-2 text-xs text-slate-300">{linkMessage}</p>}
     </div>
     {error && <p role="alert" className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">{error}</p>}
     {loading ? <p className="text-slate-400">Caricamento appuntamenti...</p> : <section>
-      <div className="mb-6 rounded-2xl border border-slate-700/80 bg-slate-800/50 p-4 sm:p-5" role="group" aria-label="Ordina gli appuntamenti per stato">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-base font-bold text-white">Priorità per stato</h3><p className="mt-1 text-sm text-slate-400">Scegli lo stato da mostrare per primo nell’elenco.</p></div><span className="rounded-lg bg-slate-700/70 px-3 py-1.5 text-sm font-semibold text-slate-200">{appuntamenti.length} appuntamenti</span></div>
-        <div className="flex flex-wrap gap-2">{['Tutti', ...STATI].map(stato => <button key={stato} type="button" aria-pressed={!ordinamentoAppuntamenti && statoInCima === stato} onClick={() => { setStatoInCima(stato); setOrdinamentoAppuntamenti(null); }} className={`rounded-xl border px-3.5 py-2 text-sm font-semibold transition-colors ${!ordinamentoAppuntamenti && statoInCima === stato ? 'border-indigo-400 bg-indigo-500/25 text-white shadow-sm shadow-indigo-950/40' : 'border-slate-600/70 bg-slate-900/60 text-slate-300 hover:border-slate-500 hover:bg-slate-700'}`}>{stato} <span className="ml-1 text-xs opacity-75">{stato === 'Tutti' ? appuntamenti.length : appuntamenti.filter(a => a.stato === stato).length}</span></button>)}</div>
-      </div>
       <div className="mb-3 flex items-center gap-2 lg:hidden"><label className="text-sm font-semibold text-slate-200">Ordina per <select value={ordinamentoAppuntamenti?.key || ''} onChange={event => event.target.value ? cambiaOrdinamento(event.target.value) : setOrdinamentoAppuntamenti(null)} className="ml-2 rounded-lg border border-slate-600 bg-slate-800 px-2 py-1.5 text-slate-100"><option value="">Ordine predefinito</option>{COLONNE_APPUNTAMENTI.map(colonna => <option key={colonna.key} value={colonna.key}>{colonna.label}</option>)}</select></label><button type="button" disabled={!ordinamentoAppuntamenti} onClick={() => setOrdinamentoAppuntamenti(previous => ({ ...previous, direction: previous.direction === 'asc' ? 'desc' : 'asc' }))} className="rounded-lg border border-slate-600 px-2 py-1.5 text-sm text-slate-200 disabled:opacity-50">{ordinamentoAppuntamenti?.direction === 'desc' ? 'Decrescente' : 'Crescente'}</button></div>
-      <div className="rounded-2xl border border-slate-700/80 bg-slate-900/40 p-3 sm:p-4">
+      <div className="rounded-2xl border border-slate-700/80 bg-slate-950/70 p-4 sm:p-5">
         <div className="mb-4 flex items-center justify-between gap-3 px-1"><div><h3 className="text-lg font-bold text-white">Elenco appuntamenti</h3><p className="mt-0.5 text-sm text-slate-400">Apri un appuntamento per consultare note e preventivi.</p></div></div>
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-600/80 bg-slate-800/80 px-4 py-3 focus-within:border-indigo-400">
+          <Search size={20} className="shrink-0 text-indigo-300" />
+          <input type="search" aria-label="Ricerca veloce appuntamenti" placeholder="Ricerca veloce: azienda, referente, via, commerciale, stato..." value={ricercaAppuntamenti} onChange={event => setRicercaAppuntamenti(event.target.value)} className="min-w-[220px] flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-400" />
+          {ricerca && <span className="text-xs font-semibold text-slate-300">{appuntamentiVisibili.length} risultati</span>}
+          {ricerca && <button type="button" onClick={() => setRicercaAppuntamenti('')} aria-label="Cancella ricerca" className="rounded-lg p-1 text-slate-300 hover:bg-slate-700 hover:text-white"><X size={17} /></button>}
+        </div>
         <div className="overflow-x-auto"><div className="min-w-0 lg:min-w-[1030px]">
           <div className="mb-2 hidden grid-cols-[125px_minmax(170px,1.2fr)_105px_minmax(170px,1.2fr)_minmax(145px,1fr)_145px] gap-x-5 rounded-xl border border-slate-700/70 bg-slate-800/80 px-5 py-3 text-sm font-bold text-slate-200 lg:grid">{COLONNE_APPUNTAMENTI.map(colonna => <button key={colonna.key} type="button" onClick={() => cambiaOrdinamento(colonna.key)} aria-label={`Ordina per ${colonna.label}, ${ordinamentoAppuntamenti?.key === colonna.key && ordinamentoAppuntamenti.direction === 'asc' ? 'decrescente' : 'crescente'}`} className="flex items-center gap-1.5 text-left hover:text-indigo-200">{colonna.label}{ordinamentoAppuntamenti?.key === colonna.key ? ordinamentoAppuntamenti.direction === 'asc' ? <ArrowUp size={15} /> : <ArrowDown size={15} /> : <ArrowDownUp size={15} className="opacity-60" />}</button>)}</div>
-          {renderList(appuntamentiInOrdine, 'Nessun appuntamento.')}
+          {renderList(appuntamentiVisibili, ricerca ? 'Nessun appuntamento corrisponde alla ricerca.' : 'Nessun appuntamento.')}
         </div></div>
       </div>
     </section>}
