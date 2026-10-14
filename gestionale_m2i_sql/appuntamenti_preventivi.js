@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const marketingNotifications = require('./marketing_notifications');
+const publicAppointmentNotifications = require('./public_appointment_notifications');
 
 const STATO_RICHIESTO_MARKETING = 'Richiesto da Marketing';
 const STATI = [STATO_RICHIESTO_MARKETING, 'Da svolgere', 'Passato', 'Programmato', 'Svolto', 'Annullato', 'Esitato'];
@@ -27,6 +28,7 @@ async function ensureTable() {
       table.string('telefono', 50).notNullable().defaultTo('');
       table.string('email', 254).notNullable().defaultTo('');
       table.string('incaricato', 200).notNullable().defaultTo('');
+      table.string('operatore', 200).notNullable().defaultTo('');
       table.string('commerciale_dipendente_id', 50);
       table.string('attivita', 300).notNullable().defaultTo('');
       table.string('luogo', 500).notNullable().defaultTo('');
@@ -61,6 +63,9 @@ async function ensureTable() {
     }
     if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'incaricato')) {
       await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('incaricato', 200).notNullable().defaultTo(''));
+    }
+    if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'operatore')) {
+      await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('operatore', 200).notNullable().defaultTo(''));
     }
     if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'origine_pubblica')) {
       await knex.schema.alterTable('appuntamenti_preventivi', table => table.boolean('origine_pubblica').notNullable().defaultTo(false));
@@ -181,6 +186,7 @@ function validate(body) {
   const telefono = typeof body.telefono === 'string' ? body.telefono.trim() : '';
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const incaricato = typeof body.incaricato === 'string' ? body.incaricato.trim() : '';
+  const operatore = typeof body.operatore === 'string' ? body.operatore.trim() : '';
   const attivita = typeof body.attivita === 'string' ? body.attivita.trim() : '';
   const luogo = typeof body.luogo === 'string' ? body.luogo.trim() : '';
   const note = typeof body.note === 'string' ? body.note.trim() : '';
@@ -191,12 +197,13 @@ function validate(body) {
   if (telefono.length > 50) throw new Error('Il numero di telefono è troppo lungo.');
   if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error('Inserisci un indirizzo email valido.');
   if (incaricato.length > 200) throw new Error('Il nome di chi svolge l’appuntamento è troppo lungo.');
+  if (operatore.length > 200) throw new Error('Il nome dell’operatore è troppo lungo.');
   if (attivita.length > 300) throw new Error('L’attività è troppo lunga.');
   if (luogo.length > 500 || note.length > 2000) throw new Error('Luogo o note troppo lunghi.');
   if (!STATI.includes(stato)) throw new Error('Stato non valido.');
   if (esito.length > 2000) throw new Error('Esito troppo lungo.');
   if (stato === 'Esitato' && !esito) throw new Error('Inserisci l’esito dell’appuntamento.');
-  return { data_ora: dataOra, nominativo, referente, telefono, email, incaricato, attivita, luogo, note, stato, esito: stato === 'Esitato' ? esito : '', senza_orario: Boolean(body.senzaOrario) };
+  return { data_ora: dataOra, nominativo, referente, telefono, email, incaricato, operatore, attivita, luogo, note, stato, esito: stato === 'Esitato' ? esito : '', senza_orario: Boolean(body.senzaOrario) };
 }
 
 async function list() {
@@ -204,7 +211,7 @@ async function list() {
   const rows = await knex('appuntamenti_preventivi as ap')
     .leftJoin('agenda_caposquadra as ag', 'ap.agenda_impegno_id', 'ag.id')
     .leftJoin('dipendenti as d', 'ag.dipendente_id', 'd.id')
-    .select('ap.id', 'ap.data_ora as dataOra', 'ap.data_ora_originale as dataOraOriginale', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.commerciale_dipendente_id as commercialeDipendenteId', 'ap.attivita', 'ap.luogo', 'ap.note', 'ap.stato', 'ap.esito', 'ap.scheda_pdf as schedaPdf', 'ap.origine_pubblica as marketing', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'ap.senza_orario as senzaOrario', 'ag.dipendente_id as idCaposquadra', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
+    .select('ap.id', 'ap.data_ora as dataOra', 'ap.data_ora_originale as dataOraOriginale', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.operatore', 'ap.commerciale_dipendente_id as commercialeDipendenteId', 'ap.attivita', 'ap.luogo', 'ap.note', 'ap.stato', 'ap.esito', 'ap.scheda_pdf as schedaPdf', 'ap.origine_pubblica as marketing', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'ap.senza_orario as senzaOrario', 'ag.dipendente_id as idCaposquadra', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
     .orderBy('ap.data_ora', 'asc').orderBy('ap.id', 'asc')
     .then(rows => rows.map(({ cognomeCaposquadra, nomeCaposquadra, ...row }) => ({
       ...row,
@@ -219,7 +226,7 @@ async function listPublic() {
     .leftJoin('agenda_caposquadra as ag', 'ap.agenda_impegno_id', 'ag.id')
     .leftJoin('dipendenti as d', 'ag.dipendente_id', 'd.id')
     .where('ap.origine_pubblica', true)
-    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.stato', 'ap.esito', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
+    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.operatore', 'ap.stato', 'ap.esito', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
     .orderBy('ap.created_at', 'desc').orderBy('ap.id', 'desc')
     .then(rows => rows.map(({ agendaImpegnoId, cognomeCaposquadra, nomeCaposquadra, ...row }) => ({
       ...row,
@@ -367,7 +374,7 @@ async function conclude(id, action, body) {
 async function create(body) {
   const data = validate(body);
   const [id] = await knex('appuntamenti_preventivi').insert({ ...data, data_ora_originale: data.data_ora });
-  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'referente', 'telefono', 'email', 'incaricato', 'luogo', 'note', 'stato', 'esito');
+  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'referente', 'telefono', 'email', 'incaricato', 'operatore', 'luogo', 'note', 'stato', 'esito');
 }
 
 async function createPublic(body, file) {
@@ -537,7 +544,7 @@ async function update(id, body) {
     return 1;
   });
   if (!count) return null;
-  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'referente', 'telefono', 'email', 'incaricato', 'luogo', 'note', 'stato', 'esito');
+  return knex('appuntamenti_preventivi').where('id', id).first('id', 'data_ora as dataOra', 'nominativo', 'referente', 'telefono', 'email', 'incaricato', 'operatore', 'luogo', 'note', 'stato', 'esito');
 }
 
 async function updateStatus(id, body) {
@@ -580,7 +587,7 @@ async function syncFromAgenda(trx, agendaId, imp) {
     note: (imp.note || '').trim(),
     senza_orario: Boolean(imp.senzaOrario)
   };
-  const existing = await trx('appuntamenti_preventivi').where('agenda_impegno_id', agendaId).first('id', 'origine_pubblica');
+  const existing = await trx('appuntamenti_preventivi').where('agenda_impegno_id', agendaId).first();
   if (existing?.origine_pubblica && imp.idDipendente) {
     const dipendente = await trx('dipendenti').where('id', imp.idDipendente).first('nome', 'cognome');
     if (dipendente) {
@@ -588,20 +595,30 @@ async function syncFromAgenda(trx, agendaId, imp) {
       data.commerciale_dipendente_id = imp.idDipendente;
     }
   }
-  if (existing) await trx('appuntamenti_preventivi').where('id', existing.id).update(data);
+  if (existing) {
+    await trx('appuntamenti_preventivi').where('id', existing.id).update(data);
+    const updated = await publicAppointmentNotifications.appointment(existing.id, trx);
+    const description = publicAppointmentNotifications.describeEdit(existing, updated);
+    if (description) await publicAppointmentNotifications.record(existing.id, description, existing, trx);
+  }
   else await trx('appuntamenti_preventivi').insert({ ...data, data_ora_originale: data.data_ora, agenda_impegno_id: agendaId, stato: 'Programmato' });
 }
 
 async function removeForAgenda(trx, agendaIds) {
   if (!agendaIds.length) return;
-  const records = await trx('appuntamenti_preventivi').whereIn('agenda_impegno_id', agendaIds).select('id', 'origine_pubblica');
+  const records = await trx('appuntamenti_preventivi').whereIn('agenda_impegno_id', agendaIds).select('id', 'origine_pubblica', 'nominativo');
   const cancellati = records.filter(row => !row.origine_pubblica).map(row => row.id);
   const scollegati = records.filter(row => row.origine_pubblica).map(row => row.id);
   if (cancellati.length) {
     await trx('preventivi').whereIn('appuntamento_id', cancellati).update({ appuntamento_id: null });
     await trx('appuntamenti_preventivi').whereIn('id', cancellati).del();
   }
-  if (scollegati.length) await trx('appuntamenti_preventivi').whereIn('id', scollegati).update({ agenda_impegno_id: null });
+  if (scollegati.length) {
+    await trx('appuntamenti_preventivi').whereIn('id', scollegati).update({ agenda_impegno_id: null });
+    for (const record of records.filter(row => row.origine_pubblica)) {
+      await publicAppointmentNotifications.record(record.id, 'Appuntamento scollegato dall’Agenda Caposquadra.', record, trx);
+    }
+  }
 }
 
 module.exports = { ensureTable, list, listPublic, promoteToMarketing, acceptMarketing, reschedule, conclude, create, createPublic, addPublicNote, addInternalNote, updatePostNote, removePostNote, removeAppointmentNote, rebookPublic, update, updateStatus, remove, syncFromAgenda, removeForAgenda };

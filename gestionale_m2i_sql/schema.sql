@@ -217,6 +217,7 @@ CREATE TABLE appuntamenti_preventivi (
     telefono TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL DEFAULT '',
     incaricato TEXT NOT NULL DEFAULT '',
+    operatore TEXT NOT NULL DEFAULT '',
     commerciale_dipendente_id TEXT,
     attivita TEXT NOT NULL DEFAULT '',
     luogo TEXT NOT NULL DEFAULT '',
@@ -247,6 +248,14 @@ CREATE TABLE appuntamenti_note (
     tipo TEXT NOT NULL DEFAULT 'post'
 );
 CREATE INDEX idx_appuntamenti_note_appuntamento ON appuntamenti_note(appuntamento_id);
+
+CREATE TABLE public_appointment_notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appuntamento_id INTEGER NOT NULL,
+    nominativo TEXT NOT NULL,
+    testo TEXT NOT NULL,
+    creata_il TEXT NOT NULL
+);
 
 CREATE TABLE marketing_notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

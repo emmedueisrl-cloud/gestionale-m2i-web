@@ -124,6 +124,7 @@ async function buildSchedaAppuntamentoPDF(appointment, contacts) {
         ],
         margin: [0, 0, 0, 10]
       },
+      ...(appointment.operatore ? [{ ...field('Operatore', appointment.operatore), margin: [0, 0, 0, 14] }] : []),
       { text: '01  /  CONTATTO', fontSize: 9, bold: true, characterSpacing: 1.4, margin: [0, 0, 0, 10] },
       {
         table: {

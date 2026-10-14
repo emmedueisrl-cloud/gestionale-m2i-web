@@ -131,6 +131,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const schedeStoriche = await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
     assert.equal(schedeStoriche.length, 2);
     assert.equal(schedeStoriche.find(item => item.nominativo === 'Referente storico')?.attivita, 'Uffici');
+    assert.equal(schedeStoriche.find(item => item.nominativo === 'Referente storico')?.operatore, '');
     assert.equal(schedeStoriche.find(item => item.nominativo === 'Referente precedente')?.luogo, 'Via Rossi 2');
     const preventiviStorici = await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
     const preventivoStorico = preventiviStorici.find(item => item.numero_preventivo === 'LEGACY-001');
@@ -139,7 +140,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal((await fetch(`${base}/api/preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).some(item => item.numero_preventivo === 'LEGACY-001'), false);
 
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`)).status, 401);
-    const appuntamento = { dataOra: '2026-10-08T10:30', nominativo: 'Cliente di prova', referente: 'Paola Cliente', telefono: '+39 333 123 4567', email: 'paola@example.com', incaricato: 'Mario Bianchi', luogo: 'Roma', note: 'Sopralluogo', stato: 'Programmato' };
+    const appuntamento = { dataOra: '2026-10-08T10:30', nominativo: 'Cliente di prova', referente: 'Paola Cliente', telefono: '+39 333 123 4567', email: 'paola@example.com', incaricato: 'Mario Bianchi', operatore: 'Elena Operatrice', luogo: 'Roma', note: 'Sopralluogo', stato: 'Programmato' };
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(appuntamento)
     })).status, 401);
@@ -155,6 +156,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const appuntamentiDiretti = await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json());
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.agendaImpegnoId, null);
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.incaricato, 'Mario Bianchi');
+    assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.operatore, 'Elena Operatrice');
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.referente, 'Paola Cliente');
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.telefono, '+39 333 123 4567');
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.email, 'paola@example.com');
@@ -174,7 +176,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.match(stampaAppuntamento.headers.get('content-type') || '', /application\/pdf/);
     const schedaPdf = await parsePdf(Buffer.from(await stampaAppuntamento.arrayBuffer()));
     assert.equal(schedaPdf.numpages, 2);
-    for (const testo of ['SCHEDA APPUNTAMENTO', 'Cliente di prova', 'Paola Cliente', '+39 333 123 4567', 'paola@example.com', 'Sopralluogo', 'NOTE POST APPUNTAMENTO', 'M2I S.r.l.', 'Preparato per Cliente di prova', 'Mauro Martinelli', '0612345678']) {
+    for (const testo of ['SCHEDA APPUNTAMENTO', 'Cliente di prova', 'Paola Cliente', '+39 333 123 4567', 'paola@example.com', 'Sopralluogo', 'Elena Operatrice', 'NOTE POST APPUNTAMENTO', 'M2I S.r.l.', 'Preparato per Cliente di prova', 'Mauro Martinelli', '0612345678']) {
       assert.ok(schedaPdf.text.includes(testo), `La scheda PDF deve contenere: ${testo}`);
     }
     const urlNoteInterne = `${base}/api/appuntamenti-preventivi/${idAppuntamento}/note`;
@@ -216,7 +218,9 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.match(tokenInserimento, /^[0-9a-f]{64}$/);
     const paginaAppuntamentiPubblici = await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`);
     assert.equal(paginaAppuntamentiPubblici.status, 200);
-    assert.deepEqual((await paginaAppuntamentiPubblici.json()).appuntamenti, []);
+    const paginaIniziale = await paginaAppuntamentiPubblici.json();
+    assert.deepEqual(paginaIniziale.appuntamenti, []);
+    assert.deepEqual(paginaIniziale.notifiche, []);
     if (fs.existsSync(path.join(backendDir, '..', 'gestionale_m2i_react', 'dist', 'index.html'))) {
       assert.equal((await fetch(`${base}/inserisci-appuntamento/${tokenInserimento}`)).status, 200);
     }
@@ -228,6 +232,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     schedaPubblica.append('telefono', '+39 320 555 0101');
     schedaPubblica.append('email', 'anna@example.com');
     schedaPubblica.append('incaricato', 'Lucia Verdi');
+    schedaPubblica.append('operatore', 'Marco Operatore');
     schedaPubblica.append('luogo', 'Via Roma 20');
     schedaPubblica.append('stato', 'Programmato');
     schedaPubblica.append('note', 'Richiesta pubblica');
@@ -266,6 +271,9 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(schedaSalvata?.referente, 'Anna Referente');
     assert.equal(schedaSalvata?.telefono, '+39 320 555 0101');
     assert.equal(schedaSalvata?.email, 'anna@example.com');
+    assert.equal(schedaSalvata?.operatore, 'Marco Operatore');
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idPubblico)?.operatore, 'Marco Operatore');
+    assert.deepEqual((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche, []);
     assert.equal(schedaSalvata?.marketing, 1);
     assert.equal(schedaSalvata?.stato, 'Richiesto da Marketing');
     assert.equal(schedaSalvata?.incaricato, 'Lucia Verdi');
@@ -302,11 +310,16 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     fileNonPdf.append('scheda', new Blob(['non è un PDF'], { type: 'application/pdf' }), 'scheda.pdf');
     assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: fileNonPdf })).status, 400);
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 204);
+    const notificaEliminazione = (await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche[0];
+    assert.equal(notificaEliminazione.nominativo, 'Cliente dal link');
+    assert.match(notificaEliminazione.testo, /eliminato/);
     assert.equal(fs.existsSync(path.join(temporaryDir, schedaSalvata.schedaPdf.slice(1))), false);
     assert.deepEqual((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti, []);
-    const internoResponse = await fetch(`${base}/api/appuntamenti-preventivi`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ ...appuntamento, nominativo: 'Cliente interno' }) });
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche[0].id, notificaEliminazione.id);
+    const internoResponse = await fetch(`${base}/api/appuntamenti-preventivi`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ ...appuntamento, nominativo: 'Cliente interno', operatore: '' }) });
     assert.equal(internoResponse.status, 201);
     const { id: idInterno } = await internoResponse.json();
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idInterno)?.operatore, '');
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idInterno)?.marketing, 0);
     assert.deepEqual((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti, []);
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idInterno}/marketing`, { method: 'PATCH' })).status, 401);
@@ -350,6 +363,11 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const accettatoManuale = await fetch(`${base}/api/appuntamenti-preventivi/${idMarketingManuale}/accetta`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ tipoCommerciale: 'manuale', commercialeNome: 'Mario Esterno' }) });
     assert.equal(accettatoManuale.status, 200);
     assert.equal((await accettatoManuale.json()).stato, 'Da svolgere');
+    const notificheAccettazione = (await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche;
+    assert.equal(notificheAccettazione[0].appuntamentoId, idMarketingManuale);
+    assert.equal(notificheAccettazione[0].nominativo, 'Richiesta commerciale esterno');
+    assert.match(notificheAccettazione[0].testo, /accettato.*Mario Esterno/);
+    assert.match(notificheAccettazione[0].creataIl, /^\d{4}-\d\d-\d\dT/);
     const manualeSalvato = (await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idMarketingManuale);
     assert.equal(manualeSalvato.incaricato, 'Mario Esterno');
     assert.equal(manualeSalvato.agendaImpegnoId, null);
@@ -366,6 +384,7 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(rifissatoManuale.status, 200);
     assert.deepEqual(await rifissatoManuale.json(), { id: idMarketingManuale, dataOra: '2099-01-02T11:00', stato: 'Da svolgere', agendaImpegnoId: null });
     assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idMarketingManuale)?.dataOra, '2099-01-02T11:00');
+    assert.match((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche[0].testo, /rifissato al 2099-01-02 alle 11:00/);
     assert.equal((await postMarketing(idMarketingManuale, 'esita', { esito: '   ' })).status, 400);
     assert.equal((await postMarketing(idMarketingManuale, 'esita', { esito: 'Cliente interessato' })).status, 200);
     const esitatoPubblico = (await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idMarketingManuale);
@@ -480,6 +499,9 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(schedaMarketingAgenda.agendaImpegnoId, accettatoAgendaData.agendaImpegnoId);
     const modificaSchedaAgenda = await fetch(`${base}/api/appuntamenti-preventivi/${idMarketingAgenda}`, { method: 'PUT', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ ...schedaMarketingAgenda, luogo: 'Via nuova 10', attivita: 'Sopralluogo aggiornato', note: 'Indicazioni aggiornate' }) });
     assert.equal(modificaSchedaAgenda.status, 200);
+    const notificaModifica = (await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche[0];
+    assert.equal(notificaModifica.appuntamentoId, idMarketingAgenda);
+    assert.match(notificaModifica.testo, /Luogo, Attività, Note della scheda/);
     const agendaMarketingResponse = await fetch(`${base}/api/run`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ functionName: 'recuperaDatiAgenda', args: ['D0002', '2099-01-01'] }) });
     assert.equal(agendaMarketingResponse.status, 200);
     const agendaMarketing = (await agendaMarketingResponse.json()).data.find(item => item.id === accettatoAgendaData.agendaImpegnoId);

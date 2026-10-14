@@ -142,22 +142,20 @@ const Preventivi = () => {
   const cambiaOrdinamento = key => setOrdinamentoPreventivi(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }));
 
   return (
-    <div className="p-6 w-full pb-12">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="p-3 bg-indigo-500/20 rounded-xl text-indigo-400 border border-indigo-500/30">
-          <CalendarDays size={28} />
-        </div>
-        <h1 className="text-3xl font-extrabold text-slate-50 uppercase tracking-tight">Appuntamenti e Preventivi</h1>
+    <div className="mx-auto w-full max-w-[1600px] px-4 pb-12 pt-6 sm:px-6 xl:px-8">
+      <div className="mb-7 flex items-center gap-4">
+        <div className="rounded-2xl border border-indigo-400/30 bg-indigo-500/15 p-3.5 text-indigo-300 shadow-lg shadow-indigo-950/20"><CalendarDays size={28} /></div>
+        <div><p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Area commerciale</p><h1 className="text-2xl font-extrabold tracking-tight text-slate-50 sm:text-3xl">Appuntamenti e preventivi</h1></div>
       </div>
 
-      <div role="tablist" aria-label="Sezioni appuntamenti e preventivi" className="mb-8 grid gap-4 sm:grid-cols-2">
-        <button type="button" role="tab" id="tab-appuntamenti" aria-controls="panel-appuntamenti" aria-selected={activeTab === 'appuntamenti'} onClick={() => apriSezione('appuntamenti')} className={`flex items-center gap-4 rounded-2xl border p-5 text-left transition-colors ${activeTab === 'appuntamenti' ? 'border-indigo-400 bg-indigo-500/20 text-white ring-2 ring-indigo-500/30' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
-          <CalendarDays className="h-8 w-8 shrink-0 text-indigo-300" />
-          <span><strong className="block text-lg">Appuntamenti</strong><span className="mt-1 block text-sm text-slate-400">Incontri programmati, svolti e annullati</span></span>
+      <div role="tablist" aria-label="Sezioni appuntamenti e preventivi" className="mb-7 grid gap-3 rounded-2xl border border-slate-700/80 bg-slate-800/40 p-2 sm:grid-cols-2">
+        <button type="button" role="tab" id="tab-appuntamenti" aria-controls="panel-appuntamenti" aria-selected={activeTab === 'appuntamenti'} onClick={() => apriSezione('appuntamenti')} className={`flex items-center gap-4 rounded-xl border px-5 py-4 text-left transition-all ${activeTab === 'appuntamenti' ? 'border-indigo-400/60 bg-indigo-500/20 text-white shadow-lg shadow-indigo-950/20' : 'border-transparent bg-slate-800/60 text-slate-200 hover:border-slate-600 hover:bg-slate-700/70'}`}>
+          <CalendarDays className="h-7 w-7 shrink-0 text-indigo-300" />
+          <span><strong className="block text-base font-bold">Appuntamenti</strong><span className="mt-1 block text-sm text-slate-400">Incontri, attività e avanzamento</span></span>
         </button>
-        <button type="button" role="tab" id="tab-preventivi" aria-controls="panel-preventivi" aria-selected={activeTab === 'preventivi'} onClick={() => apriSezione('preventivi')} className={`flex items-center gap-4 rounded-2xl border p-5 text-left transition-colors ${activeTab === 'preventivi' ? 'border-indigo-400 bg-indigo-500/20 text-white ring-2 ring-indigo-500/30' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
-          <FileText className="h-8 w-8 shrink-0 text-indigo-300" />
-          <span><strong className="block text-lg">Preventivi</strong><span className="mt-1 block text-sm text-slate-400">Offerte e documenti</span></span>
+        <button type="button" role="tab" id="tab-preventivi" aria-controls="panel-preventivi" aria-selected={activeTab === 'preventivi'} onClick={() => apriSezione('preventivi')} className={`flex items-center gap-4 rounded-xl border px-5 py-4 text-left transition-all ${activeTab === 'preventivi' ? 'border-indigo-400/60 bg-indigo-500/20 text-white shadow-lg shadow-indigo-950/20' : 'border-transparent bg-slate-800/60 text-slate-200 hover:border-slate-600 hover:bg-slate-700/70'}`}>
+          <FileText className="h-7 w-7 shrink-0 text-indigo-300" />
+          <span><strong className="block text-base font-bold">Preventivi</strong><span className="mt-1 block text-sm text-slate-400">Offerte e documenti</span></span>
         </button>
       </div>
 

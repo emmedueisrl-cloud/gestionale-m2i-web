@@ -4,6 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const pdfmake = require('pdfmake');
 const { DEFAULT_CONTENT, renderBody } = require('../preventivi_proforme');
+const publicAppointmentNotifications = require('../public_appointment_notifications');
 
 // Configurazione font per pdfmake
 const fonts = {
@@ -288,6 +289,7 @@ exports.uploadDaAppuntamento = async (req, res) => {
       appuntamento_id: appointmentId
     };
     await knex('preventivi').insert(preventivo);
+    await publicAppointmentNotifications.record(appointmentId, `Preventivo ${numero} caricato dal gestionale.`);
     res.status(201).json(preventivo);
   } catch (error) {
     await fs.promises.rm(filePath, { force: true }).catch(() => {});
@@ -339,8 +341,11 @@ exports.collegaAppuntamento = async (req, res) => {
   if (appointmentId !== null && (!Number.isSafeInteger(appointmentId) || appointmentId <= 0 || !await knex('appuntamenti_preventivi').where('id', appointmentId).first('id'))) {
     return res.status(400).json({ error: 'Appuntamento non valido.' });
   }
+  const previous = await knex('preventivi').where('id', req.params.id).first('appuntamento_id', 'numero_preventivo');
   const count = await knex('preventivi').where('id', req.params.id).update({ appuntamento_id: appointmentId });
   if (!count) return res.status(404).json({ error: 'Preventivo non trovato.' });
+  if (previous?.appuntamento_id && previous.appuntamento_id !== appointmentId) await publicAppointmentNotifications.record(previous.appuntamento_id, `Preventivo ${previous.numero_preventivo} scollegato dal gestionale.`);
+  if (appointmentId && previous?.appuntamento_id !== appointmentId) await publicAppointmentNotifications.record(appointmentId, `Preventivo ${previous.numero_preventivo} collegato dal gestionale.`);
   res.json({ id: req.params.id, appuntamento_id: appointmentId });
 };
 

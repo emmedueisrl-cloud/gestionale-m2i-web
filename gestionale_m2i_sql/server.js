@@ -13,6 +13,7 @@ const { createPublicAgenda, validMonday } = require('./public_agenda');
 const { createPublicAppuntamenti } = require('./public_appuntamenti');
 const appuntamentiPreventivi = require('./appuntamenti_preventivi');
 const marketingNotifications = require('./marketing_notifications');
+const publicAppointmentNotifications = require('./public_appointment_notifications');
 const { buildSchedaAppuntamentoPDF } = require('./scheda_appuntamento_pdf');
 const riferimentiAziendali = require('./riferimenti_aziendali');
 const { ensureAttachmentColumns, createAttachmentLinkHandler } = require('./email_attachment_link');
@@ -104,7 +105,7 @@ app.get('/api/public/appuntamenti/:token', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     if (!await publicAppuntamenti.isValid(req.params.token)) return res.status(404).json({ error: 'Link non valido.' });
-    res.json({ valid: true, appuntamenti: await appuntamentiPreventivi.listPublic() });
+    res.json({ valid: true, appuntamenti: await appuntamentiPreventivi.listPublic(), notifiche: await publicAppointmentNotifications.list() });
   } catch (error) {
     res.status(500).json({ error: 'Link temporaneamente non disponibile.' });
   }
@@ -1390,6 +1391,7 @@ app.post('/api/appuntamenti-preventivi/:id/note', async (req, res) => {
   try {
     const note = await appuntamentiPreventivi.addInternalNote(req.params.id, req.body, req.authUser.email);
     if (!note) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    await publicAppointmentNotifications.record(req.params.id, 'Nota aggiunta dal gestionale.');
     res.status(201).json(note);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
@@ -1397,18 +1399,21 @@ app.put('/api/appuntamenti-preventivi/:id/note/:noteId', async (req, res) => {
   try {
     const note = await appuntamentiPreventivi.updatePostNote(req.params.id, req.params.noteId, req.body, req.authUser.email);
     if (!note) return res.status(404).json({ error: 'Nota non trovata.' });
+    await publicAppointmentNotifications.record(req.params.id, 'Nota modificata dal gestionale.');
     res.json(note);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
 app.delete('/api/appuntamenti-preventivi/:id/note-scheda', async (req, res) => {
   try {
     if (!await appuntamentiPreventivi.removeAppointmentNote(req.params.id)) return res.status(404).json({ error: 'Nota della scheda non trovata.' });
+    await publicAppointmentNotifications.record(req.params.id, 'Nota della scheda eliminata dal gestionale.');
     res.status(204).end();
   } catch (error) { res.status(500).json({ error: 'Impossibile eliminare la nota della scheda.' }); }
 });
 app.delete('/api/appuntamenti-preventivi/:id/note/:noteId', async (req, res) => {
   try {
     if (!await appuntamentiPreventivi.removePostNote(req.params.id, req.params.noteId)) return res.status(404).json({ error: 'Nota non trovata.' });
+    await publicAppointmentNotifications.record(req.params.id, 'Nota eliminata dal gestionale.');
     res.status(204).end();
   } catch (error) { res.status(500).json({ error: 'Impossibile eliminare la nota.' }); }
 });
@@ -1440,22 +1445,30 @@ app.post('/api/appuntamenti-preventivi', async (req, res) => {
 });
 app.put('/api/appuntamenti-preventivi/:id', async (req, res) => {
   try {
+    const before = await publicAppointmentNotifications.appointment(req.params.id);
     const result = await appuntamentiPreventivi.update(req.params.id, req.body);
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    const after = await publicAppointmentNotifications.appointment(req.params.id);
+    const description = publicAppointmentNotifications.describeEdit(before, after);
+    if (description) await publicAppointmentNotifications.record(req.params.id, description, before);
     res.json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
 app.patch('/api/appuntamenti-preventivi/:id/stato', async (req, res) => {
   try {
+    const before = await publicAppointmentNotifications.appointment(req.params.id);
     const result = await appuntamentiPreventivi.updateStatus(req.params.id, req.body);
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    if (before?.stato !== result.stato || before?.esito !== result.esito) await publicAppointmentNotifications.record(req.params.id, `Stato aggiornato: ${result.stato}.`, before);
     res.json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
 app.patch('/api/appuntamenti-preventivi/:id/marketing', async (req, res) => {
   try {
+    const before = await publicAppointmentNotifications.appointment(req.params.id);
     const result = await appuntamentiPreventivi.promoteToMarketing(req.params.id);
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    if (!before?.origine_pubblica) await publicAppointmentNotifications.record(req.params.id, 'Appuntamento condiviso con il link.');
     res.json(result);
   } catch (error) { res.status(500).json({ error: 'Impossibile aggiornare l’appuntamento.' }); }
 });
@@ -1463,6 +1476,7 @@ app.post('/api/appuntamenti-preventivi/:id/accetta', async (req, res) => {
   try {
     const result = await appuntamentiPreventivi.acceptMarketing(req.params.id, req.body);
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    await publicAppointmentNotifications.record(req.params.id, `Appuntamento accettato. Lo svolge: ${result.incaricato}.`);
     res.json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
@@ -1470,6 +1484,7 @@ app.post('/api/appuntamenti-preventivi/:id/rifissa', async (req, res) => {
   try {
     const result = await appuntamentiPreventivi.reschedule(req.params.id, req.body);
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    await publicAppointmentNotifications.record(req.params.id, `Appuntamento rifissato al ${result.dataOra.replace('T', ' alle ')}.`);
     res.json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
@@ -1477,6 +1492,7 @@ app.post('/api/appuntamenti-preventivi/:id/esita', async (req, res) => {
   try {
     const result = await appuntamentiPreventivi.conclude(req.params.id, 'esita', req.body);
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    await publicAppointmentNotifications.record(req.params.id, 'Esito dell’appuntamento inserito dal gestionale.');
     res.json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
@@ -1484,12 +1500,15 @@ app.post('/api/appuntamenti-preventivi/:id/annulla', async (req, res) => {
   try {
     const result = await appuntamentiPreventivi.conclude(req.params.id, 'annulla');
     if (!result) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    await publicAppointmentNotifications.record(req.params.id, 'Appuntamento annullato dal gestionale.');
     res.json(result);
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
 app.delete('/api/appuntamenti-preventivi/:id', async (req, res) => {
   try {
+    const before = await publicAppointmentNotifications.appointment(req.params.id);
     if (!await appuntamentiPreventivi.remove(req.params.id)) return res.status(404).json({ error: 'Appuntamento non trovato.' });
+    await publicAppointmentNotifications.record(req.params.id, 'Appuntamento eliminato dal gestionale.', before);
     res.status(204).end();
   } catch (error) { res.status(400).json({ error: error.message }); }
 });
@@ -1514,6 +1533,7 @@ Promise.resolve().then(async () => {
   await publicAgenda.initialize();
   await appuntamentiPreventivi.ensureTable();
   await marketingNotifications.ensureTables();
+  await publicAppointmentNotifications.ensureTable();
   await riferimentiAziendali.ensureTable();
   await publicAppuntamenti.initialize();
   await preventiviCtrl.ensurePreventiviIds();
