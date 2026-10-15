@@ -989,6 +989,21 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const accountingLogin = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'accounting@example.invalid', password: accountingPassword }) });
     assert.equal(accountingLogin.status, 200);
     const accountingCookie = accountingLogin.headers.get('set-cookie')?.split(';')[0];
+    const accountingHeaders = { Cookie: accountingCookie };
+    for (const endpoint of [
+      '/api/contabilita/cliente/2026/9',
+      '/api/contabilita/cliente/2026/9/mancanti',
+      '/api/servizi-extra/2026/9/gruppi',
+      '/api/servizi-extra/2026/9/fatture-aruba',
+      '/api/servizi-extra-note-credito-aruba'
+    ]) {
+      const adminResponse = await fetch(`${base}${endpoint}`, { headers: { Cookie: cookie } });
+      const accountingResponse = await fetch(`${base}${endpoint}`, { headers: accountingHeaders });
+      assert.equal(accountingResponse.status, 200, `${endpoint}: ${await accountingResponse.clone().text()}`);
+      assert.deepEqual(await accountingResponse.json(), await adminResponse.json(), `${endpoint}: dati diversi per ruolo`);
+    }
+    assert.equal((await fetch(`${base}/api/servizi-extra/2026/9`, { headers: accountingHeaders })).status, 403);
+    assert.equal((await fetch(`${base}/api/servizi-extra`, { method: 'POST', headers: { ...accountingHeaders, 'Content-Type': 'application/json' }, body: '{}' })).status, 403);
     const receipts = await fetch(`${base}/api/contabilita/incassi-insoluti`, { headers: { Cookie: accountingCookie } });
     assert.equal(receipts.status, 200);
     assert.ok(Array.isArray((await receipts.json()).fatture));

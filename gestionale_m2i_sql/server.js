@@ -154,7 +154,11 @@ app.use('/api', (req, res, next) => {
   const payrollAccess = (req.method === 'GET' && req.path === '/buste-paga/mese') ||
     (req.method === 'POST' && ['/buste-paga/upload', '/buste-paga/conferma'].includes(req.path)) ||
     (req.method === 'DELETE' && /^\/buste-paga\/[^/]+$/.test(req.path));
-  if (req.authUser.role === 'contabilita' && !req.path.startsWith('/contabilita/') && !payrollAccess) {
+  // La pagina Fatturazione usa anche queste API per mostrare e gestire le fatture dei servizi extra.
+  const extraInvoiceAccess =
+    (req.method === 'GET' && (/^\/servizi-extra\/\d{4}\/\d{1,2}\/(gruppi|fatture-aruba)$/.test(req.path) || req.path === '/servizi-extra-note-credito-aruba')) ||
+    (req.method === 'POST' && /^\/servizi-extra\/gruppi\/[^/]+\/(inviata|collega-fattura|nota-credito|rifattura)$/.test(req.path));
+  if (req.authUser.role === 'contabilita' && !req.path.startsWith('/contabilita/') && !payrollAccess && !extraInvoiceAccess) {
     return res.status(403).json({ error: 'Accesso limitato alla sezione amministrativa.' });
   }
   next();
