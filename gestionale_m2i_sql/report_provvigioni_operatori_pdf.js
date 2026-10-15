@@ -17,7 +17,6 @@ const euro = valore => numero(valore).toLocaleString('it-IT', { style: 'currency
 function buildReportProvvigioniOperatoriPDF(operatori, mese, anno) {
   const periodo = `${mesi[Number(mese) - 1] || mese} ${anno}`;
   const totaleProvvigioni = operatori.reduce((somma, voce) => somma + numero(voce.provvigioneTotale), 0);
-  const totaleImponibile = operatori.reduce((somma, voce) => somma + numero(voce.fatturatoTotale), 0);
   const numeroProvvigioni = operatori.reduce((somma, voce) => somma + (voce.clienti?.length || 0), 0);
 
   const riepilogo = (titolo, valore, sfondo) => ({
@@ -34,12 +33,11 @@ function buildReportProvvigioniOperatoriPDF(operatori, mese, anno) {
     margin: [0, 0, 0, 12],
     stack: [
       {
-        table: { widths: ['*', 155, 145], body: [[
+        table: { widths: ['*', 180], body: [[
           { stack: [
             { text: operatore.operatore, fontSize: 15, bold: true, color: '#ffffff' },
             { text: `${operatore.clienti.length} ${operatore.clienti.length === 1 ? 'cliente/servizio' : 'clienti/servizi'}`, fontSize: 9, color: '#dbeafe', margin: [0, 3, 0, 0] }
           ] },
-          { text: `Imponibile totale\n${euro(operatore.fatturatoTotale)}`, fontSize: 10, bold: true, color: '#ffffff', alignment: 'right' },
           { text: `Provvigioni totali\n${euro(operatore.provvigioneTotale)}`, fontSize: 10, bold: true, color: '#ffffff', alignment: 'right' }
         ]] },
         layout: { fillColor: () => '#1d4ed8', hLineWidth: () => 0, vLineWidth: () => 0,
@@ -48,12 +46,11 @@ function buildReportProvvigioniOperatoriPDF(operatori, mese, anno) {
       {
         table: {
           headerRows: 1,
-          widths: ['*', 155, 145],
+          widths: ['*', 180],
           body: [
-            ['Cliente / servizio', 'Fatturato imponibile', 'Provvigione'].map(testo => ({ text: testo, bold: true, fontSize: 9, color: '#334155' })),
+            ['Cliente / servizio', 'Provvigione'].map(testo => ({ text: testo, bold: true, fontSize: 9, color: '#334155' })),
             ...operatore.clienti.map((cliente, indice) => [
               { text: cliente.ragioneSociale, bold: true, fontSize: 10, fillColor: indice % 2 ? '#f8fafc' : '#ffffff' },
-              { text: euro(cliente.fatturato), alignment: 'right', fontSize: 10, fillColor: indice % 2 ? '#f8fafc' : '#ffffff' },
               { text: euro(cliente.provvigione), alignment: 'right', bold: true, fontSize: 10, color: '#1d4ed8', fillColor: indice % 2 ? '#f8fafc' : '#ffffff' }
             ])
           ]
@@ -67,17 +64,13 @@ function buildReportProvvigioniOperatoriPDF(operatori, mese, anno) {
   const docDefinition = {
     pageSize: 'A4', pageOrientation: 'landscape', pageMargins: [28, 28, 28, 36],
     content: [
-      { columns: [
-        { stack: [
-          { text: 'RIEPILOGO PROVVIGIONI OPERATORI', fontSize: 23, bold: true, color: '#172554' },
-          { text: periodo.toUpperCase(), fontSize: 14, color: '#475569', margin: [0, 5, 0, 0] }
-        ] },
-        { text: 'Importi di fatturazione al netto di IVA e tasse', width: 240, alignment: 'right', fontSize: 10, color: '#64748b', margin: [0, 7, 0, 0] }
+      { stack: [
+        { text: 'RIEPILOGO PROVVIGIONI OPERATORI', fontSize: 23, bold: true, color: '#172554' },
+        { text: periodo.toUpperCase(), fontSize: 14, color: '#475569', margin: [0, 5, 0, 0] }
       ], margin: [0, 0, 0, 15] },
       { columns: [
-        riepilogo('FATTURATO IMPONIBILE', euro(totaleImponibile), '#eff6ff'),
         riepilogo('PROVVIGIONI TOTALI', euro(totaleProvvigioni), '#eef2ff'),
-        riepilogo('PROVVIGIONI EROGATE', String(numeroProvvigioni), '#f5f3ff'),
+        riepilogo('CLIENTI / SERVIZI', String(numeroProvvigioni), '#f5f3ff'),
         riepilogo('OPERATORI', String(operatori.length), '#f8fafc')
       ], columnGap: 7, margin: [0, 0, 0, 18] },
       ...(operatori.length ? operatori.map(bloccoOperatore) : [{ text: 'Nessuna provvigione nel periodo selezionato.', color: '#64748b', fontSize: 12 }])
