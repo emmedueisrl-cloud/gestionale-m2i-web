@@ -29,6 +29,8 @@ const serviziExtra = createServiziExtra(knex);
 const { createArubaZipService } = require('./fatture_aruba_zip');
 const arubaZip = createArubaZipService(knex, workflowElaborati);
 const consulenteEmail = require('./consulente_email');
+const { createInvoiceEmailService } = require('./fatture_email');
+const invoiceEmail = createInvoiceEmailService(knex);
 const tableExport = require('./tabella_contabilita_export');
 const { ensureIndexes } = require('./db_indexes');
 const fatturazioneAnagrafiche = require('./fatturazione_anagrafiche');
@@ -339,6 +341,8 @@ app.get('/api/contabilita/fatture/:id/allegato', async (req, res) => {
     res.download(file, `Fattura_${invoice.id}${path.extname(file)}`);
   } catch (error) { res.status(500).send(error.message); }
 });
+app.get('/api/contabilita/fatture/:id/email/anteprima', handleWorkflow(req => invoiceEmail.draft(req.params.id), 'Anteprima email fattura'));
+app.post('/api/contabilita/fatture/:id/email/invia', handleWorkflow(req => invoiceEmail.send(req.params.id, req.body), 'Invio email fattura'));
 app.get('/api/contabilita/fatture/:id/xml', async (req, res) => {
   try {
     const registration = await knex('fatture_aruba_elaborati').where({ id: req.params.id }).first();

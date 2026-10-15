@@ -1136,7 +1136,8 @@ export default function PostaElettronica() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {parsedAllegati.map((att, i) => {
-                        const fileUrl = `${API_BASE.replace('/api', '')}/uploads/doc/${att.localName}`;
+                        const isInvoiceAttachment = /^\/api\/contabilita\/fatture\/\d+\/allegato$/.test(att.url || '');
+                        const fileUrl = isInvoiceAttachment ? `${API_BASE.replace('/api', '')}${att.url}` : `${API_BASE.replace('/api', '')}/uploads/doc/${att.localName}`;
                         const isCurrentlyLinking = linkingAttachment && linkingAttachment.localName === att.localName;
                         return (
                           <div key={i} style={{ 
@@ -1172,7 +1173,7 @@ export default function PostaElettronica() {
                                 </span>
                               </div>
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <button
+                                {!isInvoiceAttachment && <button
                                   type="button"
                                   onClick={() => {
                                     if (isCurrentlyLinking) {
@@ -1199,7 +1200,7 @@ export default function PostaElettronica() {
                                   }}
                                 >
                                   🔗 Collega
-                                </button>
+                                </button>}
                                 <a 
                                   href={fileUrl} 
                                   download={att.filename}

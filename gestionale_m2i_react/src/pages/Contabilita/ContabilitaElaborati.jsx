@@ -47,6 +47,9 @@ export default function ContabilitaElaborati({ tipo }) {
   const [zipFattura, setZipFattura] = useState(null);
   const [anteprimaFattura, setAnteprimaFattura] = useState(null);
   const [erroreFattura, setErroreFattura] = useState('');
+  const [emailFattura, setEmailFattura] = useState(null);
+  const [emailFatturaBusy, setEmailFatturaBusy] = useState(false);
+  const [emailFatturaError, setEmailFatturaError] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -87,6 +90,28 @@ export default function ContabilitaElaborati({ tipo }) {
     setZipFattura(null);
     setAnteprimaFattura(null);
     setErroreFattura('');
+  };
+
+  const openInvoiceEmail = async registrationId => {
+    setEmailFatturaBusy(true); setEmailFatturaError(''); setError('');
+    try {
+      setEmailFattura(await workflowRequest(`contabilita/fatture/${registrationId}/email/anteprima`));
+    } catch (err) { setError(err.message); }
+    finally { setEmailFatturaBusy(false); }
+  };
+
+  const sendInvoiceEmail = async event => {
+    event.preventDefault();
+    if (!emailFattura) return;
+    setEmailFatturaBusy(true); setEmailFatturaError('');
+    try {
+      await workflowRequest(`contabilita/fatture/${emailFattura.id}/email/invia`, {
+        method: 'POST', body: JSON.stringify({ destinatario: emailFattura.destinatario, oggetto: emailFattura.oggetto, corpo: emailFattura.corpo })
+      });
+      showMessage(`Fattura ${emailFattura.numero} inviata via email a ${emailFattura.destinatario}.`);
+      setEmailFattura(null);
+    } catch (err) { setEmailFatturaError(err.message); }
+    finally { setEmailFatturaBusy(false); }
   };
 
   const markInvoiceSent = async row => {
@@ -354,7 +379,7 @@ export default function ContabilitaElaborati({ tipo }) {
       <span className="text-sm font-semibold text-slate-700">{selectedCurrentKeys.length} selezionate</span>
       <button type="button" disabled={!selectedCurrentKeys.length || busy} onClick={() => { setExportPreview(null); setExportError(''); setExportOpen(true); }} className="ml-auto rounded bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">Scarica XML per Aruba</button>
     </div>}
-    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} selectedKeys={selectedCurrentKeys} onSelect={setExportSelection} busy={busy} euro={euro} /> :
+    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onEmail={openInvoiceEmail} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} selectedKeys={selectedCurrentKeys} onSelect={setExportSelection} busy={busy || emailFatturaBusy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
     {exportOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
@@ -397,6 +422,18 @@ export default function ContabilitaElaborati({ tipo }) {
         <p className="text-xs text-slate-500">Lascia vuoto per rimuovere il valore.</p>
         {ccError && <p role="alert" className="text-sm text-red-700">{ccError}</p>}
         <div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setSelectedCc(null)} className="rounded-lg bg-slate-100 px-4 py-2 hover:bg-slate-200 disabled:opacity-50">Annulla</button><button type="submit" disabled={busy} className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{busy ? 'Salvataggio...' : 'Salva CC'}</button></div>
+      </form>
+    </div>}
+    {emailFattura && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onMouseDown={event => { if (event.target === event.currentTarget && !emailFatturaBusy) setEmailFattura(null); }}>
+      <form onSubmit={sendInvoiceEmail} role="dialog" aria-modal="true" aria-label={`Invia fattura ${emailFattura.numero} via email`} className="max-h-[90vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-xl bg-white p-6 text-slate-900 shadow-xl">
+        <div><h2 className="text-xl font-bold">Invia fattura {emailFattura.numero}</h2><p className="mt-1 text-sm text-slate-600">Cliente: {emailFattura.cliente}</p></div>
+        <label className="block text-sm font-semibold">Email ordinaria del cliente<input required type="email" autoFocus maxLength={254} value={emailFattura.destinatario} onChange={event => setEmailFattura(previous => ({ ...previous, destinatario: event.target.value }))} placeholder="nome@azienda.it" className="mt-1 w-full rounded-lg border border-slate-300 p-3 font-normal" /></label>
+        {!emailFattura.destinatario && <p className="text-sm text-amber-800">Nessuna email ordinaria nella scheda cliente: inserisci il destinatario. La PEC non viene usata.</p>}
+        <label className="block text-sm font-semibold">Oggetto<input required maxLength={250} value={emailFattura.oggetto} onChange={event => setEmailFattura(previous => ({ ...previous, oggetto: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 p-3 font-normal" /></label>
+        <label className="block text-sm font-semibold">Testo<textarea required maxLength={10000} rows={6} value={emailFattura.corpo} onChange={event => setEmailFattura(previous => ({ ...previous, corpo: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 p-3 font-normal" /></label>
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm"><strong>PDF allegato:</strong> {emailFattura.allegato}</div>
+        {emailFatturaError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{emailFatturaError}</p>}
+        <div className="flex justify-end gap-2"><button type="button" disabled={emailFatturaBusy} onClick={() => setEmailFattura(null)} className="rounded-lg border border-slate-300 px-4 py-2 disabled:opacity-50">Annulla</button><button type="submit" disabled={emailFatturaBusy} className="rounded-lg bg-indigo-700 px-5 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{emailFatturaBusy ? 'Invio...' : 'Invia email con PDF'}</button></div>
       </form>
     </div>}
     {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">

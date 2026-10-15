@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, CircleAlert, FilePlus2, Send, X } from 'lucide-react';
+import { CheckCircle2, CircleAlert, FilePlus2, Mail, Send, X } from 'lucide-react';
 
 const columns = [
   ['Cliente (ragione sociale)', '16%'],
@@ -22,7 +22,7 @@ const regimeBreve = value => {
   return regime;
 };
 
-export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onSaveDescription, onSaveAdjustment, selectedKeys = [], onSelect, busy, euro }) {
+export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onEmail, onSaveDescription, onSaveAdjustment, selectedKeys = [], onSelect, busy, euro }) {
   const [detailsRow, setDetailsRow] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [draftDescription, setDraftDescription] = useState('');
@@ -53,6 +53,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
           {!righe.length && <tr><td colSpan={columns.length + (elaborate ? 0 : 1)} className="px-4 py-6 text-center text-sm text-slate-600">{vuoto}</td></tr>}
           {righe.map((row, index) => {
             const fatture = row.fatture || [];
+            const emailInvoices = elaborate ? fatture.filter(f => f.allegato && f.tipoDocumento !== 'TD04') : [];
             const totale = Number(row.importoTotale) || 0;
             const tassa = row.importoIva != null && Number.isFinite(Number(row.importoIva)) ? Number(row.importoIva)
               : Number.isFinite(Number(row.importoTassa)) ? Number(row.importoTassa) : totale - (Number(row.imponibile) || 0);
@@ -112,6 +113,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                     <button type="button" onClick={() => setDetailsRow(row)} aria-label={`Apri documenti e allegati di ${row.ragioneSociale}`} title="Apri documenti e allegati" className={`rounded-full bg-white p-1.5 ring-1 hover:bg-red-50 ${hasDifference ? 'text-red-700 ring-red-700' : 'text-indigo-700 ring-indigo-500'}`}>
                       {hasDifference ? <CircleAlert className="h-5 w-5" aria-hidden="true" /> : <FilePlus2 className="h-5 w-5" aria-hidden="true" />}
                     </button>
+                    {emailInvoices.length > 0 && <button type="button" disabled={busy} onClick={() => emailInvoices.length === 1 ? onEmail(emailInvoices[0].id) : setDetailsRow(row)} aria-label={`Invia email con fattura di ${row.ragioneSociale}`} title={emailInvoices.length === 1 ? 'Invia email con PDF fattura' : 'Scegli la fattura da inviare nei documenti'} className="flex flex-col items-center gap-1 rounded-lg bg-white/80 p-2 text-indigo-800 hover:bg-white disabled:opacity-50"><Mail className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Invia email</span></button>}
                   </> : <>
                     <button type="button" disabled={Boolean(row.gruppoExtraId && !row.tuttiBlindati)} onClick={() => onRegistra(row)} aria-label={`Registra fattura di ${row.ragioneSociale}`} title={row.gruppoExtraId && !row.tuttiBlindati ? 'Blinda prima i servizi extra' : 'Registra fattura'} className="rounded-lg bg-white/70 p-1.5 text-indigo-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"><FilePlus2 className="h-5 w-5" aria-hidden="true" /></button>
                     {row.fatturaInviataAt ? <span role="status" title="Fattura inviata" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-1 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Fattura inviata</span></span> :
@@ -144,7 +146,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
         </div>
         <div className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
           <h4 className="font-bold">Fatture e allegati</h4>
-          {(detailsRow.fatture || []).map(f => <p key={f.id}>{f.tipoDocumento === 'TD04' ? 'Nota di credito' : 'Fattura'} {f.numero} · {f.data} · {euro(f.importo)} · registrata {new Date(f.registrataAt).toLocaleString('it-IT')} · {f.statoRiconciliazione === 'riconciliata' ? 'Riconciliata' : f.statoRiconciliazione === 'da_verificare' ? 'Da verificare' : 'In attesa XML/CSV'}{f.allegato && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/allegato`}>Apri PDF</a></>}{f.xml && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/xml`}>Scarica XML</a></>}{f.modificabile ? <> · <button type="button" disabled={busy} onClick={() => { setDetailsRow(null); onSostituisci(detailsRow, f); }} className="font-semibold text-indigo-700 underline disabled:opacity-50">Modifica XML e PDF</button></> : f.motivoModifica && <> · <span className="text-slate-600">{f.motivoModifica}</span></>}</p>)}
+          {(detailsRow.fatture || []).map(f => <p key={f.id}>{f.tipoDocumento === 'TD04' ? 'Nota di credito' : 'Fattura'} {f.numero} · {f.data} · {euro(f.importo)} · registrata {new Date(f.registrataAt).toLocaleString('it-IT')} · {f.statoRiconciliazione === 'riconciliata' ? 'Riconciliata' : f.statoRiconciliazione === 'da_verificare' ? 'Da verificare' : 'In attesa XML/CSV'}{f.allegato && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/allegato`}>Apri PDF</a>{elaborate && f.tipoDocumento !== 'TD04' && <> · <button type="button" disabled={busy} onClick={() => { setDetailsRow(null); onEmail(f.id); }} className="font-semibold text-indigo-700 underline disabled:opacity-50">Invia email al cliente</button></>}</>}{f.xml && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/xml`}>Scarica XML</a></>}{f.modificabile ? <> · <button type="button" disabled={busy} onClick={() => { setDetailsRow(null); onSostituisci(detailsRow, f); }} className="font-semibold text-indigo-700 underline disabled:opacity-50">Modifica XML e PDF</button></> : f.motivoModifica && <> · <span className="text-slate-600">{f.motivoModifica}</span></>}</p>)}
           {(detailsRow.documentiAruba || []).map(d => <p key={`doc-${d.id}`}>Nota di credito {d.numero} · {d.data} · {euro(d.importo)} · solo allegato, senza effetto sui totali · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/pdf`}>Apri PDF</a> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/xml`}>Scarica XML</a></p>)}
         </div>
       </div>
