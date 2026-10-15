@@ -205,6 +205,7 @@ CREATE TABLE preventivi (
     stato TEXT DEFAULT 'In Attesa',
     allegato_preventivo TEXT,
     appuntamento_id INTEGER,
+    contenuto_json TEXT,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,
     creato_da TEXT
 , `tipo_prezzo` varchar(255) default 'Mensile');

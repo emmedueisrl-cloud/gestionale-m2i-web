@@ -22,6 +22,9 @@ exports.ensurePreventiviIds = async () => {
   // Nei database storici l'ID TEXT PRIMARY KEY di SQLite può essere NULL.
   // Ogni preventivo deve avere un ID distinto per poter essere eliminato.
   await knex.raw("UPDATE preventivi SET id = 'PREV_LEGACY_' || lower(hex(randomblob(16))) WHERE id IS NULL OR trim(id) = ''");
+  if (!await knex.schema.hasColumn('preventivi', 'contenuto_json')) {
+    await knex.schema.alterTable('preventivi', table => table.text('contenuto_json'));
+  }
 };
 
 exports.getAllPreventivi = async (req, res) => {
@@ -52,6 +55,9 @@ exports.getPreventiviByCliente = async (req, res) => {
 
 exports.generatePreventivo = async (req, res) => {
   try {
+    const previous = req.params.id ? await knex('preventivi').where('id', req.params.id).first() : null;
+    if (req.params.id && !previous) return res.status(404).json({ error: 'Preventivo non trovato.' });
+    if (previous?.tipo_prezzo === 'Allegato') return res.status(400).json({ error: 'Il PDF caricato non è modificabile qui.' });
     const {
       cliente_prospect_id,
       ragione_sociale_prospect,
@@ -72,6 +78,7 @@ exports.generatePreventivo = async (req, res) => {
     if (typeof corpo !== 'string' || !corpo.trim() || corpo.length > 20000) return res.status(400).json({ error: 'Testo del preventivo non valido (massimo 20000 caratteri).' });
     const costoNumerico = Number(costo_mensile);
     if (!Number.isFinite(costoNumerico) || costoNumerico < 0) return res.status(400).json({ error: 'Inserisci un prezzo valido.' });
+    if (!['Mensile', 'Orario', 'Extra'].includes(tipo_prezzo)) return res.status(400).json({ error: 'Tipo prezzo non valido.' });
     if ([titolo_documento, riga_data, destinatario_label, oggetto_label].some(value => value !== undefined && (typeof value !== 'string' || value.length > 200))) return res.status(400).json({ error: 'Testo dell’intestazione non valido.' });
     if (typeof ragione_sociale_prospect !== 'string' || !ragione_sociale_prospect.trim()) return res.status(400).json({ error: 'Inserisci il cliente o prospect.' });
     const appointmentId = appuntamento_id == null || appuntamento_id === '' ? null : Number(appuntamento_id);
@@ -94,8 +101,8 @@ exports.generatePreventivo = async (req, res) => {
     const year = new Date().getFullYear();
     const countRow = await knex('preventivi').count('id as c').first();
     const count = (countRow.c || 0) + 1;
-    const numero_preventivo = `${year}-${String(count).padStart(3, '0')}`;
-    const data_preventivo = new Date().toISOString().split('T')[0];
+    const numero_preventivo = previous?.numero_preventivo || `${year}-${String(count).padStart(3, '0')}`;
+    const data_preventivo = previous?.data_preventivo || new Date().toISOString().split('T')[0];
 
     // Crea la cartella uploads/preventivi se non esiste
     const uploadDir = path.join(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads', 'preventivi');
@@ -103,18 +110,18 @@ exports.generatePreventivo = async (req, res) => {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    const dataItaliana = new Date().toLocaleDateString('it-IT');
+    const dataItaliana = new Date(`${data_preventivo}T12:00:00`).toLocaleDateString('it-IT');
     const valoriTesto = {
       cliente: ragione_sociale_prospect,
       indirizzo: indirizzo_locali || '',
       oggetto: oggetto || DEFAULT_CONTENT.oggetto,
       servizi: servizi_inclusi || DEFAULT_CONTENT.servizi_inclusi,
-      tipo_prezzo: tipo_prezzo === 'Orario' ? 'orario' : 'mensile',
+      tipo_prezzo: tipo_prezzo === 'Extra' ? '' : tipo_prezzo === 'Orario' ? 'orario' : 'mensile',
       costo: `€ ${costoNumerico.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       numero: numero_preventivo,
       data: dataItaliana
     };
-    const testoCompilato = renderBody(corpo, valoriTesto);
+    const testoCompilato = renderBody(corpo, valoriTesto).replace(/servizio {2,}/g, 'servizio ');
     const titoloCompilato = renderBody(titolo_documento || DEFAULT_CONTENT.titolo_documento, valoriTesto);
     const dataCompilata = renderBody(riga_data || DEFAULT_CONTENT.riga_data, valoriTesto);
     const destinatarioCompilato = renderBody(destinatario_label || DEFAULT_CONTENT.destinatario_label, valoriTesto);
@@ -156,7 +163,7 @@ exports.generatePreventivo = async (req, res) => {
           margin: [0, 5, 0, 5], fontSize: 14
         },
         { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, lineColor: '#004aad' }], margin: [0, 0, 0, 20] },
-        ...(!corpo.includes('{{costo}}') ? [{ text: `Costo del servizio ${valoriTesto.tipo_prezzo}: ${valoriTesto.costo}`, bold: true, margin: [0, 0, 0, 14] }] : []),
+        ...(!corpo.includes('{{costo}}') ? [{ text: `Costo del servizio${valoriTesto.tipo_prezzo ? ` ${valoriTesto.tipo_prezzo}` : ''}: ${valoriTesto.costo}`, bold: true, margin: [0, 0, 0, 14] }] : []),
         ...testoCompilato.split(/\n\s*\n/).filter(Boolean).map(paragrafo => ({ text: paragrafo.trim(), margin: [0, 0, 0, 14] }))
       ],
       footer: function(currentPage, pageCount) {
@@ -219,7 +226,7 @@ exports.generatePreventivo = async (req, res) => {
     
     // Nome file sicuro
     const safeName = ragione_sociale_prospect.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    const fileName = `${numero_preventivo}_${safeName}.pdf`;
+    const fileName = `${numero_preventivo}_${safeName}_${crypto.randomUUID()}.pdf`;
     const filePath = path.join(uploadDir, fileName);
     
     try {
@@ -230,7 +237,7 @@ exports.generatePreventivo = async (req, res) => {
       const allegato_url = `/uploads/preventivi/${fileName}`;
       
       const insertData = {
-        id: `PREV_${crypto.randomUUID()}`,
+        id: previous?.id || `PREV_${crypto.randomUUID()}`,
         numero_preventivo,
         data_preventivo,
         cliente_prospect_id: cliente_prospect_id || null,
@@ -240,14 +247,24 @@ exports.generatePreventivo = async (req, res) => {
         tipo_prezzo: tipo_prezzo || 'Mensile',
         commerciale: commerciale || '',
         servizi_inclusi: servizi_inclusi || '',
-        stato: 'In Attesa',
+        stato: previous?.stato || 'In Attesa',
         allegato_preventivo: allegato_url,
-        appuntamento_id: appointmentId
+        appuntamento_id: appointmentId,
+        contenuto_json: JSON.stringify({ oggetto, testo_corpo: corpo, titolo_documento: titolo_documento || DEFAULT_CONTENT.titolo_documento, riga_data: riga_data || DEFAULT_CONTENT.riga_data, destinatario_label: destinatario_label || DEFAULT_CONTENT.destinatario_label, oggetto_label: oggetto_label || DEFAULT_CONTENT.oggetto_label })
       };
 
-      await knex('preventivi').insert(insertData);
+      if (previous) {
+        const { id, ...changes } = insertData;
+        await knex('preventivi').where('id', id).update(changes);
+        if (previous.allegato_preventivo && /^\/uploads\/preventivi\/[A-Za-z0-9._-]+\.pdf$/.test(previous.allegato_preventivo)) {
+          const inUse = await knex('preventivi').where('allegato_preventivo', previous.allegato_preventivo).first('id');
+          if (!inUse) await fs.promises.rm(path.join(uploadDir, path.basename(previous.allegato_preventivo)), { force: true }).catch(error => console.error('Vecchio PDF non eliminato:', error));
+        }
+      } else {
+        await knex('preventivi').insert(insertData);
+      }
 
-      res.status(201).json({ message: 'Preventivo generato con successo', data: insertData });
+      res.status(previous ? 200 : 201).json({ message: previous ? 'Preventivo aggiornato' : 'Preventivo generato con successo', data: insertData });
     } catch (err) {
       console.error("Errore durante la generazione e salvataggio del PDF:", err);
       if (!res.headersSent) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowDown, ArrowDownUp, ArrowUp, Plus, FileText, Search, Download, Trash2, CalendarDays, Upload, X } from 'lucide-react';
+import { ArrowDown, ArrowDownUp, ArrowUp, Plus, FileText, Search, Download, Trash2, CalendarDays, Upload, X, Pencil } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
 import AppuntamentiPreventivi from './AppuntamentiPreventivi';
@@ -91,6 +91,7 @@ const Preventivi = () => {
   const [preventivi, setPreventivi] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [preventivoInModifica, setPreventivoInModifica] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [proformeOpen, setProformeOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -181,7 +182,7 @@ const Preventivi = () => {
         <button type="button" className="flex items-center gap-2 rounded-xl border border-indigo-500/50 bg-indigo-500/15 px-5 py-3 font-bold text-indigo-100 hover:bg-indigo-500/25" onClick={() => setProformeOpen(true)}><FileText size={18} /> Proforme di testo</button>
         <button 
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-sm shrink-0" 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => { setPreventivoInModifica(null); setIsModalOpen(true); }}
         >
           <Plus size={18} />
           Nuovo Preventivo
@@ -234,6 +235,7 @@ const Preventivi = () => {
                             <Download size={18} />
                           </a>
                         )}
+                        {p.tipo_prezzo !== 'Allegato' && <button type="button" onClick={() => { setPreventivoInModifica(p); setIsModalOpen(true); }} className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-2 text-indigo-300 hover:bg-indigo-500 hover:text-white" title="Modifica preventivo e rigenera PDF" aria-label={`Modifica preventivo ${p.numero_preventivo}`}><Pencil size={18} /></button>}
                         <button type="button" onClick={() => handleElimina(p)} className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-colors border border-red-500/20" title="Elimina preventivo" aria-label={`Elimina preventivo ${p.numero_preventivo}`}><Trash2 size={18} /></button>
                       </div>
                     </td>
@@ -247,6 +249,8 @@ const Preventivi = () => {
 
       {isModalOpen && (
         <NuovoPreventivoModal 
+          key={preventivoInModifica?.id || 'nuovo'}
+          preventivo={preventivoInModifica}
           onClose={() => setIsModalOpen(false)} 
           onSuccess={() => {
             setIsModalOpen(false);

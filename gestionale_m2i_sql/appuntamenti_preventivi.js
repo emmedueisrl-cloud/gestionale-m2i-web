@@ -561,9 +561,15 @@ async function updateStatus(id, body) {
 }
 
 async function remove(id) {
-  const existing = await knex('appuntamenti_preventivi').where('id', id).first('agenda_impegno_id', 'scheda_pdf');
-  if (existing?.agenda_impegno_id) throw new Error('Elimina questo appuntamento dall’Agenda Caposquadra.');
+  const existing = await knex('appuntamenti_preventivi').where('id', id).first('agenda_impegno_id', 'scheda_pdf', 'stato', 'esito');
+  if (!existing) return 0;
+  if (existing.stato === 'Esitato' || String(existing.esito || '').trim()) throw new Error('Un appuntamento con esito non può essere eliminato.');
   const count = await knex.transaction(async trx => {
+    if (existing.agenda_impegno_id) {
+      const other = await trx('appuntamenti_preventivi').where('agenda_impegno_id', existing.agenda_impegno_id).whereNot('id', id).first('id');
+      if (other) throw new Error('L’impegno in agenda è collegato anche a un altro appuntamento.');
+      await trx('agenda_caposquadra').where('id', existing.agenda_impegno_id).del();
+    }
     await trx('preventivi').where('appuntamento_id', id).update({ appuntamento_id: null });
     await trx('appuntamenti_note').where('appuntamento_id', id).del();
     await trx('marketing_notifications').where('appuntamento_id', id).del();

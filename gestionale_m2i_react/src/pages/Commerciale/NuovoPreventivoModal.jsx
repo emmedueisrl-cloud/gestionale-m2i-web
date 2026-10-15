@@ -4,9 +4,11 @@ import { recuperaElencoClienti } from '../../api/clienti';
 import ModernModal from '../../components/ui/ModernModal';
 
 const API_URL = (import.meta.env.VITE_API_URL || '') + '/api';
+const EXTRA_TEXT = `In riferimento alla Vostra richiesta, Vi proponiamo il seguente servizio extra:\n\n{{servizi}}\n\nLuogo del servizio: {{indirizzo}}\n\nCosto del servizio: {{costo}}\n\nIl presente importo si riferisce al singolo intervento descritto.\n\nCordiali saluti.\n\nM2I S.r.l.`;
 
-const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
-  const [isCliente, setIsCliente] = useState(false);
+const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null, preventivo = null }) => {
+  const savedContent = (() => { try { return JSON.parse(preventivo?.contenuto_json || '{}'); } catch { return {}; } })();
+  const [isCliente, setIsCliente] = useState(Boolean(preventivo?.cliente_prospect_id));
   const [clienti, setClienti] = useState([]);
   const [appuntamenti, setAppuntamenti] = useState([]);
   const [proforme, setProforme] = useState([]);
@@ -14,20 +16,20 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
   const [searchCliente, setSearchCliente] = useState('');
   
   const [formData, setFormData] = useState({
-    cliente_prospect_id: '',
-    ragione_sociale_prospect: appuntamento?.nominativo || '',
-    oggetto: 'Preventivo per pulizie ordinarie',
-    indirizzo_locali: appuntamento?.luogo || '',
-    appuntamento_id: appuntamento?.id || '',
-    titolo_documento: 'PREVENTIVO N° {{numero}}',
-    riga_data: 'Roma, {{data}}',
-    destinatario_label: 'Spett.le',
-    oggetto_label: 'Oggetto:',
-    tipo_prezzo: 'Mensile',
-    costo_mensile: '',
-    commerciale: '',
-    servizi_inclusi: 'Spazzatura e lavaggio pavimenti; spolveratura superfici; pulizia servizi igienici; vuotatura cestini e, all’occorrenza, sostituzione dei relativi sacchetti.',
-    testo_corpo: ''
+    cliente_prospect_id: preventivo?.cliente_prospect_id || '',
+    ragione_sociale_prospect: preventivo?.ragione_sociale_prospect || appuntamento?.nominativo || '',
+    oggetto: savedContent.oggetto || (preventivo?.tipo_prezzo === 'Extra' ? 'Servizio extra' : 'Preventivo per pulizie ordinarie'),
+    indirizzo_locali: preventivo?.indirizzo_locali || appuntamento?.luogo || '',
+    appuntamento_id: preventivo?.appuntamento_id || appuntamento?.id || '',
+    titolo_documento: savedContent.titolo_documento || 'PREVENTIVO N° {{numero}}',
+    riga_data: savedContent.riga_data || 'Roma, {{data}}',
+    destinatario_label: savedContent.destinatario_label || 'Spett.le',
+    oggetto_label: savedContent.oggetto_label || 'Oggetto:',
+    tipo_prezzo: preventivo?.tipo_prezzo || 'Mensile',
+    costo_mensile: preventivo?.costo_mensile ?? '',
+    commerciale: preventivo?.commerciale || '',
+    servizi_inclusi: preventivo?.servizi_inclusi || 'Spazzatura e lavaggio pavimenti; spolveratura superfici; pulizia servizi igienici; vuotatura cestini e, all’occorrenza, sostituzione dei relativi sacchetti.',
+    testo_corpo: savedContent.testo_corpo || (preventivo?.tipo_prezzo === 'Extra' ? EXTRA_TEXT : '')
   });
 
   const [loading, setLoading] = useState(false);
@@ -52,9 +54,12 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
       .then(response => response.ok ? response.json() : Promise.reject(new Error('Impossibile caricare le proforme.')))
       .then(items => {
         setProforme(items);
-        if (items.length) {
+        if (items.length && !preventivo) {
           setProformaId(String(items[0].id));
-          setFormData(previous => ({ ...previous, titolo_documento: items[0].titolo_documento, riga_data: items[0].riga_data, destinatario_label: items[0].destinatario_label, oggetto_label: items[0].oggetto_label, oggetto: items[0].oggetto, servizi_inclusi: items[0].servizi_inclusi, testo_corpo: items[0].testo_corpo }));
+          setFormData(previous => ({ ...previous, titolo_documento: items[0].titolo_documento, riga_data: items[0].riga_data, destinatario_label: items[0].destinatario_label, oggetto_label: items[0].oggetto_label, oggetto: previous.tipo_prezzo === 'Extra' ? previous.oggetto : items[0].oggetto, servizi_inclusi: items[0].servizi_inclusi, testo_corpo: previous.tipo_prezzo === 'Extra' ? EXTRA_TEXT : items[0].testo_corpo }));
+        }
+        if (items.length && preventivo && !savedContent.testo_corpo && preventivo.tipo_prezzo !== 'Extra') {
+          setFormData(previous => ({ ...previous, testo_corpo: items[0].testo_corpo }));
         }
       })
       .catch(err => setAlertModal({ isOpen: true, type: 'error', title: 'Proforme non disponibili', content: err.message, primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) } }));
@@ -62,6 +67,10 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'tipo_prezzo') {
+      setFormData(prev => ({ ...prev, tipo_prezzo: value, oggetto: value === 'Extra' && prev.oggetto === 'Preventivo per pulizie ordinarie' ? 'Servizio extra' : value !== 'Extra' && prev.oggetto === 'Servizio extra' ? 'Preventivo per pulizie ordinarie' : prev.oggetto, testo_corpo: value === 'Extra' ? EXTRA_TEXT : prev.tipo_prezzo === 'Extra' ? proforme.find(item => String(item.id) === proformaId)?.testo_corpo || proforme[0]?.testo_corpo || prev.testo_corpo : prev.testo_corpo }));
+      return;
+    }
     setFormData(prev => ({ ...prev, [name]: value }));
     
     // Se seleziono un cliente, aggiorno la ragione sociale testuale e l'indirizzo
@@ -82,8 +91,8 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
     setLoading(true);
     
     try {
-      const res = await fetch(`${API_URL}/preventivi/generate`, {
-        method: 'POST',
+      const res = await fetch(preventivo ? `${API_URL}/preventivi/${encodeURIComponent(preventivo.id)}` : `${API_URL}/preventivi/generate`, {
+        method: preventivo ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
@@ -119,7 +128,7 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
       <div className="bg-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden border border-slate-700 flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-700 bg-slate-900/50 shrink-0">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <FileText className="text-indigo-400" size={24} /> Crea Nuovo Preventivo
+            <FileText className="text-indigo-400" size={24} /> {preventivo ? `Modifica preventivo ${preventivo.numero_preventivo}` : 'Crea nuovo preventivo'}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-700">
             <X size={24} />
@@ -128,12 +137,13 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
         
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 overflow-y-auto flex-1 space-y-6">
+            {preventivo && !preventivo.contenuto_json && <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">Per questo preventivo precedente non era stato salvato il testo originale. Controlla tutti i campi e il testo prima di generare la nuova versione.</p>}
             <label className="block text-sm font-semibold text-slate-300">Proforma di testo
               <select value={proformaId} onChange={event => {
                 const id = event.target.value;
                 setProformaId(id);
                 const selected = proforme.find(item => String(item.id) === id);
-                if (selected) setFormData(previous => ({ ...previous, titolo_documento: selected.titolo_documento, riga_data: selected.riga_data, destinatario_label: selected.destinatario_label, oggetto_label: selected.oggetto_label, oggetto: selected.oggetto, servizi_inclusi: selected.servizi_inclusi, testo_corpo: selected.testo_corpo }));
+                if (selected) setFormData(previous => ({ ...previous, titolo_documento: selected.titolo_documento, riga_data: selected.riga_data, destinatario_label: selected.destinatario_label, oggetto_label: selected.oggetto_label, oggetto: selected.oggetto, servizi_inclusi: selected.servizi_inclusi, testo_corpo: previous.tipo_prezzo === 'Extra' ? EXTRA_TEXT : selected.testo_corpo }));
               }} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white">
                 <option value="">Testo personalizzato</option>
                 {proforme.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}
@@ -321,11 +331,12 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
                   >
                     <option value="Mensile">Mensile</option>
                     <option value="Orario">Orario</option>
+                    <option value="Extra">Extra · servizio singolo</option>
                   </select>
                 </div>
                 <div>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-2 truncate" title={`Costo ${formData.tipo_prezzo} (€) (Esente IVA)`}>
-                    <Euro className="text-slate-400 shrink-0" size={16} /> Costo {formData.tipo_prezzo} (€)
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-2 truncate" title={`Costo ${formData.tipo_prezzo} (€)`}>
+                    <Euro className="text-slate-400 shrink-0" size={16} /> {formData.tipo_prezzo === 'Extra' ? 'Costo servizio (€)' : `Costo ${formData.tipo_prezzo} (€)`}
                   </label>
                   <input 
                     type="number" 
@@ -362,7 +373,7 @@ const NuovoPreventivoModal = ({ onClose, onSuccess, appuntamento = null }) => {
                   Generazione...
                 </>
               ) : (
-                'Genera PDF e Salva'
+                preventivo ? 'Salva nuova versione PDF' : 'Genera PDF e salva'
               )}
             </button>
           </div>

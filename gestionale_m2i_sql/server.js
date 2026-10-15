@@ -1374,6 +1374,7 @@ app.delete('/api/preventivi-proforme/:id', async (req, res) => {
 });
 app.get('/api/clienti/:id/preventivi', preventiviCtrl.getPreventiviByCliente);
 app.post('/api/preventivi/generate', preventiviCtrl.generatePreventivo);
+app.put('/api/preventivi/:id', preventiviCtrl.generatePreventivo);
 app.delete('/api/preventivi/:id', preventiviCtrl.eliminaPreventivo);
 app.put('/api/preventivi/:id/appuntamento', (req, res, next) => Promise.resolve(preventiviCtrl.collegaAppuntamento(req, res)).catch(next));
 const uploadPreventivoPdf = multer({

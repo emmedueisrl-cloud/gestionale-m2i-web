@@ -59,6 +59,7 @@ export default function AppuntamentiPreventivi() {
   const [uploadForm, setUploadForm] = useState(null);
   const [linkForm, setLinkForm] = useState(null);
   const [newQuoteFor, setNewQuoteFor] = useState(null);
+  const [quoteToEdit, setQuoteToEdit] = useState(null);
   const [ordinamentoAppuntamenti, setOrdinamentoAppuntamenti] = useState(null);
   const [ricercaAppuntamenti, setRicercaAppuntamenti] = useState('');
   const [dettagliAperti, setDettagliAperti] = useState(null);
@@ -205,11 +206,22 @@ export default function AppuntamentiPreventivi() {
   };
 
   const annullaAppuntamento = async appointment => {
-    if (!window.confirm(`Eliminare l'appuntamento con ${appointment.nominativo}? Sarà segnato come Annullato e resterà nello storico.`)) return;
+    if (!window.confirm(`Annullare l'appuntamento con ${appointment.nominativo}? Resterà nello storico.`)) return;
     setSaving(true);
     setError('');
     try {
       await request(`${API}/${appointment.id}/annulla`, { method: 'POST' });
+      await load();
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  };
+
+  const eliminaAppuntamento = async appointment => {
+    if (!window.confirm(`Eliminare definitivamente l'appuntamento con ${appointment.nominativo}? La scheda, le note${appointment.agendaImpegnoId ? ' e l’impegno in Agenda' : ''} non saranno recuperabili.`)) return;
+    setSaving(true);
+    setError('');
+    try {
+      await request(`${API}/${appointment.id}`, { method: 'DELETE' });
       await load();
     } catch (err) { setError(err.message); }
     finally { setSaving(false); }
@@ -314,8 +326,9 @@ export default function AppuntamentiPreventivi() {
           <a href={`${API}/${a.id}/stampa`} target="_blank" rel="noreferrer" title="Apri scheda appuntamento e presentazione aziendale in PDF" className="flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-700/70 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-600"><Printer size={16} /> Stampa</a>
           {a.stato === STATO_RICHIESTO_MARKETING ? <button type="button" onClick={() => apriAccettazione(a)} className="flex items-center gap-2 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30"><Check size={16} /> Accetta</button> : inLavorazione && <>
             <button type="button" onClick={() => { setActionError(''); setEsitoForm({ id: a.id, esito: '' }); }} className="rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/30">Esita</button>
-            <button type="button" onClick={() => annullaAppuntamento(a)} disabled={saving} className="rounded-lg bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/25 disabled:opacity-50">Elimina</button>
+            <button type="button" onClick={() => annullaAppuntamento(a)} disabled={saving} className="rounded-lg bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/25 disabled:opacity-50">Annulla app</button>
           </>}
+          {a.stato !== 'Esitato' && !a.esito && <button type="button" onClick={() => eliminaAppuntamento(a)} disabled={saving} className="rounded-lg border border-red-400/40 px-3 py-2 text-sm font-semibold text-red-200 hover:bg-red-500/20 disabled:opacity-50"><Trash2 size={15} className="inline" /> Elimina definitivamente</button>}
           <button type="button" onClick={() => { setActionError(''); setRifissaForm({ id: a.id, dataOra: a.dataOra, commercialeDipendenteId: a.commercialeDipendenteId || a.idCaposquadra, inAgenda: Boolean(a.agendaImpegnoId) }); }} className="rounded-lg bg-indigo-500/15 px-3 py-2 text-sm font-semibold text-indigo-200 hover:bg-indigo-500/25">Rifissa</button>
           {a.agendaImpegnoId && <Link to={`/admin/ore/agenda?dipendente=${encodeURIComponent(a.idCaposquadra || '')}&data=${a.dataOra.slice(0, 10)}`} className="flex items-center gap-2 rounded-lg bg-slate-700/70 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-600"><CalendarDays size={16} /> Agenda</Link>}
           <button type="button" onClick={() => { setError(''); setForm({ ...a, marketing: Boolean(a.marketing), senzaOrario: Boolean(a.senzaOrario) }); }} aria-label={`Modifica ${a.nominativo}`} className="ml-auto flex items-center gap-2 rounded-lg border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-700"><Pencil size={16} /> Modifica</button>
@@ -348,6 +361,7 @@ export default function AppuntamentiPreventivi() {
             <span className="font-semibold text-slate-200">{p.numero_preventivo}</span>
             <div className="flex items-center gap-2">
               {p.allegato_preventivo && <><a href={`${import.meta.env.VITE_API_URL || ''}${p.allegato_preventivo}`} target="_blank" rel="noreferrer" className="text-indigo-200 hover:text-white">Apri PDF</a><a href={`${import.meta.env.VITE_API_URL || ''}${p.allegato_preventivo}`} download className="flex items-center gap-1 text-indigo-200 hover:text-white"><Download size={15} /> Scarica</a></>}
+              {p.tipo_prezzo !== 'Allegato' && <button type="button" onClick={() => setQuoteToEdit(p)} className="flex items-center gap-1 text-indigo-200 hover:text-white"><Pencil size={15} /> Modifica</button>}
               <button type="button" onClick={() => linkQuote(p.id, null)} disabled={saving} className="text-xs text-slate-400 hover:text-red-300">Scollega</button>
             </div>
           </div>)}
@@ -496,5 +510,6 @@ export default function AppuntamentiPreventivi() {
     </div>}
 
     {newQuoteFor && <NuovoPreventivoModal appuntamento={newQuoteFor} onClose={() => setNewQuoteFor(null)} onSuccess={async () => { setNewQuoteFor(null); await load(); }} />}
+    {quoteToEdit && <NuovoPreventivoModal preventivo={quoteToEdit} onClose={() => setQuoteToEdit(null)} onSuccess={async () => { setQuoteToEdit(null); await load(); }} />}
   </div>;
 }
