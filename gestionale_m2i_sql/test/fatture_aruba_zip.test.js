@@ -210,7 +210,7 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   assert.equal(extraPreview.incongruenze.some(issue => issue.code === 'nome'), false);
   assert.equal(extraPreview.incongruenze.some(issue => issue.code === 'mese'), true);
   await assert.rejects(service.importSelected({ ...extraArgs,
-    selected: [{ id: 'extra_E', reviewed: true }] }), /fuori mese/);
+    selected: [{ id: 'extra_E', reviewed: true }] }), /senza fattura mensile/);
   const extraResult = await service.importSelected({ ...extraArgs,
     selected: [{ id: 'extra_E', reviewed: true, extra: true }] });
   assert.equal(extraResult.importate, 1);
@@ -287,6 +287,45 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   const extras = createServiziExtra(db);
   await extras.initialize();
   const now = new Date().toISOString();
+  await db('gruppi_fatturazione_extra').insert({ id: 'G-BULK', cliente_id: 'C2', mese: 10, anno: 2026,
+    tipo: 'extra', nome: 'Disinfezione', creata_at: now });
+  await db('servizi_extra').insert({ id: 'EX-BULK', cliente_id: 'C2', mese: 10, anno: 2026,
+    data_servizio: '2026-10-08', nome: 'Disinfezione', categoria: 'Disinfezione', descrizione: '',
+    imponibile_cent: 10000, gruppo_id: 'G-BULK', bloccato_at: now, creato_at: now, modificato_at: now });
+  const bulkZip = new JSZip();
+  bulkZip.file('XML/extra_bulk.xml', invoiceXml('EX 3/26', '122.00').replace('12345678901', '98765432109'));
+  bulkZip.file('PDF/extra_bulk.xml - EX 3_26.pdf', Buffer.from('%PDF-1.4\nextra bulk'));
+  const bulkArgs = { mese: 10, anno: 2026, singleZip: await bulkZip.generateAsync({ type: 'nodebuffer' }) };
+  const bulkPreview = (await service.preview(bulkArgs)).fatture[0];
+  assert.equal(bulkPreview.gruppoId, 'G-BULK');
+  assert.equal(bulkPreview.selezionata, true);
+  assert.equal(bulkPreview.incongruenze.some(issue => issue.code === 'mese'), false);
+  assert.equal((await service.importSelected({ ...bulkArgs, selected: ['extra_bulk'] })).importate, 1);
+  const bulkGroup = await db('gruppi_fatturazione_extra').where({ id: 'G-BULK' }).first();
+  const bulkRegistration = await db('fatture_aruba_elaborati').where({ id: bulkGroup.fattura_registrazione_id }).first();
+  assert.equal(bulkRegistration.numero_fattura, 'EX 3/26');
+  await db('clienti').insert({ id: 'C3', ragione_sociale: 'Cliente con due extra', partita_iva: '11122233344',
+    tipo_tassazione: 'IVA', percentuale_tassazione: 22 });
+  await db('gruppi_fatturazione_extra').insert([
+    { id: 'G-CHOICE-A', cliente_id: 'C3', mese: 10, anno: 2026, tipo: 'extra', nome: 'Servizio A', creata_at: now },
+    { id: 'G-CHOICE-B', cliente_id: 'C3', mese: 10, anno: 2026, tipo: 'extra', nome: 'Servizio B', creata_at: now }
+  ]);
+  await db('servizi_extra').insert(['A', 'B'].map(suffix => ({ id: `EX-CHOICE-${suffix}`,
+    cliente_id: 'C3', mese: 10, anno: 2026, data_servizio: '2026-10-08', nome: `Servizio ${suffix}`,
+    categoria: 'Extra', descrizione: '', imponibile_cent: 10000, gruppo_id: `G-CHOICE-${suffix}`,
+    bloccato_at: now, creato_at: now, modificato_at: now })));
+  const choiceZip = new JSZip();
+  choiceZip.file('XML/extra_choice.xml', invoiceXml('EX 4/26', '122.00').replace('12345678901', '11122233344'));
+  choiceZip.file('PDF/extra_choice.xml - EX 4_26.pdf', Buffer.from('%PDF-1.4\nextra choice'));
+  const choiceArgs = { mese: 10, anno: 2026, singleZip: await choiceZip.generateAsync({ type: 'nodebuffer' }) };
+  const choicePreview = (await service.preview(choiceArgs)).fatture[0];
+  assert.equal(choicePreview.gruppoId, null);
+  assert.equal(choicePreview.selezionata, false);
+  assert.equal((await service.importSelected({ ...choiceArgs, selected: [{
+    id: 'extra_choice', clienteId: 'C3', gruppoId: 'G-CHOICE-A', reviewed: true
+  }] })).importate, 1);
+  assert.ok((await db('gruppi_fatturazione_extra').where({ id: 'G-CHOICE-A' }).first()).fattura_registrazione_id);
+  assert.equal((await db('gruppi_fatturazione_extra').where({ id: 'G-CHOICE-B' }).first()).fattura_registrazione_id, null);
   await db('gruppi_fatturazione_extra').insert({ id: 'G-EX', cliente_id: 'C1', mese: 10, anno: 2026,
     tipo: 'extra', nome: 'Sgrosso', creata_at: now });
   await db('servizi_extra').insert({ id: 'EX-1', cliente_id: 'C1', mese: 10, anno: 2026,

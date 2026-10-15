@@ -274,16 +274,31 @@ function createArubaZipService(knex, workflow) {
       knex('fatture').select('id', 'cliente_id', 'numero_fattura', 'data_fattura', 'importo_totale', 'allegato_fattura'),
       knex('documenti_aruba_mese').where({ mese: period.mese, anno: period.anno })
     ]);
+    const extraGroups = await knex.schema.hasTable('gruppi_fatturazione_extra')
+      ? await extraService.groups(period.mese, period.anno) : [];
+    const availableGroups = extraGroups.filter(group => group.tipo === 'extra' && group.servizi.length &&
+      group.tuttiBlindati && !group.fatturaRegistrazioneId);
+    const monthlyIds = new Set(rows.map(row => String(row.idCliente)));
+    const extraOnlyGroups = availableGroups.filter(group => !monthlyIds.has(String(group.clienteId)) &&
+      availableGroups.filter(other => String(other.clienteId) === String(group.clienteId)).length === 1);
+    const eligibleRows = [...rows, ...extraOnlyGroups.map(group => ({
+      idCliente: group.clienteId, importoTotale: group.totaleExtraPrevisto
+    }))];
     const selectedPeriod = `${period.anno}-${String(period.mese).padStart(2, '0')}`;
-    const classified = classify(pair.invoices, clients, rows,
+    const classified = classify(pair.invoices, clients, eligibleRows,
       registrations.filter(record => record.id !== replaced?.id),
       officialInvoices.filter(record => record.id !== replaced?.fattura_id),
       selectedPeriod, separateDocuments);
-    return { period, pair, classified, clients, rows };
+    for (const item of classified) {
+      const group = extraOnlyGroups.find(candidate => String(candidate.clienteId) === String(item.client?.id));
+      if (group && item.tipoDocumento === 'TD01' && item.stato === 'pronta' && !item.issues.length &&
+        cents(item.importoTotale) === cents(group.totaleExtraPrevisto)) item.gruppoId = group.id;
+    }
+    return { period, pair, classified, clients, rows, availableGroups };
   }
 
   async function preview(args) {
-    const { pair, classified, clients, rows } = await analyze(args);
+    const { pair, classified, clients, rows, availableGroups } = await analyze(args);
     const monthlyIds = new Set(rows.map(row => String(row.idCliente)));
     return { archiviInvertiti: pair.swapped, pdfSenzaXml: pair.pdfWithoutXml,
       pdfSenzaXmlDettaglio: pair.orphanPdfs.map(pdf => ({ id: pdf.id, nome: pdf.name })),
@@ -291,6 +306,8 @@ function createArubaZipService(knex, workflow) {
       clientiDisponibili: clients.map(client => ({ id: client.id, nome: client.ragione_sociale,
         partitaIva: client.partita_iva || '', codiceFiscale: client.codice_fiscale || '',
         nelMese: monthlyIds.has(String(client.id)) })),
+      gruppiDisponibili: availableGroups.map(group => ({ id: group.id, clienteId: group.clienteId,
+        nome: group.nome, importo: group.totaleExtraPrevisto })),
       fatture: classified.map(item => ({
       id: item.id, cliente: item.client?.ragione_sociale || item.clienteXml || 'Cliente sconosciuto',
       clienteXml: item.clienteXml || '', clienteId: item.client?.id || null,
@@ -298,7 +315,7 @@ function createArubaZipService(knex, workflow) {
       abbinamentoFiscale: item.matchedBy, tipoDocumento: item.tipoDocumento || '',
       numero: item.numero || '', data: item.dataFattura || '', importo: item.importoTotale ?? null,
       imponibile: item.imponibile ?? null, iva: item.iva ?? null,
-      importoPrevisto: item.importoPrevisto ?? null,
+      importoPrevisto: item.importoPrevisto ?? null, gruppoId: item.gruppoId || null,
       importoLordo: item.importoLordo ?? null, importoRitenuta: item.importoRitenuta ?? 0,
       xml: item.xml?.name || null, pdf: item.pdf?.name || null, pdfId: item.pdf?.id || null,
       stato: item.stato, motivo: item.motivo, incongruenze: item.issues,
@@ -322,7 +339,9 @@ function createArubaZipService(knex, workflow) {
       const item = byId.get(choice.id);
       const client = clients.find(candidate => String(candidate.id) === String(choice.clienteId || item?.client?.id));
       const pdf = pair.pdfs.get(choice.pdfId || item?.pdf?.id);
-      return item && { ...item, client, pdf, extra: choice.extra === true,
+      const gruppoId = Object.prototype.hasOwnProperty.call(choice, 'gruppoId')
+        ? choice.gruppoId : item?.gruppoId || args.gruppoId || null;
+      return item && { ...item, client, pdf, gruppoId, extra: choice.extra === true,
         creditMode: choice.creditMode || null, reviewed: choice.reviewed === true,
         suggestedClientId: item.client?.id, suggestedPdfId: item.pdf?.id };
     });
@@ -336,8 +355,15 @@ function createArubaZipService(knex, workflow) {
       item.pdf?.id !== item.suggestedPdfId) && !item.reviewed)) {
       throw new Error('Esamina e conferma le incongruenze di ogni documento selezionato.');
     }
-    if (chosen.some(item => !monthlyIds.has(String(item.client.id)) && !item.extra)) {
-      throw new Error('Per il cliente fuori mese scegli esplicitamente “Aggiungi come extra”.');
+    if (chosen.some(item => !monthlyIds.has(String(item.client.id)) && !item.extra && !item.gruppoId)) {
+      throw new Error('Per il cliente senza fattura mensile scegli un gruppo extra o “Aggiungi come extra”.');
+    }
+    if (new Set(chosen.map(item => item.gruppoId).filter(Boolean)).size !== chosen.filter(item => item.gruppoId).length) {
+      throw new Error('Lo stesso gruppo extra non può essere associato a più fatture.');
+    }
+    for (const item of chosen.filter(item => item.gruppoId)) {
+      await targetExtraGroup({ mese: period.mese, anno: period.anno,
+        clienteId: item.client.id, gruppoId: item.gruppoId });
     }
     if (chosen.some(item => item.tipoDocumento === 'TD04' && !['deduci', 'solo_allegato'].includes(item.creditMode) ||
       !['TD01', 'TD04'].includes(item.tipoDocumento))) {
@@ -395,13 +421,13 @@ function createArubaZipService(knex, workflow) {
             registrationId = id;
             keepPdf = true;
             if (item.tipoDocumento !== 'TD04') {
-              if (!args.gruppoId) await freezeMonthlyDescription(trx, {
+               if (!item.gruppoId) await freezeMonthlyDescription(trx, {
                 clienteId: key.cliente_id, mese: key.mese, anno: key.anno
               });
               const monthlyGroup = await trx.schema.hasTable('gruppi_fatturazione_extra')
                 ? await trx('gruppi_fatturazione_extra').where({ ...key, tipo: 'mensile' })
                   .whereNull('fattura_registrazione_id').first() : null;
-              if (!args.gruppoId && (!monthlyGroup || Number(monthlyGroup.totale_cent) === cents(signedTotal))) {
+               if (!item.gruppoId && (!monthlyGroup || Number(monthlyGroup.totale_cent) === cents(signedTotal))) {
                 await transferSentReceipts(trx, key, { id, importo_totale: signedTotal });
                 if (monthlyGroup) await trx('gruppi_fatturazione_extra').where({ id: monthlyGroup.id })
                   .update({ fattura_registrazione_id: id, inviata_at: monthlyGroup.inviata_at || new Date().toISOString() });
@@ -433,7 +459,7 @@ function createArubaZipService(knex, workflow) {
           const reconciliation = await reconcileRegistration(trx, { id: registrationId,
             cliente_id: key.cliente_id, numero_fattura: item.numero,
             data_fattura: item.dataFattura, importo_totale: signedTotal });
-          if (args.gruppoId) await extraService.linkRegistration(args.gruppoId, registrationId, trx);
+           if (item.gruppoId) await extraService.linkRegistration(item.gruppoId, registrationId, trx);
           return { stato: reconciliation.stato, registrationId };
         });
         results.push({ id: item.id, numero: item.numero, esito: outcome.stato, registrazioneId: outcome.registrationId });
