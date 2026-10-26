@@ -9,7 +9,8 @@ import FileUploader from '../../components/ui/FileUploader';
 import GestioneChiaviCliente from '../../components/clienti/GestioneChiaviCliente';
 import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
-import DatiFatturazioneCliente, { campiFatturazioneCliente } from '../../components/clienti/DatiFatturazioneCliente';
+import DatiFatturazioneCliente from '../../components/clienti/DatiFatturazioneCliente';
+import { campiFatturazioneCliente } from '../../components/clienti/campiFatturazioneCliente';
 
 function ModificaCliente() {
   const navigate = useNavigate();

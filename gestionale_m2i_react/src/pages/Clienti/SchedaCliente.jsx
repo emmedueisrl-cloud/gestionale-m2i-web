@@ -6,6 +6,28 @@ import { recuperaDatiCompletiCliente, recuperaDocumentiCliente, eliminaDocumento
 import ModernModal from '../../components/ui/ModernModal';
 import AttrezzatureCliente from '../../components/clienti/AttrezzatureCliente';
 import PreventiviCliente from '../../components/clienti/PreventiviCliente';
+import { campiFatturazione } from '../../components/clienti/campiFatturazioneCliente';
+
+const formattaData = valore => /^\d{4}-\d{2}-\d{2}$/.test(valore || '')
+  ? valore.split('-').reverse().join('/') : valore || '-';
+
+const sediOperative = valore => {
+  if (Array.isArray(valore)) return valore.filter(Boolean);
+  if (!valore) return [];
+  try {
+    const parsed = JSON.parse(valore);
+    if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    if (typeof parsed === 'string') return [parsed];
+  } catch { /* Formato legacy separato da barre verticali. */ }
+  return String(valore).split('|').map(sede => sede.trim()).filter(Boolean);
+};
+
+function CampoScheda({ etichetta, valore }) {
+  return <div className="min-w-0 rounded-xl border border-slate-700 bg-slate-900/50 px-4 py-3">
+    <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{etichetta}</p>
+    <p className="break-words whitespace-pre-wrap font-medium text-slate-200">{valore === 0 ? '0' : valore || '-'}</p>
+  </div>;
+}
 
 export default function SchedaCliente() {
   const { id } = useParams();
@@ -91,6 +113,7 @@ export default function SchedaCliente() {
 
   const telefoni = data.telefono ? data.telefono.split(',').map(s => s.trim()).filter(Boolean) : [];
   const fotoServizio = Array.isArray(data.foto_servizio) ? data.foto_servizio : [];
+  const sedi = sediOperative(data.sede_operativa);
 
   return (
     <div className="p-6 w-full pb-12">
@@ -124,6 +147,7 @@ export default function SchedaCliente() {
             <h1 className="text-3xl font-extrabold text-slate-50 uppercase tracking-tight mb-2">
               {data.ragione_sociale}
             </h1>
+            {data.nome_attivita && <p className="mb-3 text-slate-300">Nome attività: {data.nome_attivita}</p>}
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-medium text-slate-300">
               <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">
                 <FileText className="w-4 h-4 text-slate-400" /> PI: {data.partita_iva}
@@ -138,10 +162,16 @@ export default function SchedaCliente() {
           <div className="flex flex-col items-center justify-center bg-slate-900/50 p-4 rounded-xl border border-slate-700 min-w-[140px]">
             <span className="text-xs uppercase tracking-wider text-slate-400 font-bold mb-1">Stato</span>
             <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest ${data.attivo === 'SI' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'}`}>
-              {data.attivo === 'SI' ? 'ATTIVO' : 'NON ATTIVO'}
+              {data.attivo === 'SI' ? 'ATTIVO' : data.attivo === 'Bozza' ? 'BOZZA' : data.attivo === 'Cessato' ? 'CESSATO' : 'NON ATTIVO'}
             </span>
+            {data.data_cessazione && <span className="mt-2 text-xs text-slate-400">Dal {formattaData(data.data_cessazione)}</span>}
           </div>
         </div>
+      </div>
+
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <CampoScheda etichetta="Data inizio attività" valore={formattaData(data.data_inizio_attivita)} />
+        <CampoScheda etichetta="Codice cliente" valore={data.id} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -197,6 +227,11 @@ export default function SchedaCliente() {
                   <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-0.5">Email</p>
                   <p className="font-medium text-slate-200">{data.email || '-'}</p>
                 </div>
+              </div>
+              <CampoScheda etichetta="Email cortesia secondaria" valore={data.email_secondaria} />
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Sedi operative</p>
+                {sedi.length ? sedi.map((sede, index) => <CampoScheda key={`${index}-${sede}`} etichetta={`Sede ${index + 1}`} valore={sede} />) : <CampoScheda etichetta="Sede operativa" valore="-" />}
               </div>
               <div className="flex items-start gap-4">
                 <div className="p-2 bg-slate-900 rounded-lg text-slate-400"><Mail className="w-4 h-4" /></div>
@@ -411,6 +446,30 @@ export default function SchedaCliente() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="mt-8 overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-sm">
+        <div className="flex items-center gap-2 border-b border-slate-700 bg-slate-900/50 p-5">
+          <FileText className="h-5 w-5 text-indigo-400" />
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-50">Dati fatturazione elettronica</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
+          <CampoScheda etichetta="Trattamento fiscale" valore={data.tipo_tassazione} />
+          <CampoScheda etichetta="Aliquota IVA (%)" valore={data.percentuale_tassazione} />
+          {data.tipo_tassazione === 'ALTRO' && <CampoScheda etichetta="Altro trattamento" valore={data.tassazione_altro} />}
+          {campiFatturazione.map(([campo, etichetta]) => <CampoScheda key={campo} etichetta={etichetta} valore={data[campo]} />)}
+        </div>
+      </div>
+
+      <div className="mt-8 overflow-hidden rounded-2xl border border-slate-700 bg-slate-800 shadow-sm">
+        <div className="flex items-center gap-2 border-b border-slate-700 bg-slate-900/50 p-5">
+          <FileText className="h-5 w-5 text-indigo-400" />
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-50">Elaborato e fattura</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
+          <CampoScheda etichetta="Causale in fattura" valore={data.causale_fattura} />
+          <CampoScheda etichetta="Note fisse per elaborato" valore={data.note_fisse_elaborato} />
         </div>
       </div>
 

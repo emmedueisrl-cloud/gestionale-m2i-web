@@ -7,7 +7,8 @@ import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
 import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
-import DatiFatturazioneCliente, { campiFatturazioneCliente } from '../../components/clienti/DatiFatturazioneCliente';
+import DatiFatturazioneCliente from '../../components/clienti/DatiFatturazioneCliente';
+import { campiFatturazioneCliente } from '../../components/clienti/campiFatturazioneCliente';
 
 const dataOdiernaItaliana = () => {
   const parti = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
