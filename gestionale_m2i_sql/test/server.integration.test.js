@@ -176,9 +176,10 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.match(stampaAppuntamento.headers.get('content-type') || '', /application\/pdf/);
     const schedaPdf = await parsePdf(Buffer.from(await stampaAppuntamento.arrayBuffer()));
     assert.equal(schedaPdf.numpages, 2);
-    for (const testo of ['SCHEDA APPUNTAMENTO', 'Cliente di prova', 'Paola Cliente', '+39 333 123 4567', 'paola@example.com', 'Sopralluogo', 'Elena Operatrice', 'NOTE POST APPUNTAMENTO', 'M2I S.r.l.', 'Preparato per Cliente di prova', 'Mauro Martinelli', '0612345678']) {
+    for (const testo of ['SCHEDA APPUNTAMENTO', 'Cliente di prova', 'Paola Cliente', '+39 333 123 4567', 'paola@example.com', 'Sopralluogo', 'Elena Operatrice', 'NOTE POST APPUNTAMENTO', 'M2I S.r.l.', 'SETTORE COMMERCIALE', 'Preparato per Cliente di prova', 'Mauro Martinelli', '0612345678']) {
       assert.ok(schedaPdf.text.includes(testo), `La scheda PDF deve contenere: ${testo}`);
     }
+    assert.ok(!schedaPdf.text.includes('PARTE COMMERCIALE'));
     const urlNoteInterne = `${base}/api/appuntamenti-preventivi/${idAppuntamento}/note`;
     assert.equal((await fetch(urlNoteInterne, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ testo: 'Senza accesso' }) })).status, 401);
     assert.equal((await fetch(urlNoteInterne, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ testo: '  ' }) })).status, 400);
