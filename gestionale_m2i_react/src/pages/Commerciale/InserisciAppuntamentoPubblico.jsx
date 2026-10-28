@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Bell, CalendarDays, CheckCircle2, ChevronDown, Clock3, FilePlus2, FileUp, Filter, Mail, MapPin, Phone, RefreshCw, Search, UserRound, X } from 'lucide-react';
+import { TAG_COMMERCIALI, tagCommerciale, stileTagCommerciale } from '../../utils/tagCommercialeAppuntamento';
 
 const initialForm = { dataOra: '', nominativo: '', referente: '', telefono: '', email: '', incaricato: '', operatore: '', luogo: '', note: '' };
 const API = import.meta.env.VITE_API_URL || '';
@@ -131,6 +132,20 @@ export default function InserisciAppuntamentoPubblico() {
     finally { setSaving(false); }
   };
 
+  const cambiaTagCommerciale = async (appointment, nuovoTag) => {
+    setSaving(true);
+    setListError('');
+    try {
+      const response = await fetch(`${API}/api/public/appuntamenti/${token}/${appointment.id}/tag-commerciale`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: nuovoTag })
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Tag non aggiornato.');
+      const result = await response.json();
+      setAppuntamenti(previous => previous.map(item => item.id === appointment.id ? { ...item, tagCommerciale: result.tagCommerciale } : item));
+    } catch (err) { setListError(err.message); }
+    finally { setSaving(false); }
+  };
+
   const formatTimestamp = value => new Date(value).toLocaleString('it-IT', { timeZone: 'Europe/Rome', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const formatAppointment = value => new Date(`${value}:00`).toLocaleString('it-IT', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const unread = notifiche.filter(item => item.id > lastReadId).length;
@@ -138,7 +153,7 @@ export default function InserisciAppuntamentoPubblico() {
   const completed = appuntamenti.length - pending;
   const visibleAppointments = appuntamenti.filter(item => {
     const matchesView = view === 'tutti' || (view === 'aperti' ? !['Esitato', 'Svolto', 'Annullato'].includes(item.stato) : ['Esitato', 'Svolto', 'Annullato'].includes(item.stato));
-    return matchesView && `${item.nominativo} ${item.referente || ''} ${item.incaricato || ''}`.toLocaleLowerCase('it-IT').includes(query.trim().toLocaleLowerCase('it-IT'));
+    return matchesView && `${item.nominativo} ${item.referente || ''} ${item.incaricato || ''} ${item.stato} ${tagCommerciale(item)}`.toLocaleLowerCase('it-IT').includes(query.trim().toLocaleLowerCase('it-IT'));
   });
   const statusClass = stato => stato === 'Esitato' || stato === 'Svolto' ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200' : stato === 'Annullato' ? 'border-rose-400/25 bg-rose-400/10 text-rose-200' : stato === 'Richiesto da Marketing' ? 'border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-200' : stato === 'Passato' ? 'border-slate-500/40 bg-slate-500/15 text-slate-200' : 'border-amber-400/25 bg-amber-400/10 text-amber-200';
   const openNewAppointment = () => { setSaved(false); setError(''); setShowForm(true); };
@@ -173,10 +188,12 @@ export default function InserisciAppuntamentoPubblico() {
                 <button type="button" aria-expanded={expandedId === item.id} aria-controls={`appuntamento-dettagli-${item.id}`} onClick={() => setExpandedId(previous => previous === item.id ? null : item.id)} className="grid w-full grid-cols-[minmax(0,1fr)_180px_170px_24px] items-center gap-5 px-5 py-5 text-left xl:grid-cols-[minmax(0,1fr)_220px_190px_24px]">
                   <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><strong className="break-words text-base font-bold text-white xl:text-lg">{item.nominativo}</strong>{item.numeroAppuntamento > 1 && <span className="rounded-md bg-indigo-500/20 px-2 py-0.5 text-xs font-bold text-indigo-100">{item.numeroAppuntamento}° app.</span>}</span><span className="mt-1 block text-sm text-slate-400">{item.referente || 'Nessun referente'}</span></span>
                   <span className="text-sm font-medium text-slate-200">{formatAppointment(item.dataOra)}</span>
-                  <span className={`inline-flex w-fit max-w-full rounded-full border px-3 py-1.5 text-xs font-bold ${statusClass(item.stato)}`}>{item.stato}</span>
+                  <span className="flex flex-wrap gap-1.5"><span className={`inline-flex w-fit max-w-full rounded-full border px-3 py-1.5 text-xs font-bold ${statusClass(item.stato)}`}>{item.stato}</span><span className={`inline-flex w-fit max-w-full rounded-full border px-2.5 py-1 text-xs font-bold ${stileTagCommerciale(tagCommerciale(item))}`}>{tagCommerciale(item)}</span></span>
                   <ChevronDown size={20} className={`text-indigo-200 transition-transform ${expandedId === item.id ? 'rotate-180' : ''}`} />
                 </button>
                 <div id={`appuntamento-dettagli-${item.id}`} hidden={expandedId !== item.id} className="border-t border-white/10 px-5 py-5">
+                  <label className="mb-5 block max-w-xs text-sm font-semibold text-slate-200">Tag commerciale<select value={tagCommerciale(item)} onChange={event => cambiaTagCommerciale(item, event.target.value)} disabled={saving || item.stato === 'Annullato'} className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-800 p-2.5 text-white disabled:opacity-60">{TAG_COMMERCIALI.map(tag => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+                  {item.stato === 'Annullato' && <p className="mb-5 text-xs text-rose-200">Gli appuntamenti annullati hanno il tag KO.</p>}
                   <div className="grid gap-5 md:grid-cols-2"><div><h3 className="mb-3 text-xs font-bold uppercase tracking-[0.15em] text-slate-400">Contatto</h3><div className="space-y-2.5 text-sm text-slate-200">{item.referente && <p className="flex items-center gap-2"><UserRound size={16} className="text-indigo-300" />{item.referente}</p>}{item.telefono && <p className="flex items-center gap-2"><Phone size={16} className="text-indigo-300" /><a href={`tel:${item.telefono.replace(/[^\d+]/g, '')}`} className="hover:text-white hover:underline">{item.telefono}</a></p>}{item.email && <p className="flex items-center gap-2 break-all"><Mail size={16} className="shrink-0 text-indigo-300" /><a href={`mailto:${item.email}`} className="hover:text-white hover:underline">{item.email}</a></p>}</div></div><div><h3 className="mb-3 text-xs font-bold uppercase tracking-[0.15em] text-slate-400">Incarico</h3><div className="space-y-2.5 text-sm text-slate-200">{item.incaricato && <p><span className="text-slate-400">Chi lo svolge:</span> {item.incaricato}</p>}{item.operatore && <p><span className="text-slate-400">Operatore:</span> {item.operatore}</p>}{item.luogo && <p className="flex items-start gap-2"><MapPin size={16} className="mt-0.5 shrink-0 text-indigo-300" />{item.luogo}</p>}</div></div></div>
                   {item.esito && <div className="mt-5 rounded-xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm text-sky-100"><strong className="block">Esito</strong><p className="mt-1 whitespace-pre-wrap break-words">{item.esito}</p></div>}
                   <div className="mt-5 border-t border-white/10 pt-5"><h3 className="mb-3 text-xs font-bold uppercase tracking-[0.15em] text-slate-400">Note appuntamento</h3>{item.noteStoriche?.length ? <div className="space-y-2">{item.noteStoriche.map(note => <div key={note.id} className="rounded-xl bg-slate-800/70 p-3.5 text-sm"><div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold text-indigo-200"><time dateTime={note.creataIl}>{formatTimestamp(note.creataIl)}</time><span>{note.autore || (note.tipo === 'scheda' ? 'Marketing' : 'M2I')}</span></div><p className="mt-2 whitespace-pre-wrap break-words text-slate-200">{note.testo}</p></div>)}</div> : <p className="text-sm text-slate-400">Nessuna nota presente.</p>}</div>

@@ -224,6 +224,7 @@ CREATE TABLE appuntamenti_preventivi (
     luogo TEXT NOT NULL DEFAULT '',
     note TEXT NOT NULL DEFAULT '',
     stato TEXT NOT NULL DEFAULT 'Programmato',
+    tag_commerciale TEXT NOT NULL DEFAULT 'In trattativa',
     esito TEXT NOT NULL DEFAULT '',
     scheda_pdf TEXT,
     origine_pubblica INTEGER NOT NULL DEFAULT 0,

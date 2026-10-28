@@ -160,6 +160,12 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.referente, 'Paola Cliente');
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.telefono, '+39 333 123 4567');
     assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.email, 'paola@example.com');
+    assert.equal(appuntamentiDiretti.find(item => item.id === idAppuntamento)?.tagCommerciale, 'In trattativa');
+    const tagInternoUrl = `${base}/api/appuntamenti-preventivi/${idAppuntamento}/tag-commerciale`;
+    assert.equal((await fetch(tagInternoUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'KO' }) })).status, 401);
+    assert.equal((await fetch(tagInternoUrl, { method: 'PATCH', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'sconosciuto' }) })).status, 400);
+    assert.equal((await fetch(tagInternoUrl, { method: 'PATCH', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'CONTRATTUALIZZATO' }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi`, { headers: { Cookie: cookie } }).then(response => response.json())).find(item => item.id === idAppuntamento)?.tagCommerciale, 'CONTRATTUALIZZATO');
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idAppuntamento}/stampa`)).status, 401);
     assert.equal((await fetch(`${base}/api/riferimenti-aziendali`)).status, 401);
     const riferimentiResponse = await fetch(`${base}/api/riferimenti-aziendali`, { headers: { Cookie: cookie } });
@@ -269,6 +275,16 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal(schedaSalvata?.operatore, 'Marco Operatore');
     assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idPubblico)?.operatore, 'Marco Operatore');
     assert.deepEqual((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche, []);
+    assert.equal(schedaSalvata?.tagCommerciale, 'In trattativa');
+    const tagPubblicoUrl = `${base}/api/public/appuntamenti/${tokenInserimento}/${idPubblico}/tag-commerciale`;
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${'0'.repeat(64)}/${idPubblico}/tag-commerciale`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'KO' }) })).status, 404);
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}/${idAppuntamento}/tag-commerciale`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'KO' }) })).status, 404);
+    assert.equal((await fetch(tagPubblicoUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'KO' }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idPubblico)?.tagCommerciale, 'KO');
+    assert.equal((await fetch(notificationUrl, { headers: { Cookie: cookie } }).then(response => response.json()))[0]?.tipo, 'tag');
+    assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}/tag-commerciale`, { method: 'PATCH', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'CONTRATTUALIZZATO' }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idPubblico)?.tagCommerciale, 'CONTRATTUALIZZATO');
+    assert.match((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche[0].testo, /CONTRATTUALIZZATO/);
     assert.equal(schedaSalvata?.marketing, 1);
     assert.equal(schedaSalvata?.stato, 'Richiesto da Marketing');
     assert.equal(schedaSalvata?.incaricato, 'Lucia Verdi');
@@ -311,6 +327,8 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`, { method: 'POST', body: fileNonPdf })).status, 400);
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 400);
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ ...marketingAggiornato, stato: 'Annullato', esito: '' }) })).status, 200);
+    assert.equal((await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).appuntamenti.find(item => item.id === idPubblico)?.tagCommerciale, 'KO');
+    assert.equal((await fetch(tagPubblicoUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tagCommerciale: 'In trattativa' }) })).status, 400);
     assert.equal((await fetch(`${base}/api/appuntamenti-preventivi/${idPubblico}`, { method: 'DELETE', headers: { Cookie: cookie } })).status, 204);
     const notificaEliminazione = (await fetch(`${base}/api/public/appuntamenti/${tokenInserimento}`).then(response => response.json())).notifiche[0];
     assert.equal(notificaEliminazione.nominativo, 'Cliente dal link');

@@ -37,14 +37,14 @@ async function list() {
 const fields = {
   data_ora: 'Data e ora', nominativo: 'Cliente', referente: 'Referente', telefono: 'Telefono',
   email: 'Email', incaricato: 'Chi lo svolge', operatore: 'Operatore', luogo: 'Luogo',
-  attivita: 'Attività', note: 'Note della scheda', stato: 'Stato', esito: 'Esito'
+  attivita: 'Attività', note: 'Note della scheda', stato: 'Stato', tag_commerciale: 'Tag commerciale', esito: 'Esito'
 };
 
 function describeEdit(before, after) {
   if (!before?.origine_pubblica && after?.origine_pubblica) return 'Appuntamento condiviso con il link.';
   const changed = Object.entries(fields).filter(([key]) => String(before?.[key] ?? '') !== String(after?.[key] ?? ''));
   if (!changed.length) return '';
-  const details = changed.filter(([key]) => ['data_ora', 'incaricato', 'operatore', 'luogo', 'stato'].includes(key))
+  const details = changed.filter(([key]) => ['data_ora', 'incaricato', 'operatore', 'luogo', 'stato', 'tag_commerciale'].includes(key))
     .map(([key, label]) => `${label}: ${String(after[key] || 'vuoto').slice(0, 100)}`);
   return `Scheda aggiornata: ${changed.map(([, label]) => label).join(', ')}.${details.length ? ` Nuovi valori: ${details.join('; ')}.` : ''}`;
 }

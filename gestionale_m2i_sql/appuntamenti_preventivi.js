@@ -7,6 +7,7 @@ const publicAppointmentNotifications = require('./public_appointment_notificatio
 
 const STATO_RICHIESTO_MARKETING = 'Richiesto da Marketing';
 const STATI = [STATO_RICHIESTO_MARKETING, 'Da svolgere', 'Passato', 'Programmato', 'Svolto', 'Annullato', 'Esitato'];
+const TAG_COMMERCIALI = ['In trattativa', 'KO', 'CONTRATTUALIZZATO'];
 
 function todayInRome() {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -34,6 +35,7 @@ async function ensureTable() {
       table.string('luogo', 500).notNullable().defaultTo('');
       table.text('note').notNullable().defaultTo('');
       table.string('stato', 40).notNullable().defaultTo('Programmato');
+      table.string('tag_commerciale', 30).notNullable().defaultTo('In trattativa');
       table.text('esito').notNullable().defaultTo('');
       table.text('scheda_pdf');
       table.boolean('origine_pubblica').notNullable().defaultTo(false);
@@ -54,6 +56,9 @@ async function ensureTable() {
     }
     if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'esito')) {
       await knex.schema.alterTable('appuntamenti_preventivi', table => table.text('esito').notNullable().defaultTo(''));
+    }
+    if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'tag_commerciale')) {
+      await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('tag_commerciale', 30).notNullable().defaultTo('In trattativa'));
     }
     if (!await knex.schema.hasColumn('appuntamenti_preventivi', 'attivita')) {
       await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('attivita', 300).notNullable().defaultTo(''));
@@ -94,6 +99,7 @@ async function ensureTable() {
       await knex.schema.alterTable('appuntamenti_preventivi', table => table.string('data_ora_originale', 16));
     }
   }
+  await knex('appuntamenti_preventivi').where('stato', 'Annullato').whereNot('tag_commerciale', 'KO').update({ tag_commerciale: 'KO' });
   await knex('appuntamenti_preventivi').whereNull('data_ora_originale').update({ data_ora_originale: knex.ref('data_ora') });
   if (!await knex.schema.hasTable('appuntamenti_note')) {
     await knex.schema.createTable('appuntamenti_note', table => {
@@ -203,7 +209,7 @@ function validate(body) {
   if (!STATI.includes(stato)) throw new Error('Stato non valido.');
   if (esito.length > 2000) throw new Error('Esito troppo lungo.');
   if (stato === 'Esitato' && !esito) throw new Error('Inserisci l’esito dell’appuntamento.');
-  return { data_ora: dataOra, nominativo, referente, telefono, email, incaricato, operatore, attivita, luogo, note, stato, esito: stato === 'Esitato' ? esito : '', senza_orario: Boolean(body.senzaOrario) };
+  return { data_ora: dataOra, nominativo, referente, telefono, email, incaricato, operatore, attivita, luogo, note, stato, esito: stato === 'Esitato' ? esito : '', senza_orario: Boolean(body.senzaOrario), ...(stato === 'Annullato' ? { tag_commerciale: 'KO' } : {}) };
 }
 
 async function list() {
@@ -211,7 +217,7 @@ async function list() {
   const rows = await knex('appuntamenti_preventivi as ap')
     .leftJoin('agenda_caposquadra as ag', 'ap.agenda_impegno_id', 'ag.id')
     .leftJoin('dipendenti as d', 'ag.dipendente_id', 'd.id')
-    .select('ap.id', 'ap.data_ora as dataOra', 'ap.data_ora_originale as dataOraOriginale', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.operatore', 'ap.commerciale_dipendente_id as commercialeDipendenteId', 'ap.attivita', 'ap.luogo', 'ap.note', 'ap.stato', 'ap.esito', 'ap.scheda_pdf as schedaPdf', 'ap.origine_pubblica as marketing', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'ap.senza_orario as senzaOrario', 'ag.dipendente_id as idCaposquadra', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
+    .select('ap.id', 'ap.data_ora as dataOra', 'ap.data_ora_originale as dataOraOriginale', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.operatore', 'ap.commerciale_dipendente_id as commercialeDipendenteId', 'ap.attivita', 'ap.luogo', 'ap.note', 'ap.stato', 'ap.tag_commerciale as tagCommerciale', 'ap.esito', 'ap.scheda_pdf as schedaPdf', 'ap.origine_pubblica as marketing', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'ap.senza_orario as senzaOrario', 'ag.dipendente_id as idCaposquadra', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
     .orderBy('ap.data_ora', 'asc').orderBy('ap.id', 'asc')
     .then(rows => rows.map(({ cognomeCaposquadra, nomeCaposquadra, ...row }) => ({
       ...row,
@@ -226,7 +232,7 @@ async function listPublic() {
     .leftJoin('agenda_caposquadra as ag', 'ap.agenda_impegno_id', 'ag.id')
     .leftJoin('dipendenti as d', 'ag.dipendente_id', 'd.id')
     .where('ap.origine_pubblica', true)
-    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.operatore', 'ap.stato', 'ap.esito', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
+    .select('ap.id', 'ap.data_ora as dataOra', 'ap.nominativo', 'ap.referente', 'ap.telefono', 'ap.email', 'ap.incaricato', 'ap.operatore', 'ap.stato', 'ap.tag_commerciale as tagCommerciale', 'ap.esito', 'ap.numero_appuntamento as numeroAppuntamento', 'ap.appuntamento_precedente_id as appuntamentoPrecedenteId', 'ap.agenda_impegno_id as agendaImpegnoId', 'd.cognome as cognomeCaposquadra', 'd.nome as nomeCaposquadra')
     .orderBy('ap.created_at', 'desc').orderBy('ap.id', 'desc')
     .then(rows => rows.map(({ agendaImpegnoId, cognomeCaposquadra, nomeCaposquadra, ...row }) => ({
       ...row,
@@ -363,9 +369,9 @@ async function conclude(id, action, body) {
       return { id: Number(id), stato: 'Esitato', esito };
     }
     if (action === 'annulla') {
-      await trx('appuntamenti_preventivi').where('id', id).update({ stato: 'Annullato', esito: '', agenda_impegno_id: null });
+      await trx('appuntamenti_preventivi').where('id', id).update({ stato: 'Annullato', tag_commerciale: 'KO', esito: '', agenda_impegno_id: null });
       if (appointment.agenda_impegno_id) await trx('agenda_caposquadra').where('id', appointment.agenda_impegno_id).del();
-      return { id: Number(id), stato: 'Annullato' };
+      return { id: Number(id), stato: 'Annullato', tagCommerciale: 'KO' };
     }
     throw new Error('Azione non valida.');
   });
@@ -555,9 +561,25 @@ async function updateStatus(id, body) {
   if (existing?.origine_pubblica && ['Da svolgere', 'Passato', 'Esitato', 'Annullato'].includes(existing.stato)) throw new Error('Usa le azioni dell’appuntamento per cambiare stato.');
   if (!STATI.includes(stato)) throw new Error('Stato non valido.');
   if (esito.length > 2000 || (stato === 'Esitato' && !esito)) throw new Error('Inserisci un esito valido.');
-  const count = await knex('appuntamenti_preventivi').where('id', id).update({ stato, esito: stato === 'Esitato' ? esito : '' });
+  const count = await knex('appuntamenti_preventivi').where('id', id).update({ stato, esito: stato === 'Esitato' ? esito : '', ...(stato === 'Annullato' ? { tag_commerciale: 'KO' } : {}) });
   if (!count) return null;
-  return knex('appuntamenti_preventivi').where('id', id).first('id', 'stato', 'esito');
+  return knex('appuntamenti_preventivi').where('id', id).first('id', 'stato', 'tag_commerciale as tagCommerciale', 'esito');
+}
+
+async function updateCommercialTag(id, tag, fromPublicLink = false) {
+  if (!TAG_COMMERCIALI.includes(tag)) throw new Error('Tag commerciale non valido.');
+  return knex.transaction(async trx => {
+    const query = trx('appuntamenti_preventivi').where('id', id);
+    if (fromPublicLink) query.where('origine_pubblica', true);
+    const appointment = await query.first('id', 'nominativo', 'stato', 'tag_commerciale');
+    if (!appointment) return null;
+    if (appointment.stato === 'Annullato' && tag !== 'KO') throw new Error('Un appuntamento annullato deve avere il tag KO.');
+    if (appointment.tag_commerciale !== tag) {
+      await trx('appuntamenti_preventivi').where('id', id).update({ tag_commerciale: tag });
+      if (fromPublicLink) await marketingNotifications.record(trx, { appointmentId: appointment.id, type: 'tag', company: appointment.nominativo, text: `Tag commerciale: ${tag}.` });
+    }
+    return { id: appointment.id, tagCommerciale: tag, precedente: appointment.tag_commerciale };
+  });
 }
 
 async function remove(id) {
@@ -626,4 +648,4 @@ async function removeForAgenda(trx, agendaIds) {
   }
 }
 
-module.exports = { ensureTable, list, listPublic, promoteToMarketing, acceptMarketing, reschedule, conclude, create, createPublic, addPublicNote, addInternalNote, updatePostNote, removePostNote, removeAppointmentNote, rebookPublic, update, updateStatus, remove, syncFromAgenda, removeForAgenda };
+module.exports = { ensureTable, list, listPublic, promoteToMarketing, acceptMarketing, reschedule, conclude, create, createPublic, addPublicNote, addInternalNote, updatePostNote, removePostNote, removeAppointmentNote, rebookPublic, update, updateStatus, updateCommercialTag, remove, syncFromAgenda, removeForAgenda };

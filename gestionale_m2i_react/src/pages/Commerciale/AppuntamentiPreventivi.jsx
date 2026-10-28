@@ -5,6 +5,7 @@ import NuovoPreventivoModal from './NuovoPreventivoModal';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { notePostAppuntamento } from '../../utils/noteAppuntamento';
 import { sortRows } from '../../utils/sortRows';
+import { TAG_COMMERCIALI, tagCommerciale, stileTagCommerciale } from '../../utils/tagCommercialeAppuntamento';
 
 const API = `${import.meta.env.VITE_API_URL || ''}/api/appuntamenti-preventivi`;
 const emptyForm = { dataOra: '', nominativo: '', referente: '', telefono: '', email: '', incaricato: '', operatore: '', attivita: '', luogo: '', note: '', stato: 'Programmato', esito: '', senzaOrario: false, marketing: false };
@@ -216,6 +217,18 @@ export default function AppuntamentiPreventivi() {
     finally { setSaving(false); }
   };
 
+  const cambiaTagCommerciale = async (appointment, nuovoTag) => {
+    setSaving(true);
+    setError('');
+    try {
+      const result = await request(`${API}/${appointment.id}/tag-commerciale`, {
+        method: 'PATCH', body: JSON.stringify({ tagCommerciale: nuovoTag })
+      });
+      setAppuntamenti(previous => previous.map(item => item.id === appointment.id ? { ...item, tagCommerciale: result.tagCommerciale } : item));
+    } catch (err) { setError(err.message); }
+    finally { setSaving(false); }
+  };
+
   const eliminaAppuntamento = async appointment => {
     if (!window.confirm(`Eliminare definitivamente l'appuntamento con ${appointment.nominativo}? La scheda, le note${appointment.agendaImpegnoId ? ' e l’impegno in Agenda' : ''} non saranno recuperabili.`)) return;
     setSaving(true);
@@ -293,7 +306,7 @@ export default function AppuntamentiPreventivi() {
     ? sortRows(appuntamenti, COLONNE_APPUNTAMENTI.find(colonna => colonna.key === ordinamentoAppuntamenti.key).value, ordinamentoAppuntamenti.direction)
     : tuttiInOrdine;
   const ricerca = ricercaAppuntamenti.trim().toLocaleLowerCase('it-IT');
-  const appuntamentiVisibili = ricerca ? appuntamentiInOrdine.filter(a => [a.nominativo, a.referente, a.telefono, a.email, a.luogo, a.incaricato, a.operatore, a.stato, a.dataOra]
+  const appuntamentiVisibili = ricerca ? appuntamentiInOrdine.filter(a => [a.nominativo, a.referente, a.telefono, a.email, a.luogo, a.incaricato, a.operatore, a.stato, tagCommerciale(a), a.dataOra]
     .some(value => String(value || '').toLocaleLowerCase('it-IT').includes(ricerca))) : appuntamentiInOrdine;
   const cambiaOrdinamento = key => {
     setOrdinamentoAppuntamenti(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }));
@@ -319,7 +332,7 @@ export default function AppuntamentiPreventivi() {
           <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Origine</span><span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-bold ${a.marketing ? 'bg-fuchsia-500/15 text-fuchsia-200' : 'bg-slate-600/60 text-slate-200'}`}>{a.marketing ? 'Marketing' : 'Interno'}</span>{a.numeroAppuntamento > 1 && <span className="mt-1 block text-xs font-semibold text-indigo-200">{a.numeroAppuntamento}° app</span>}</div>
           <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Indirizzo</span><span className="flex items-start gap-1.5 break-words leading-snug text-slate-200" title={a.luogo || ''}><MapPin size={15} className="mt-0.5 shrink-0 text-slate-400" />{a.luogo || '—'}</span></div>
           <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Commerciale</span><span className="block break-words font-medium leading-snug text-slate-200" title={a.incaricato || ''}>{a.incaricato || '—'}</span></div>
-          <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Stato</span><span className={`inline-flex max-w-full rounded-full px-3 py-1.5 text-xs font-bold leading-tight ${a.stato === 'Svolto' ? 'bg-emerald-500/20 text-emerald-300' : a.stato === 'Annullato' ? 'bg-red-500/20 text-red-300' : a.stato === 'Esitato' ? 'bg-sky-500/20 text-sky-300' : a.stato === STATO_RICHIESTO_MARKETING ? 'bg-fuchsia-500/20 text-fuchsia-200' : a.stato === 'Passato' ? 'bg-slate-600/50 text-slate-200' : 'bg-amber-500/20 text-amber-300'}`}>{a.stato}</span></div>
+          <div className="min-w-0"><span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400 lg:hidden">Stato</span><div className="flex flex-wrap gap-1.5"><span className={`inline-flex max-w-full rounded-full px-3 py-1.5 text-xs font-bold leading-tight ${a.stato === 'Svolto' ? 'bg-emerald-500/20 text-emerald-300' : a.stato === 'Annullato' ? 'bg-red-500/20 text-red-300' : a.stato === 'Esitato' ? 'bg-sky-500/20 text-sky-300' : a.stato === STATO_RICHIESTO_MARKETING ? 'bg-fuchsia-500/20 text-fuchsia-200' : a.stato === 'Passato' ? 'bg-slate-600/50 text-slate-200' : 'bg-amber-500/20 text-amber-300'}`}>{a.stato}</span><span className={`inline-flex max-w-full rounded-full border px-2.5 py-1 text-xs font-bold leading-tight ${stileTagCommerciale(tagCommerciale(a))}`}>{tagCommerciale(a)}</span></div></div>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-[#52637e] bg-[#17243a] px-5 py-3.5">
           <button type="button" onClick={() => { setDettagliAperti(aperto ? null : a.id); setNotaTesto(''); setNotaError(''); }} aria-expanded={aperto} aria-label={`${aperto ? 'Chiudi' : 'Apri'} dettagli di ${a.nominativo}`} className="flex items-center gap-2 rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/20"><ChevronDown size={16} className={`transition-transform ${aperto ? 'rotate-180' : ''}`} /> {aperto ? 'Chiudi dettagli' : 'Dettagli e note'}</button>
@@ -335,6 +348,8 @@ export default function AppuntamentiPreventivi() {
         </div>
         {aperto && <div className="border-t border-[#52637e] bg-[#1c2a40] p-5">
         <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-semibold text-indigo-300">{a.marketing ? 'Visibile nel link esterno' : a.agendaImpegnoId ? 'Creato dall’Agenda Caposquadra' : 'Creato in Appuntamenti'}</p>{!a.marketing && <button type="button" onClick={() => passaAMarketing(a)} disabled={saving} className="rounded-lg bg-fuchsia-500/20 px-3 py-2 text-xs font-semibold text-fuchsia-100 hover:bg-fuchsia-500/30 disabled:opacity-50">Passa a Marketing</button>}</div>
+        <label className="mt-4 block max-w-xs text-sm font-semibold text-slate-200">Tag commerciale<select value={tagCommerciale(a)} onChange={event => cambiaTagCommerciale(a, event.target.value)} disabled={saving || a.stato === 'Annullato'} className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 p-2.5 text-slate-100 disabled:opacity-60">{TAG_COMMERCIALI.map(tag => <option key={tag} value={tag}>{tag}</option>)}</select></label>
+        {a.stato === 'Annullato' && <p className="mt-1 text-xs text-rose-200">Gli appuntamenti annullati hanno il tag KO.</p>}
         {a.schedaPdf && <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3 text-sm text-indigo-100"><FileText size={18} /><strong>Scheda appuntamento PDF</strong><a href={`${import.meta.env.VITE_API_URL || ''}${a.schedaPdf}`} target="_blank" rel="noreferrer" className="underline hover:text-white">Apri</a><a href={`${import.meta.env.VITE_API_URL || ''}${a.schedaPdf}`} download className="flex items-center gap-1 underline hover:text-white"><Download size={15} /> Scarica</a></div>}
         {a.referente && <p className="mt-3 break-words text-sm text-slate-300"><strong>Referente:</strong> {a.referente}</p>}
         {a.telefono && <p className="mt-2 break-words text-sm text-slate-300"><strong>Telefono:</strong> <a href={`tel:${a.telefono.replace(/[^\d+]/g, '')}`} className="text-indigo-200 underline">{a.telefono}</a></p>}
