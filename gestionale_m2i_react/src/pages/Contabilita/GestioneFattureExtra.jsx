@@ -52,9 +52,18 @@ export default function GestioneFattureExtra({ mese, anno, gruppi, onChanged }) 
           const hasReplacement = (group.crediti || []).some(credit => credit.gruppoSostitutivoId);
           return <section key={group.id} className="space-y-3 rounded-lg border border-slate-200 p-4">
             <div className="font-semibold">{group.clienteNome} · {group.descrizioneFattura || group.nome} · {euro(group.imponibileExtra)} imponibile</div>
+            <p className="text-xs font-semibold text-slate-600">{group.tipo === 'mensile' ? 'Fatturazione: unita al mensile' : 'Fatturazione: extra separata'}</p>
             {group.fatturaRegistrazioneId ? <p className="text-sm text-emerald-700">Fattura Aruba {original?.numero_fattura || `#${group.fatturaRegistrazioneId}`}</p> : <div className="flex flex-wrap items-end gap-2">
               <label className="min-w-[260px] flex-1 text-sm">Fattura Aruba importata<select className={inputClass} value={fatturaScelta[group.id] || ''} onChange={event => setFatturaScelta(value => ({ ...value, [group.id]: event.target.value }))}><option value="">Seleziona fattura</option>{registrazioni.filter(invoice => invoice.cliente_id === group.clienteId && invoice.tipo_documento !== 'TD04' && Number(invoice.importo_totale) > 0 && !gruppi.some(other => Number(other.fatturaRegistrazioneId) === Number(invoice.id))).map(invoice => <option key={invoice.id} value={invoice.id}>{invoice.numero_fattura} · {invoice.data_fattura} · {euro(invoice.importo_totale)}</option>)}</select></label>
               <button type="button" disabled={busy || !fatturaScelta[group.id]} onClick={() => act(`servizi-extra/gruppi/${group.id}/collega-fattura`, { registrazioneId: fatturaScelta[group.id] }, 'Fattura Aruba collegata.')} className="rounded bg-indigo-700 px-3 py-2 text-sm text-white disabled:opacity-50">Collega fattura</button>
+            </div>}
+            {group.tipo === 'mensile' && group.fatturaRegistrazioneId && <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-950">
+              <p>Se questa fattura contiene soltanto il servizio extra, puoi separarla dal mensile senza reimportarla. Il gestionale controllerà che il totale della fattura coincida con quello dell’extra.</p>
+              <button type="button" disabled={busy} onClick={() => {
+                if (window.confirm(`La fattura ${original?.numero_fattura || ''} riguarda soltanto l’extra, senza il servizio mensile?`)) {
+                  act(`servizi-extra/gruppi/${group.id}/separa-fattura`, {}, 'Fattura extra separata dal mensile.');
+                }
+              }} className="mt-2 rounded-lg bg-indigo-700 px-3 py-2 font-semibold text-white disabled:opacity-50">Separa fattura extra dal mensile</button>
             </div>}
             {(group.crediti || []).map(credit => <p key={credit.id} className="text-sm text-amber-800">Nota di credito {credit.numero} del {credit.data}: {euro(credit.totale)}</p>)}
             {group.fatturaRegistrazioneId && !fullyCredited && <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 pt-3">

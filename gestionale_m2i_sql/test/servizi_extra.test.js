@@ -104,4 +104,18 @@ test('servizio extra: dipendenti facoltativi, nota, blindatura e fattura Aruba s
   assert.equal((await db('fatture_aruba_elaborati').where({ fattura_id: 'XML2' }).first()).mese, 10);
   await db('mesi_chiusi_clienti').insert({ mese: 10, anno: 2026 });
   assert.equal((await service.list(10, 2026))[0].modificabile, false);
+  const [separateInvoiceId] = await db('fatture_aruba_elaborati').insert({ cliente_id: 'C1', mese: 12, anno: 2026,
+    tipo_documento: 'TD01', numero_fattura: 'EX-12', data_fattura: '2026-12-12',
+    importo_totale: 150, registrata_at: new Date().toISOString() });
+  await db('gruppi_fatturazione_extra').insert({ id: 'G-MISTO', cliente_id: 'C1', mese: 12, anno: 2026,
+    tipo: 'mensile', nome: 'Mensile', creata_at: new Date().toISOString(),
+    fattura_registrazione_id: separateInvoiceId });
+  await db('servizi_extra').insert({ id: 'E-MISTO', cliente_id: 'C1', mese: 12, anno: 2026,
+    data_servizio: '2026-12-12', nome: 'Sgrosso', categoria: 'Sgrosso', descrizione: '',
+    imponibile_cent: 10000, gruppo_id: 'G-MISTO', creato_at: new Date().toISOString(),
+    modificato_at: new Date().toISOString() });
+  await assert.rejects(service.separateRegisteredInvoice('G-MISTO'), /non coincide/);
+  await db('fatture_aruba_elaborati').where({ id: separateInvoiceId }).update({ importo_totale: 122 });
+  assert.equal((await service.separateRegisteredInvoice('G-MISTO')).tipo, 'extra');
+  assert.equal((await db('gruppi_fatturazione_extra').where({ id: 'G-MISTO' }).first()).tipo, 'extra');
 });

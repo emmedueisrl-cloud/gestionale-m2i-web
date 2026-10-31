@@ -138,7 +138,7 @@ test('la marcatura inviata è ripetibile e non può essere aggiunta dopo la sbli
   assert.equal(await knex('fatture_inviate_elaborati').where({ cliente_id: 'C_PENDING', mese: 9, anno: 2026 }).first(), undefined);
 });
 
-test('la fattura di un extra non registra né blocca la riga mensile', async () => {
+test('la fattura di un extra non registra né blocca il mensile con importo positivo', async () => {
   await createServiziExtra(knex).initialize();
   const [registrationId] = await knex('fatture_aruba_elaborati').insert({ cliente_id: 'C_PENDING',
     mese: 10, anno: 2026, numero_fattura: 'EX-10', data_fattura: '2026-10-20',
@@ -148,7 +148,39 @@ test('la fattura di un extra non registra né blocca la riga mensile', async () 
     fattura_registrazione_id: registrationId });
   const monthly = (await workflow.accountingRows('cliente', 10, 2026))
     .find(row => row.idCliente === 'C_PENDING');
+  assert.equal(monthly.imponibile, 100);
   assert.equal(monthly.fatture.length, 1);
   assert.equal(monthly.fattureMensili.length, 0);
+  assert.equal(monthly.importoRealmenteFatturato, 0);
   assert.equal((await workflow.unlockRow('cliente', 10, 2026, 'C_PENDING')).sbloccata, true);
+});
+
+test('un extra separato resta indipendente anche con mensile a zero', async () => {
+  await knex('clienti').insert({ id: 'C_ZERO', ragione_sociale: 'Mensile a zero', partita_iva: 'TEST_ZERO' });
+  await knex('righe_bloccate_elaborati').insert({ tipo: 'cliente', mese: 10, anno: 2026,
+    soggetto_id: 'C_ZERO', snapshot: JSON.stringify({ idCliente: 'C_ZERO', ragioneSociale: 'Mensile a zero',
+      imponibile: 0, importoTotale: 0 }), bloccata_at: new Date().toISOString() });
+  const [registrationId] = await knex('fatture_aruba_elaborati').insert({ cliente_id: 'C_ZERO',
+    mese: 10, anno: 2026, numero_fattura: 'EX-ZERO', data_fattura: '2026-10-21',
+    importo_totale: 427, registrata_at: new Date().toISOString() });
+  await knex('gruppi_fatturazione_extra').insert({ id: 'G-EX-ZERO', cliente_id: 'C_ZERO',
+    mese: 10, anno: 2026, tipo: 'extra', nome: 'Sgrosso', creata_at: new Date().toISOString(),
+    fattura_registrazione_id: registrationId });
+  const monthly = (await workflow.accountingRows('cliente', 10, 2026))
+    .find(row => row.idCliente === 'C_ZERO');
+  assert.equal(monthly.fattureMensili.length, 0);
+  assert.equal((await workflow.unlockRow('cliente', 10, 2026, 'C_ZERO')).sbloccata, true);
+});
+
+test('la fattura che unisce un extra a un mensile valorizzato blocca il mensile', async () => {
+  const [registrationId] = await knex('fatture_aruba_elaborati').insert({ cliente_id: 'C_SENT',
+    mese: 10, anno: 2026, numero_fattura: 'M-EX-10', data_fattura: '2026-10-22',
+    importo_totale: 222, registrata_at: new Date().toISOString() });
+  await knex('gruppi_fatturazione_extra').insert({ id: 'G-MENSILE-EXTRA', cliente_id: 'C_SENT',
+    mese: 10, anno: 2026, tipo: 'mensile', nome: 'Mensile', creata_at: new Date().toISOString(),
+    fattura_registrazione_id: registrationId });
+  const monthly = (await workflow.accountingRows('cliente', 10, 2026))
+    .find(row => row.idCliente === 'C_SENT');
+  assert.equal(monthly.fattureMensili.length, 1);
+  await assert.rejects(() => workflow.unlockRow('cliente', 10, 2026, 'C_SENT'), /Fattura registrata/);
 });

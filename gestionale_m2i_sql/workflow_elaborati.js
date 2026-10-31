@@ -224,11 +224,14 @@ async function unlockRow(tipo, mese, anno, subjectId) {
     if (Date.now() - Date.parse(row.bloccata_at) > 30 * 86400000) throw new Error('Sono trascorsi più di 30 giorni dalla blindatura.');
     if (tipo === 'cliente') {
       const registrations = await trx('fatture_aruba_elaborati').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).select('id');
-      const linkedExtras = await trx.schema.hasTable('gruppi_fatturazione_extra')
-        ? await trx('gruppi_fatturazione_extra').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno, tipo: 'extra' })
-          .whereNotNull('fattura_registrazione_id').select('fattura_registrazione_id') : [];
-      const extraIds = new Set(linkedExtras.map(group => Number(group.fattura_registrazione_id)));
-      if (registrations.some(registration => !extraIds.has(Number(registration.id)))) {
+      const linkedGroups = await trx.schema.hasTable('gruppi_fatturazione_extra')
+        ? await trx('gruppi_fatturazione_extra').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno })
+          .whereNotNull('fattura_registrazione_id').select('fattura_registrazione_id', 'tipo') : [];
+      const groupByInvoice = new Map(linkedGroups.map(group => [Number(group.fattura_registrazione_id), group]));
+      if (registrations.some(registration => {
+        const group = groupByInvoice.get(Number(registration.id));
+        return !group || group.tipo === 'mensile';
+      })) {
         throw new Error('Fattura registrata per il mensile: questa riga non può più essere sblindata.');
       }
     }
@@ -296,10 +299,10 @@ async function accountingRows(tipo, mese, anno) {
     const frozenIds = new Set((await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id')).map(r => r.soggetto_id));
     if (tipo === 'cliente') {
       const invoices = await registrationStatuses(trx, await trx('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
-      const extraRegistrations = await trx.schema.hasTable('gruppi_fatturazione_extra')
-        ? await trx('gruppi_fatturazione_extra').where({ mese: p.mese, anno: p.anno, tipo: 'extra' })
-          .whereNotNull('fattura_registrazione_id').select('fattura_registrazione_id') : [];
-      const extraRegistrationIds = new Set(extraRegistrations.map(group => Number(group.fattura_registrazione_id)));
+      const linkedGroups = await trx.schema.hasTable('gruppi_fatturazione_extra')
+        ? await trx('gruppi_fatturazione_extra').where({ mese: p.mese, anno: p.anno })
+          .whereNotNull('fattura_registrazione_id').select('fattura_registrazione_id', 'tipo') : [];
+      const groupByInvoice = new Map(linkedGroups.map(group => [Number(group.fattura_registrazione_id), group]));
       const replacementBlocks = new Map();
       for (const invoice of invoices) replacementBlocks.set(invoice.id, await replacementBlocked(trx, invoice));
       const documents = await trx('documenti_aruba_mese').where({ mese: p.mese, anno: p.anno }).orderBy('id');
@@ -330,7 +333,10 @@ async function accountingRows(tipo, mese, anno) {
       const result = rows.map(row => {
         const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), tipoDocumento: f.tipo_documento || 'TD01', registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione,
           modificabile: !replacementBlocks.get(f.id), motivoModifica: replacementBlocks.get(f.id) || null }));
-        const monthlyInvoices = linked.filter(f => !extraRegistrationIds.has(Number(f.id)));
+        const monthlyInvoices = linked.filter(f => {
+          const group = groupByInvoice.get(Number(f.id));
+          return !group || group.tipo === 'mensile';
+        });
         const attachments = documents.filter(d => d.cliente_id === row.idCliente).map(d => ({ id: d.id, numero: d.numero_fattura,
           data: d.data_fattura, importo: Number(d.importo_documento), tipoDocumento: d.tipo_documento,
           registrataAt: d.registrata_at }));

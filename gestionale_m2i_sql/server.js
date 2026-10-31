@@ -166,7 +166,7 @@ app.use('/api', (req, res, next) => {
   // La pagina Fatturazione usa anche queste API per mostrare e gestire le fatture dei servizi extra.
   const extraInvoiceAccess =
     (req.method === 'GET' && (/^\/servizi-extra\/\d{4}\/\d{1,2}\/(gruppi|fatture-aruba)$/.test(req.path) || req.path === '/servizi-extra-note-credito-aruba')) ||
-    (req.method === 'POST' && /^\/servizi-extra\/gruppi\/[^/]+\/(inviata|collega-fattura|nota-credito|rifattura)$/.test(req.path));
+    (req.method === 'POST' && /^\/servizi-extra\/gruppi\/[^/]+\/(inviata|collega-fattura|nota-credito|rifattura|separa-fattura)$/.test(req.path));
   if (req.authUser.role === 'contabilita' && !req.path.startsWith('/contabilita/') && !payrollAccess && !extraInvoiceAccess) {
     return res.status(403).json({ error: 'Accesso limitato alla sezione amministrativa.' });
   }
@@ -286,6 +286,8 @@ app.post('/api/servizi-extra/:id/sblocca', handleWorkflow(req => serviziExtra.se
 app.post('/api/servizi-extra/gruppi/:id/inviata', handleWorkflow(req => serviziExtra.markSent(req.params.id)));
 app.post('/api/servizi-extra/gruppi/:id/collega-fattura', handleWorkflow(req =>
   serviziExtra.linkRegistration(req.params.id, req.body.registrazioneId)));
+app.post('/api/servizi-extra/gruppi/:id/separa-fattura', handleWorkflow(req =>
+  serviziExtra.separateRegisteredInvoice(req.params.id)));
 app.post('/api/servizi-extra/gruppi/:id/nota-credito', handleWorkflow(req =>
   serviziExtra.registerCredit(req.params.id, req.body.registrazioneId, req.body.imponibile)));
 app.post('/api/servizi-extra/gruppi/:id/rifattura', handleWorkflow(req =>

@@ -573,8 +573,33 @@ function createServiziExtra(knex) {
     return connection ? link(connection) : knex.transaction(link);
   }
 
+  async function separateRegisteredInvoice(groupId) {
+    return knex.transaction(async trx => {
+      const group = await trx('gruppi_fatturazione_extra').where({ id: groupId }).first();
+      if (!group || group.tipo !== 'mensile' || !group.fattura_registrazione_id) {
+        throw new Error('Fattura unita al mensile non trovata.');
+      }
+      const [extras, invoice, client] = await Promise.all([
+        trx('servizi_extra').where({ gruppo_id: groupId }),
+        trx('fatture_aruba_elaborati').where({ id: group.fattura_registrazione_id }).first(),
+        trx('clienti').where({ id: group.cliente_id }).first()
+      ]);
+      if (!extras.length || !invoice || !client || invoice.tipo_documento === 'TD04') {
+        throw new Error('Dati del servizio extra o della fattura incompleti.');
+      }
+      const expected = calcolaImportiFatturaCliente(
+        extras.reduce((sum, extra) => sum + Number(extra.imponibile_cent), 0) / 100,
+        client.tipo_tassazione, client.percentuale_tassazione).importoTotale;
+      if (Math.abs(Math.round(expected * 100) - Math.round(Number(invoice.importo_totale) * 100)) > 1) {
+        throw new Error('La fattura non coincide con il solo servizio extra: verifica prima di separarla dal mensile.');
+      }
+      await trx('gruppi_fatturazione_extra').where({ id: groupId }).update({ tipo: 'extra' });
+      return { gruppoId: groupId, tipo: 'extra', registrazioneId: invoice.id };
+    });
+  }
+
   return { initialize, list, groups, save, setLock, markSent, registrations, creditNotes,
-    registerCredit, reissue, linkRegistration };
+    registerCredit, reissue, linkRegistration, separateRegisteredInvoice };
 }
 
 module.exports = { createServiziExtra, cents, period };

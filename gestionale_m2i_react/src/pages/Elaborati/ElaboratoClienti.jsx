@@ -220,6 +220,9 @@ export default function ElaboratoClienti() {
     tariffaOraria: 0, baseImponibile: Number(extra.imponibile), maggiorazioni: 0, sconti: 0,
     imponibile: Number(extra.imponibile), importoTotale: valoreExtra(extra, row)
   }));
+  const fattureSoloExtra = row => new Set((extraPerCliente[row.idCliente] || [])
+    .filter(extra => extra.gruppoTipo === 'extra')
+    .map(extra => Number(extra.fatturaRegistrazioneId)).filter(Boolean));
 
   const showInfoModal = (title, text) => {
     setModalState({
@@ -342,7 +345,7 @@ export default function ElaboratoClienti() {
         return amount != null ? <strong className="text-emerald-300">€ {Number(amount).toFixed(2)}</strong> : <span className="text-slate-500">—</span>;
       }
       const record = fatturato[row.idCliente];
-      const separateIds = new Set((extraPerCliente[row.idCliente] || []).filter(extra => extra.gruppoTipo === 'extra').map(extra => Number(extra.fatturaRegistrazioneId)).filter(Boolean));
+      const separateIds = fattureSoloExtra(row);
       const ordinaryAmount = (record?.fatture || []).filter(invoice => !separateIds.has(Number(invoice.id))).reduce((sum, invoice) => sum + Number(invoice.importo), 0);
       return ordinaryAmount ? <strong>€ {ordinaryAmount.toFixed(2)}</strong> : <span className="text-slate-500">—</span>;
     } },
@@ -384,7 +387,9 @@ export default function ElaboratoClienti() {
         return <button type="button" className={`rounded px-2 py-1 text-xs font-semibold disabled:opacity-70 ${colore}`} disabled={Boolean(row.inviataAt || row.fatturaRegistrazioneId || isChiuso)} onClick={() => toggleLock(row)}>{row.fatturaRegistrazioneId ? 'Registrata' : row.inviataAt ? 'Inviata' : row.rigaBloccata ? 'Sblocca' : 'Blinda'}</button>;
       }
       if (isChiuso && !workflow.bloccati.includes(row.idCliente)) return <span className="text-emerald-300">Mese storico</span>;
-      const registrata = Boolean(row.fattureMensili?.length ?? row.fatture?.length);
+      const separateIds = fattureSoloExtra(row);
+      const registrata = (row.fattureMensili ?? row.fatture ?? [])
+        .some(invoice => !separateIds.has(Number(invoice.id)));
       const inviata = !registrata && Boolean(row.fatturaInviataAt);
       const elaborata = row.rigaBloccata && (registrata || inviata);
       const colore = registrata ? 'bg-emerald-700 text-white' : inviata ? 'bg-sky-700 text-white' : row.rigaBloccata ? 'bg-amber-700 text-white' : 'bg-indigo-700 text-white';
@@ -401,7 +406,7 @@ export default function ElaboratoClienti() {
       cardLabel: 'Azioni',
       width: 72,
       render: (row) => (
-        row.isExtra ? <span className="text-xs text-indigo-300">Extra</span> :
+        row.isExtra ? <span className="text-xs text-indigo-300" title={row.gruppoTipo === 'mensile' ? 'Servizio extra unito alla fattura mensile' : 'Servizio extra con fattura separata'}>{row.gruppoTipo === 'mensile' ? 'Con mensile' : 'Extra'}</span> :
         <div className="flex gap-1">
           <button 
             onClick={() => window.open(`${import.meta.env.VITE_API_URL || ''}/api/contabilita/pdf/cliente/${anno}/${mese}/${encodeURIComponent(row.idCliente)}`)}

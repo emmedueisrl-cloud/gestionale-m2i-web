@@ -133,6 +133,7 @@ export default function ServiziExtra() {
             <h3 className="text-lg font-semibold">{service.categoria} · {clientName(service.clienteId)}</h3>
             <p className="text-sm text-slate-300">Descrizione fattura: {service.descrizioneFattura}</p>
             <p className="text-sm text-slate-400">{service.dataServizio} · imponibile {euro(service.imponibile)}</p>
+            <p className="mt-1 text-sm font-semibold text-indigo-200">Fatturazione: {service.gruppoTipo === 'mensile' ? 'Unita al mensile' : service.gruppoTipo === 'extra' ? 'Fattura extra separata' : 'Da verificare'}</p>
             <p className="mt-1 text-sm">{service.lavori.length ? service.lavori.map(work => employeeName(work.dipendenteId)).join(', ') : 'Nessun dipendente associato'}</p>
           </div>
           {service.inviataAt || service.fatturaRegistrazioneId

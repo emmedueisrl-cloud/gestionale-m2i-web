@@ -277,7 +277,7 @@ function createArubaZipService(knex, workflow) {
     ]);
     const extraGroups = await knex.schema.hasTable('gruppi_fatturazione_extra')
       ? await extraService.groups(period.mese, period.anno) : [];
-    const linkedExtraIds = new Set(extraGroups.filter(group => group.tipo === 'extra' && group.fatturaRegistrazioneId)
+    const linkedExtraIds = new Set(extraGroups.filter(group => group.fatturaRegistrazioneId && group.tipo === 'extra')
       .map(group => Number(group.fatturaRegistrazioneId)));
     const availableGroups = extraGroups.filter(group => group.tipo === 'extra' && group.servizi.length &&
       group.tuttiBlindati && !group.fatturaRegistrazioneId);
