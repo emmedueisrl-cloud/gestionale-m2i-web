@@ -384,7 +384,7 @@ export default function ElaboratoClienti() {
         return <button type="button" className={`rounded px-2 py-1 text-xs font-semibold disabled:opacity-70 ${colore}`} disabled={Boolean(row.inviataAt || row.fatturaRegistrazioneId || isChiuso)} onClick={() => toggleLock(row)}>{row.fatturaRegistrazioneId ? 'Registrata' : row.inviataAt ? 'Inviata' : row.rigaBloccata ? 'Sblocca' : 'Blinda'}</button>;
       }
       if (isChiuso && !workflow.bloccati.includes(row.idCliente)) return <span className="text-emerald-300">Mese storico</span>;
-      const registrata = Boolean(row.fatture?.length);
+      const registrata = Boolean(row.fattureMensili?.length ?? row.fatture?.length);
       const inviata = !registrata && Boolean(row.fatturaInviataAt);
       const elaborata = row.rigaBloccata && (registrata || inviata);
       const colore = registrata ? 'bg-emerald-700 text-white' : inviata ? 'bg-sky-700 text-white' : row.rigaBloccata ? 'bg-amber-700 text-white' : 'bg-indigo-700 text-white';

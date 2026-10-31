@@ -192,7 +192,8 @@ export default function SchedaCliente() {
         <div className="col-span-1 md:col-span-2 bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-5 flex items-center gap-4">
           <div className="p-3 bg-amber-500/20 rounded-xl text-amber-400 border border-amber-500/30"><Landmark className="w-6 h-6"/></div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Quotazione Cliente ({data.quotazione_tipo || 'Mensile'})</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Tipo di rapporto: {data.tipo_rapporto === 'solo_extra' ? 'Solo servizi extra' : 'Continuativo'}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Quotazione cliente ({data.quotazione_tipo || 'Mensile'})</p>
             <p className="font-bold text-amber-400 text-2xl tracking-wide mb-1">{data.quotazione_importo ? `€ ${parseFloat(data.quotazione_importo).toFixed(2)}` : 'DA DEFINIRE'}</p>
             <p className="text-xs font-medium text-slate-300 uppercase tracking-wider">
               Tassazione: <span className="font-bold text-slate-100">{data.tipo_tassazione === 'ALTRO' ? data.tassazione_altro : (data.tipo_tassazione || 'DA DEFINIRE')}</span>

@@ -9,7 +9,7 @@ const money = input => (input / 100).toFixed(2);
 const dateValid = input => /^\d{4}-\d{2}-\d{2}$/.test(input) &&
   !Number.isNaN(Date.parse(`${input}T00:00:00Z`)) && new Date(`${input}T00:00:00Z`).toISOString().slice(0, 10) === input;
 const keyOf = row => row.gruppoExtraId ? `extra:${row.gruppoExtraId}` : `cliente:${row.idCliente}`;
-const isEligible = row => !row.rigaExtra && !row.fatture?.length && !row.documentiAruba?.length &&
+const isEligible = row => !row.rigaExtra && !(row.fattureMensili ?? row.fatture)?.length && !row.documentiAruba?.length &&
   !row.fatturaInviataAt && (!row.gruppoExtraId || row.gruppoExtraTipo === 'extra' && row.tuttiBlindati);
 
 function party(profile, issuer) {

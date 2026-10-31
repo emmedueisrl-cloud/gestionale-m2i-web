@@ -9,6 +9,7 @@ const dbPath = require.resolve('../db');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { knex, getVal: (obj, key) => obj?.[key] } };
 const workflow = require('../workflow_elaborati');
 const elaborati = require('../controllers/elaborati');
+const { createServiziExtra } = require('../servizi_extra');
 
 before(async () => {
   const connection = await knex.client.acquireConnection();
@@ -72,6 +73,18 @@ test('la riga da elaborare si sblinda, anche se un altro cliente ha una fattura 
   assert.ok(await knex('righe_bloccate_elaborati').where({ tipo: 'cliente', mese: 8, anno: 2026, soggetto_id: 'C_SENT' }).first());
 });
 
+test('solo servizi extra non crea righe mensili e conserva quelle già blindate', async () => {
+  await knex('clienti').insert({ id: 'C_EXTRA_ONLY', ragione_sociale: 'Solo extra',
+    partita_iva: 'TEST_EXTRA_ONLY', attivo: 'SI', tipo_rapporto: 'solo_extra' });
+  const month = await elaborati.ottieniElaboratoClienti(6, 2026);
+  assert.equal(month.dati.some(row => row.idCliente === 'C_EXTRA_ONLY'), false);
+  await knex('righe_bloccate_elaborati').insert({ tipo: 'cliente', mese: 6, anno: 2026,
+    soggetto_id: 'C_EXTRA_ONLY', snapshot: JSON.stringify({ idCliente: 'C_EXTRA_ONLY', ragioneSociale: 'Solo extra' }),
+    bloccata_at: new Date().toISOString() });
+  const lockedMonth = await elaborati.ottieniElaboratoClienti(6, 2026);
+  assert.equal(lockedMonth.dati.find(row => row.idCliente === 'C_EXTRA_ONLY')?.rigaBloccata, true);
+});
+
 test('Fattura inviata impedisce la sblindatura della riga, senza alterare il mese', async () => {
   await workflow.markInvoiceSent({ mese: 9, anno: 2026, clienteId: 'C_SENT' });
   await assert.rejects(() => workflow.unlockRow('cliente', 9, 2026, 'C_SENT'), /Fattura inviata/);
@@ -123,4 +136,19 @@ test('la marcatura inviata è ripetibile e non può essere aggiunta dopo la sbli
   await workflow.unlockRow('cliente', 9, 2026, 'C_PENDING');
   await assert.rejects(() => workflow.markInvoiceSent({ mese: 9, anno: 2026, clienteId: 'C_PENDING' }), /non blindata/);
   assert.equal(await knex('fatture_inviate_elaborati').where({ cliente_id: 'C_PENDING', mese: 9, anno: 2026 }).first(), undefined);
+});
+
+test('la fattura di un extra non registra né blocca la riga mensile', async () => {
+  await createServiziExtra(knex).initialize();
+  const [registrationId] = await knex('fatture_aruba_elaborati').insert({ cliente_id: 'C_PENDING',
+    mese: 10, anno: 2026, numero_fattura: 'EX-10', data_fattura: '2026-10-20',
+    importo_totale: 122, registrata_at: new Date().toISOString() });
+  await knex('gruppi_fatturazione_extra').insert({ id: 'G-SOLO-EXTRA', cliente_id: 'C_PENDING',
+    mese: 10, anno: 2026, tipo: 'extra', nome: 'Sgrosso', creata_at: new Date().toISOString(),
+    fattura_registrazione_id: registrationId });
+  const monthly = (await workflow.accountingRows('cliente', 10, 2026))
+    .find(row => row.idCliente === 'C_PENDING');
+  assert.equal(monthly.fatture.length, 1);
+  assert.equal(monthly.fattureMensili.length, 0);
+  assert.equal((await workflow.unlockRow('cliente', 10, 2026, 'C_PENDING')).sbloccata, true);
 });

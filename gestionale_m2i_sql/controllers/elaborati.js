@@ -275,7 +275,7 @@ module.exports = {
 
     const candidati = await connection('clienti')
       .select('id', 'ragione_sociale', 'tariffa_oraria_operatore', 'quotazione_tipo', 'quotazione_importo',
-        'tipo_tassazione', 'percentuale_tassazione', 'note_fisse_elaborato', 'attivo', 'data_cessazione')
+        'tipo_tassazione', 'percentuale_tassazione', 'note_fisse_elaborato', 'attivo', 'tipo_rapporto', 'data_cessazione')
       .where(function() { this.where('cestinato', 0).orWhereNull('cestinato'); });
     const periodi = candidati.length ? await connection('clienti_periodi_attivita')
       .whereIn('cliente_id', candidati.map(c => c.id)) : [];
@@ -288,6 +288,7 @@ module.exports = {
     const ultimoGiorno = `${anno}-${String(mese).padStart(2, '0')}-${String(new Date(anno, mese, 0).getDate()).padStart(2, '0')}`;
     const cli = candidati.filter(c => {
       if (c.attivo === 'Bozza') return false;
+      if (c.tipo_rapporto === 'solo_extra') return false;
       const intervalli = periodiPerCliente.get(c.id);
       if (intervalli?.length) return intervalli.some(p => (!p.data_inizio || p.data_inizio <= ultimoGiorno) && (!p.data_fine || p.data_fine >= primoGiorno));
       // Compatibilità per clienti creati dopo l'avvio o cessazioni storiche senza periodo migrato.

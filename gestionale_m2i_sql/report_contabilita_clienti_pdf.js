@@ -19,8 +19,8 @@ const total = rows => rows.reduce((sum, row) => sum + number(row.importoTotale),
 
 function buildReportContabilitaClientiPDF(rows, mese, anno, mancanti = 0) {
   const periodo = `${months[Number(mese) - 1] || mese} ${anno}`;
-  const daElaborare = rows.filter(row => !row.fatture?.length && !row.fatturaInviataAt);
-  const elaborate = rows.filter(row => row.fatture?.length || row.fatturaInviataAt);
+  const daElaborare = rows.filter(row => !(row.fattureMensili ?? row.fatture)?.length && !row.fatturaInviataAt);
+  const elaborate = rows.filter(row => (row.fattureMensili ?? row.fatture)?.length || row.fatturaInviataAt);
   const labels = [
     'Cliente (ragione sociale)', 'Ore', 'Sconti /\nMagg.', 'Totale\nimponibile', 'Regime\nfiscale',
     '% tassa', 'Tassa', 'Totale\nfattura', 'Costo\npersonale', 'Residuo senza\nstipendi', 'Tariffa\noraria'

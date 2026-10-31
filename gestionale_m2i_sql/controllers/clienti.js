@@ -16,6 +16,12 @@ function datiFatturazione(dati) {
   return result;
 }
 
+function tipoRapporto(dati, fallback = 'continuativo') {
+  const value = getVal(dati, 'tipoRapporto') || fallback;
+  if (!['continuativo', 'solo_extra'].includes(value)) throw new Error('Tipo di rapporto non valido.');
+  return value;
+}
+
 function validaDataCessazione(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
       Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ||
@@ -322,6 +328,7 @@ module.exports = {
         tariffa_oraria_operatore: getVal(dati, "tariffaOrariaOperatore") || 0,
         tariffa_oraria_commerciale: getVal(dati, "tariffaOrariaCommerciale") || 0,
         attivo: isBozza ? "Bozza" : "SI",
+        tipo_rapporto: tipoRapporto(dati),
         cestinato: 0,
         creato_da: "LocalServer",
         data_firma_contratto: getVal(dati, "dataFirmaContratto"),
@@ -402,7 +409,7 @@ module.exports = {
     
     // Check current state, to not overwrite 'NO' with 'SI' unless we specifically handle it.
     // Wait, let's just make sure that if it was 'Bozza' and now isBozza is false, we set it to 'SI'.
-    const currentState = await knex('clienti').where('id', id).select('attivo', 'operatore', 'data_cessazione').first();
+    const currentState = await knex('clienti').where('id', id).select('attivo', 'operatore', 'data_cessazione', 'tipo_rapporto').first();
     if (!currentState) throw new Error('Cliente non trovato.');
     const outbound = await validaOutbound(getVal(dati, "operatore"), currentState?.operatore);
     const inizioRichiesto = getVal(dati, 'dataInizioAttivita');
@@ -444,6 +451,7 @@ module.exports = {
           ragione_sociale: ragioneSociale,
           nome_attivita: getVal(dati, "nomeAttivita") || "",
           attivo: newStato,
+          tipo_rapporto: tipoRapporto(dati, currentState.tipo_rapporto || 'continuativo'),
           partita_iva: partitaIva ? partitaIva : (isBozza ? `BOZZA_${Date.now()}` : ""),
           codice_fiscale: getVal(dati, "codiceFiscale"),
           indirizzo_sede: getVal(dati, "indirizzoSede"),

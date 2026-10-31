@@ -26,6 +26,9 @@ function period(tipo, mese, anno) {
 }
 
 async function initialize() {
+  if (!await knex.schema.hasColumn('clienti', 'tipo_rapporto')) {
+    await knex.schema.alterTable('clienti', table => table.string('tipo_rapporto', 20).notNullable().defaultTo('continuativo'));
+  }
   if (!await knex.schema.hasColumn('clienti', 'data_cessazione')) {
     await knex.raw('ALTER TABLE clienti ADD COLUMN data_cessazione TEXT');
   }
@@ -219,8 +222,15 @@ async function unlockRow(tipo, mese, anno, subjectId) {
     const row = await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno, soggetto_id: subjectId }).first();
     if (!row) throw new Error('Riga non blindata con il nuovo flusso: per i mesi storici usa lo sblocco del mese.');
     if (Date.now() - Date.parse(row.bloccata_at) > 30 * 86400000) throw new Error('Sono trascorsi più di 30 giorni dalla blindatura.');
-    if (tipo === 'cliente' && await trx('fatture_aruba_elaborati').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).first()) {
-      throw new Error('Fattura registrata: questo cliente non può più essere sblindato.');
+    if (tipo === 'cliente') {
+      const registrations = await trx('fatture_aruba_elaborati').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).select('id');
+      const linkedExtras = await trx.schema.hasTable('gruppi_fatturazione_extra')
+        ? await trx('gruppi_fatturazione_extra').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno, tipo: 'extra' })
+          .whereNotNull('fattura_registrazione_id').select('fattura_registrazione_id') : [];
+      const extraIds = new Set(linkedExtras.map(group => Number(group.fattura_registrazione_id)));
+      if (registrations.some(registration => !extraIds.has(Number(registration.id)))) {
+        throw new Error('Fattura registrata per il mensile: questa riga non può più essere sblindata.');
+      }
     }
     if (tipo === 'cliente' && await trx('fatture_inviate_elaborati').where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).first()) {
       throw new Error('Fattura inviata: questo cliente non può più essere sblindato.');
@@ -286,6 +296,10 @@ async function accountingRows(tipo, mese, anno) {
     const frozenIds = new Set((await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno }).select('soggetto_id')).map(r => r.soggetto_id));
     if (tipo === 'cliente') {
       const invoices = await registrationStatuses(trx, await trx('fatture_aruba_elaborati').where({ mese: p.mese, anno: p.anno }).orderBy('id'));
+      const extraRegistrations = await trx.schema.hasTable('gruppi_fatturazione_extra')
+        ? await trx('gruppi_fatturazione_extra').where({ mese: p.mese, anno: p.anno, tipo: 'extra' })
+          .whereNotNull('fattura_registrazione_id').select('fattura_registrazione_id') : [];
+      const extraRegistrationIds = new Set(extraRegistrations.map(group => Number(group.fattura_registrazione_id)));
       const replacementBlocks = new Map();
       for (const invoice of invoices) replacementBlocks.set(invoice.id, await replacementBlocked(trx, invoice));
       const documents = await trx('documenti_aruba_mese').where({ mese: p.mese, anno: p.anno }).orderBy('id');
@@ -316,10 +330,11 @@ async function accountingRows(tipo, mese, anno) {
       const result = rows.map(row => {
         const linked = invoices.filter(f => f.cliente_id === row.idCliente).map(f => ({ id: f.id, numero: f.numero_fattura, data: f.data_fattura, importo: Number(f.importo_totale), tipoDocumento: f.tipo_documento || 'TD01', registrataAt: f.registrata_at, allegato: Boolean(f.allegato_path), xml: f.xml_allegato, statoRiconciliazione: f.stato_riconciliazione,
           modificabile: !replacementBlocks.get(f.id), motivoModifica: replacementBlocks.get(f.id) || null }));
+        const monthlyInvoices = linked.filter(f => !extraRegistrationIds.has(Number(f.id)));
         const attachments = documents.filter(d => d.cliente_id === row.idCliente).map(d => ({ id: d.id, numero: d.numero_fattura,
           data: d.data_fattura, importo: Number(d.importo_documento), tipoDocumento: d.tipo_documento,
           registrataAt: d.registrata_at }));
-        const actual = linked.reduce((sum, f) => sum + f.importo, 0);
+        const actual = monthlyInvoices.reduce((sum, f) => sum + f.importo, 0);
         const adjustment = adjustmentByClient.get(String(row.idCliente));
         const invoiceRow = adjustment ? { ...row, prezzoServizio: adjustment.prezzo_cent / 100,
           rettificaFatturazione: adjustment.rettifica_cent / 100,
@@ -328,7 +343,7 @@ async function accountingRows(tipo, mese, anno) {
           tipoTassazione: adjustment.tipo_tassazione } :
           { ...row, prezzoServizio: Number(row.imponibile) || 0, rettificaFatturazione: 0 };
         const importi = calcolaValoriContabilitaCliente(invoiceRow, costiPersonale.get(String(row.idCliente)) || 0);
-        return { ...invoiceRow, ...importi, descrizioneFattura: descriptionByClient.get(String(row.idCliente)) || descrizionePredefinita(clientById.get(String(row.idCliente)), p.mese, p.anno), costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, documentiAruba: attachments, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: linked.length ? Number((actual - Number(invoiceRow.importoTotale || 0)).toFixed(2)) : null };
+        return { ...invoiceRow, ...importi, descrizioneFattura: descriptionByClient.get(String(row.idCliente)) || descrizionePredefinita(clientById.get(String(row.idCliente)), p.mese, p.anno), costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, fattureMensili: monthlyInvoices, documentiAruba: attachments, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: monthlyInvoices.length ? Number((actual - Number(invoiceRow.importoTotale || 0)).toFixed(2)) : null };
       });
       const known = new Set(rows.map(row => String(row.idCliente)));
       const extraIds = [...new Set([...invoices, ...documents].map(item => String(item.cliente_id)))].filter(id => !known.has(id));

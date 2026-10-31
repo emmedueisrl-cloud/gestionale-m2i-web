@@ -82,6 +82,7 @@ function ModificaCliente() {
     commerciale: '',
     quotazioneImporto: '',
     quotazioneTipo: 'Mensile',
+    tipoRapporto: 'continuativo',
     tipoTassazione: 'IVA',
     percentualeTassazione: '22',
     tassazioneAltro: '',
@@ -174,6 +175,7 @@ function ModificaCliente() {
           commerciale: datiCliente.commerciale || '',
           quotazioneImporto: datiCliente.quotazione_importo || '',
           quotazioneTipo: datiCliente.quotazione_tipo || 'Mensile',
+          tipoRapporto: datiCliente.tipo_rapporto || 'continuativo',
           tipoTassazione: datiCliente.tipo_tassazione || 'IVA',
           percentualeTassazione: datiCliente.percentuale_tassazione !== null && datiCliente.percentuale_tassazione !== undefined ? datiCliente.percentuale_tassazione : '22',
           tassazioneAltro: datiCliente.tassazione_altro || '',
@@ -666,8 +668,16 @@ function ModificaCliente() {
             <CreditCard className="w-4 h-4" /> Condizioni Finanziarie e Quotazione
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-200 mb-1">Tipo di rapporto</label>
+              <select name="tipoRapporto" value={dati.tipoRapporto} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-slate-700 rounded-lg text-slate-100">
+                <option value="continuativo">Continuativo (riga mensile)</option>
+                <option value="solo_extra">Solo servizi extra (solo nei mesi con un servizio)</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-400">I mesi già blindati o chiusi conservano la loro riga mensile.</p>
+            </div>
             <div>
-              <label className="block text-sm font-medium text-slate-200 mb-1 text-amber-400">Importo Quotazione (€) *</label>
+              <label className="block text-sm font-medium text-slate-200 mb-1 text-amber-400">Importo quotazione continuativa (€)</label>
               <input type="number" step="0.01" name="quotazioneImporto" value={dati.quotazioneImporto} onChange={handleChange} className="w-full p-2.5 bg-slate-900/80 border border-amber-500/30 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-slate-100 font-bold" placeholder="0.00" />
             </div>
             <div>

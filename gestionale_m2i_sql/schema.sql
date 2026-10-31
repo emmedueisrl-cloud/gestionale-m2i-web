@@ -50,6 +50,7 @@ CREATE TABLE clienti (
     copie INTEGER DEFAULT 0,
     in_possesso_di TEXT,
     attivo TEXT DEFAULT 'SI',
+    tipo_rapporto TEXT NOT NULL DEFAULT 'continuativo',
     data_cessazione TEXT,
     note TEXT,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,

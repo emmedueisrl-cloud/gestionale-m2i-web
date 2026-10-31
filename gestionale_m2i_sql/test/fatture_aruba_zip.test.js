@@ -59,6 +59,11 @@ test('ZIP Aruba: due fatture dello stesso cliente e differenze richiedono scelta
     clients, [{ idCliente: 'C1', importoTotale: 122 }], []);
   assert.equal(renamed[0].issues.length, 0);
   assert.equal(renamed[0].matchedBy, 'Partita IVA');
+  const afterExtra = classify([{ ...base, id: 'monthly', numero: 'M1', tipoDocumento: 'TD01' }],
+    clients, [{ idCliente: 'C1', importoTotale: 122 }],
+    [{ id: 10, cliente_id: 'C1', numero_fattura: 'E1', data_fattura: '2026-10-07', importo_totale: 122 }],
+    [], null, [], new Set([10]));
+  assert.equal(afterExtra[0].issues.some(issue => issue.code === 'importo'), false);
   const fiscalOnly = classify([{ ...base, id: 'a', numero: '1', vat: '', taxCode: 'CF-CLIENTE',
     clienteXml: 'Condominio con nome diverso', tipoDocumento: 'TD01' }],
   [{ id: 'C1', ragione_sociale: 'Condominio nel gestionale', partita_iva: '', codice_fiscale: 'CF-CLIENTE' }],
@@ -142,8 +147,11 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   const args = { xmlZip: await xmlZip.generateAsync({ type: 'nodebuffer' }),
     pdfZip: await pdfZip.generateAsync({ type: 'nodebuffer' }), mese: 9, anno: 2026 };
   let expectedTotal = 122;
+  let octoberMonthlyTotal = null;
   const workflow = { period: (_, mese, anno) => ({ mese: Number(mese), anno: Number(anno) }),
-    lockedRows: async (_, mese) => Number(mese) === 10 ? [] : [{ idCliente: 'C1', importoTotale: expectedTotal }] };
+    lockedRows: async (_, mese) => Number(mese) === 10
+      ? octoberMonthlyTotal == null ? [] : [{ idCliente: 'C1', importoTotale: octoberMonthlyTotal }]
+      : [{ idCliente: 'C1', importoTotale: expectedTotal }] };
   const service = createArubaZipService(db, workflow);
   const preview = await service.preview(args);
   assert.equal(preview.fatture[0].stato, 'pronta');
@@ -334,6 +342,18 @@ test('ZIP Aruba: anteprima, abbinamento PDF e registrazione contabile senza dupl
   const extraGroupZip = new JSZip();
   extraGroupZip.file('XML/extra.xml', invoiceXml('EX 1/26', '122.00'));
   extraGroupZip.file('PDF/extra.xml - EX 1_26.pdf', Buffer.from('%PDF-1.4\nextra'));
+  octoberMonthlyTotal = 244;
+  const monthlyAndExtraArgs = { mese: 10, anno: 2026,
+    singleZip: await extraGroupZip.generateAsync({ type: 'nodebuffer' }) };
+  const monthlyAndExtraPreview = (await service.preview(monthlyAndExtraArgs)).fatture[0];
+  assert.equal(monthlyAndExtraPreview.gruppoId, 'G-EX');
+  assert.equal(monthlyAndExtraPreview.selezionata, true);
+  octoberMonthlyTotal = 122;
+  const ambiguousPreview = (await service.preview(monthlyAndExtraArgs)).fatture[0];
+  assert.equal(ambiguousPreview.gruppoId, null);
+  assert.equal(ambiguousPreview.selezionata, false);
+  assert.equal(ambiguousPreview.incongruenze.some(issue => issue.code === 'destinazione'), true);
+  octoberMonthlyTotal = 244;
   const extraSingle = { mese: 10, anno: 2026, clienteId: 'C1', gruppoId: 'G-EX',
     singleZip: await extraGroupZip.generateAsync({ type: 'nodebuffer' }) };
   const extraSinglePreview = await service.previewSingle(extraSingle);

@@ -134,7 +134,7 @@ async function readSingleArchive(buffer) {
   return pair;
 }
 
-function classify(invoices, clients, monthlyRows, registrations, officialInvoices = [], selectedPeriod = null, separateDocuments = []) {
+function classify(invoices, clients, monthlyRows, registrations, officialInvoices = [], selectedPeriod = null, separateDocuments = [], extraRegistrationIds = new Set()) {
   const eligible = new Map(monthlyRows.map(row => [String(row.idCliente), row]));
   const fiscalCandidates = invoice => clients.filter(client =>
     invoice.vat && fiscal(client.partita_iva) === invoice.vat ||
@@ -181,7 +181,8 @@ function classify(invoices, clients, monthlyRows, registrations, officialInvoice
     }
     const monthly = client && eligible.get(String(client.id));
     const expected = Number(monthly?.importoTotale);
-    const alreadyRegistered = client ? registrations.filter(record => record.cliente_id === client.id)
+    const alreadyRegistered = client ? registrations.filter(record => record.cliente_id === client.id &&
+      !extraRegistrationIds.has(Number(record.id)))
       .reduce((sum, record) => sum + cents(record.importo_totale), 0) : 0;
     const remaining = Number.isFinite(expected) && monthly?.importoTotale != null
       ? (cents(expected) - alreadyRegistered) / 100 : null;
@@ -276,23 +277,45 @@ function createArubaZipService(knex, workflow) {
     ]);
     const extraGroups = await knex.schema.hasTable('gruppi_fatturazione_extra')
       ? await extraService.groups(period.mese, period.anno) : [];
+    const linkedExtraIds = new Set(extraGroups.filter(group => group.tipo === 'extra' && group.fatturaRegistrazioneId)
+      .map(group => Number(group.fatturaRegistrazioneId)));
     const availableGroups = extraGroups.filter(group => group.tipo === 'extra' && group.servizi.length &&
       group.tuttiBlindati && !group.fatturaRegistrazioneId);
     const monthlyIds = new Set(rows.map(row => String(row.idCliente)));
     const extraOnlyGroups = availableGroups.filter(group => !monthlyIds.has(String(group.clienteId)) &&
       availableGroups.filter(other => String(other.clienteId) === String(group.clienteId)).length === 1);
-    const eligibleRows = [...rows, ...extraOnlyGroups.map(group => ({
-      idCliente: group.clienteId, importoTotale: group.totaleExtraPrevisto
+    const extraOnlyClientIds = [...new Set(extraGroups.filter(group => group.tipo === 'extra' &&
+      group.servizi.length && (group.tuttiBlindati || group.fatturaRegistrazioneId))
+      .map(group => String(group.clienteId)))]
+      .filter(id => !monthlyIds.has(id));
+    const eligibleRows = [...rows, ...extraOnlyClientIds.map(id => ({
+      idCliente: id,
+      importoTotale: extraOnlyGroups.find(group => String(group.clienteId) === id)?.totaleExtraPrevisto ?? null
     }))];
     const selectedPeriod = `${period.anno}-${String(period.mese).padStart(2, '0')}`;
     const classified = classify(pair.invoices, clients, eligibleRows,
       registrations.filter(record => record.id !== replaced?.id),
       officialInvoices.filter(record => record.id !== replaced?.fattura_id),
-      selectedPeriod, separateDocuments);
+      selectedPeriod, separateDocuments, linkedExtraIds);
     for (const item of classified) {
-      const group = extraOnlyGroups.find(candidate => String(candidate.clienteId) === String(item.client?.id));
-      if (group && item.tipoDocumento === 'TD01' && item.stato === 'pronta' && !item.issues.length &&
-        cents(item.importoTotale) === cents(group.totaleExtraPrevisto)) item.gruppoId = group.id;
+      if (!item.client || item.tipoDocumento !== 'TD01' || ['presente', 'conflitto', 'errore'].includes(item.stato)) continue;
+      const clientGroups = availableGroups.filter(group => String(group.clienteId) === String(item.client.id));
+      const matchingGroups = clientGroups.filter(group => cents(item.importoTotale) === cents(group.totaleExtraPrevisto));
+      const monthlyRow = rows.find(row => String(row.idCliente) === String(item.client.id));
+      const alreadyMonthly = registrations.filter(record => String(record.cliente_id) === String(item.client.id) &&
+        !linkedExtraIds.has(Number(record.id))).reduce((total, record) => total + cents(record.importo_totale), 0);
+      const monthlyMatches = monthlyRow && cents(monthlyRow.importoTotale) - alreadyMonthly === cents(item.importoTotale);
+      if (matchingGroups.length === 1 && !monthlyMatches) {
+        item.gruppoId = matchingGroups[0].id;
+        item.issues = item.issues.filter(issue => issue.code !== 'importo');
+        if (!item.issues.length && ['incongruenza', 'differenza'].includes(item.stato)) {
+          item.stato = 'pronta'; item.motivo = '';
+        }
+      } else if (matchingGroups.length > 1 || matchingGroups.length && monthlyMatches) {
+        item.issues.push({ code: 'destinazione', message: 'La fattura può riferirsi a più righe: scegli il mensile o il servizio extra.' });
+        item.stato = 'incongruenza';
+        item.motivo = item.issues.map(issue => issue.message).join(' ');
+      }
     }
     return { period, pair, classified, clients, rows, availableGroups };
   }
