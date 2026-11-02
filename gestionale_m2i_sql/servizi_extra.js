@@ -114,13 +114,6 @@ function createServiziExtra(knex) {
     }
   }
 
-  async function assertOpen(trx, p) {
-    const [clienti, dipendenti] = await Promise.all([
-      trx('mesi_chiusi_clienti').where(p).first(), trx('mesi_chiusi_dipendenti').where(p).first()
-    ]);
-    if (clienti || dipendenti) throw new Error('Elaborato del mese chiuso: il servizio extra non può essere modificato.');
-  }
-
   function normalizeLavori(input, p, dipendenti) {
     if (!Array.isArray(input)) throw new Error('Elenco dipendenti non valido.');
     const ids = new Set();
@@ -182,7 +175,7 @@ function createServiziExtra(knex) {
       gruppoNome: row.gruppo_nome, inviataAt: row.inviata_at, fatturaRegistrazioneId: row.fattura_registrazione_id,
       gruppoTotale: row.gruppo_totale_cent == null ? null : row.gruppo_totale_cent / 100,
       bloccatoAt: row.bloccato_at, lavori: byService.get(row.id) || [],
-      modificabile: !row.inviata_at && !row.fattura_registrazione_id && !closedClients && !closedEmployees && !(byService.get(row.id) || [])
+      modificabile: !row.inviata_at && !row.fattura_registrazione_id && !(closedClients && row.gruppo_tipo === 'mensile') && !(closedEmployees && (byService.get(row.id) || []).length) && !(byService.get(row.id) || [])
         .some(work => paid.has(String(work.dipendenteId)) && locked.has(String(work.dipendenteId))) }));
   }
 
@@ -239,7 +232,12 @@ function createServiziExtra(knex) {
     const imponibileCent = cents(input.imponibile);
     if (imponibileCent <= 0) throw new Error('Inserisci un imponibile positivo.');
     return knex.transaction(async trx => {
-      await assertOpen(trx, p);
+      const [closedClients, closedEmployees] = await Promise.all([
+        trx('mesi_chiusi_clienti').where(p).first(), trx('mesi_chiusi_dipendenti').where(p).first()
+      ]);
+      if (closedClients && input.destinazione === 'mensile') {
+        throw new Error('Mese clienti chiuso: fattura il servizio extra separatamente dal mensile.');
+      }
       const cliente = await trx('clienti').where({ id: clienteId }).first();
       if (!cliente) throw new Error('Cliente non trovato.');
       const employeeRows = await trx('dipendenti').select('id', 'tipo_paga');
@@ -250,6 +248,9 @@ function createServiziExtra(knex) {
         : input.descrizioneFattura).trim();
       if (!descrizioneFattura || descrizioneFattura.length > 500) throw new Error('Descrizione fattura obbligatoria (massimo 500 caratteri).');
       const oldWorks = old ? await trx('lavori_servizi_extra').where({ servizio_id: id }) : [];
+      if (closedEmployees && (lavori.length || oldWorks.length)) {
+        throw new Error('Mese dipendenti chiuso: non puoi aggiungere o modificare dipendenti nel servizio extra.');
+      }
       if (input.id && !old) throw new Error('Servizio extra non trovato.');
       if (old && (old.cliente_id !== clienteId || old.mese !== p.mese || old.anno !== p.anno)) throw new Error('Cliente e mese del servizio non possono essere cambiati.');
       const oldGroup = old ? await trx('gruppi_fatturazione_extra').where({ id: old.gruppo_id }).first() : null;
@@ -343,7 +344,6 @@ function createServiziExtra(knex) {
     return knex.transaction(async trx => {
       const row = await trx('servizi_extra').where({ id }).first();
       if (!row) throw new Error('Servizio extra non trovato.');
-      await assertOpen(trx, { mese: row.mese, anno: row.anno });
       const group = await trx('gruppi_fatturazione_extra').where({ id: row.gruppo_id }).first();
       if (!locked && (group.inviata_at || group.fattura_registrazione_id)) throw new Error('Fattura già inviata o registrata: non puoi sblindare il servizio.');
       await trx('servizi_extra').where({ id }).update({ bloccato_at: locked ? new Date().toISOString() : null });

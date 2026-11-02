@@ -104,6 +104,18 @@ test('servizio extra: dipendenti facoltativi, nota, blindatura e fattura Aruba s
   assert.equal((await db('fatture_aruba_elaborati').where({ fattura_id: 'XML2' }).first()).mese, 10);
   await db('mesi_chiusi_clienti').insert({ mese: 10, anno: 2026 });
   assert.equal((await service.list(10, 2026))[0].modificabile, false);
+  await db('mesi_chiusi_dipendenti').insert({ mese: 10, anno: 2026 });
+  await db('clienti').insert({ id: 'C2', ragione_sociale: 'Cliente nuovo', tipo_tassazione: 'IVA', percentuale_tassazione: 22 });
+  const lateInput = { ...input, clienteId: 'C2', imponibile: '120', lavori: [] };
+  const lateExtra = await service.save(lateInput);
+  assert.equal((await service.list(10, 2026, 'C2'))[0].modificabile, true);
+  await assert.rejects(service.save({ ...lateInput, destinazione: 'mensile' }), /fattura.*separatamente/);
+  await assert.rejects(service.save({ ...lateInput, lavori: [work] }), /Mese dipendenti chiuso/);
+  await service.setLock(lateExtra.id, true);
+  assert.equal((await service.groups(10, 2026, 'C2'))[0].tuttiBlindati, true);
+  await service.markSent(lateExtra.gruppoId);
+  assert.equal((await service.groups(10, 2026, 'C2'))[0].totaleFattura, 146.4);
+  assert.equal((await service.groups(10, 2026, 'C1')).find(group => group.id === created.gruppoId).fatturaRegistrazioneId, registrationId);
   const [separateInvoiceId] = await db('fatture_aruba_elaborati').insert({ cliente_id: 'C1', mese: 12, anno: 2026,
     tipo_documento: 'TD01', numero_fattura: 'EX-12', data_fattura: '2026-12-12',
     importo_totale: 150, registrata_at: new Date().toISOString() });

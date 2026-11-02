@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { recuperaTuttiIClienti } from '../../api/clienti';
+import { ottieniElaboratoClienti } from '../../api/elaborati';
 import { workflowRequest } from '../../api/workflowElaborati';
 import { mesePredefinitoElaborati } from '../../utils/mesePredefinitoElaborati';
 
@@ -23,6 +24,7 @@ export default function ServiziExtra() {
   const [clienti, setClienti] = useState([]);
   const [dipendenti, setDipendenti] = useState([]);
   const [servizi, setServizi] = useState([]);
+  const [meseClientiChiuso, setMeseClientiChiuso] = useState(false);
   const [gruppi, setGruppi] = useState([]);
   const [form, setForm] = useState(() => empty(periodoIniziale.mese, periodoIniziale.anno));
   const [editingId, setEditingId] = useState(null);
@@ -31,11 +33,12 @@ export default function ServiziExtra() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    const [extras, groups] = await Promise.all([
+    const [extras, groups, elaborato] = await Promise.all([
       workflowRequest(`servizi-extra/${anno}/${mese}`),
-      workflowRequest(`servizi-extra/${anno}/${mese}/gruppi`)
+      workflowRequest(`servizi-extra/${anno}/${mese}/gruppi`),
+      ottieniElaboratoClienti(mese, anno)
     ]);
-    setServizi(extras); setGruppi(groups);
+    setServizi(extras); setGruppi(groups); setMeseClientiChiuso(Boolean(elaborato?.chiuso));
   }, [anno, mese]);
 
   useEffect(() => {
@@ -94,6 +97,7 @@ export default function ServiziExtra() {
     </div>
     {error && <div role="alert" className="rounded-lg border border-red-500 bg-red-950 p-3 text-red-100">{error}</div>}
     {message && <div role="status" className="rounded-lg border border-emerald-500 bg-emerald-950 p-3 text-emerald-100">{message}</div>}
+    {meseClientiChiuso && <p className="rounded-lg border border-amber-500/50 bg-amber-950/40 p-3 text-sm text-amber-100">Il mese clienti è chiuso: puoi aggiungere servizi extra con fattura separata. Le fatture mensili già registrate restano invariate.</p>}
     <form onSubmit={save} className="space-y-5 rounded-xl border border-slate-700 bg-slate-900 p-5">
       <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">{editingId ? 'Modifica servizio' : 'Nuovo servizio extra'}</h2>{editingId && <button type="button" className="text-indigo-300 underline" onClick={() => { setEditingId(null); setForm(empty(mese, anno)); }}>Annulla modifica</button>}</div>
       <div className="grid gap-4 md:grid-cols-3">
@@ -104,7 +108,7 @@ export default function ServiziExtra() {
             ? defaultInvoiceDescription(e.target.value, mese, anno) : v.descrizioneFattura }))}>{['Sgrosso', 'Giardinaggio', 'Disinfestazione', 'Sanificazione', 'Altro'].map(value => <option key={value}>{value}</option>)}</select></label>
         <label className={labelClass}>Descrizione fattura<input required maxLength="500" disabled={invoiceDescriptionLocked} className={inputClass} value={form.descrizioneFattura || ''} onChange={e => setForm(v => ({ ...v, descrizioneFattura: e.target.value }))} placeholder="Es. SGROSSO OTTOBRE 2026" /></label>
         <label className={labelClass}>Imponibile per il cliente (€)<input required disabled={priceLocked} className={inputClass} inputMode="decimal" value={form.imponibile} onChange={e => setForm(v => ({ ...v, imponibile: e.target.value }))} placeholder="0,00" /></label>
-        <label className={labelClass}>Fatturazione<select disabled={priceLocked} className={inputClass} value={form.destinazione} onChange={e => setForm(v => ({ ...v, destinazione: e.target.value, gruppoId: '' }))}><option value="extra">Fattura extra singola</option><option value="mensile">Unisci al mensile</option><option value="existing">Unisci ad altri extra</option></select></label>
+        <label className={labelClass}>Fatturazione<select disabled={priceLocked} className={inputClass} value={form.destinazione} onChange={e => setForm(v => ({ ...v, destinazione: e.target.value, gruppoId: '' }))}><option value="extra">Fattura extra singola</option><option value="mensile" disabled={meseClientiChiuso}>Unisci al mensile</option><option value="existing">Unisci ad altri extra</option></select></label>
       </div>
       {billingLockedReason && <p className="text-sm text-amber-300">{billingLockedReason}</p>}
       {form.destinazione === 'existing' && <label className={labelClass}>Gruppo fattura esistente<select required disabled={priceLocked} className={inputClass} value={form.gruppoId} onChange={e => setForm(v => ({ ...v, gruppoId: e.target.value }))}><option value="">Seleziona gruppo</option>{groupsForClient.filter(group => group.tipo === 'extra').map(group => <option key={group.id} value={group.id}>{group.nome} · {euro(group.imponibileExtra)}</option>)}</select></label>}

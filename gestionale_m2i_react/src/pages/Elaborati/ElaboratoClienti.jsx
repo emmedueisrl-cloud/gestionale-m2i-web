@@ -386,7 +386,7 @@ export default function ElaboratoClienti() {
     { header: 'Blindatura', cardLabel: 'Blindatura', accessor: 'rigaBloccata', width: 93, render: row => {
       if (row.isExtra) {
         const colore = row.fatturaRegistrazioneId ? 'bg-emerald-700 text-white' : row.inviataAt ? 'bg-sky-700 text-white' : row.rigaBloccata ? 'bg-amber-400 text-slate-950' : 'bg-indigo-700 text-white';
-        return <button type="button" className={`rounded px-2 py-1 text-xs font-semibold disabled:opacity-70 ${colore}`} disabled={Boolean(row.inviataAt || row.fatturaRegistrazioneId || isChiuso)} onClick={() => toggleLock(row)}>{row.fatturaRegistrazioneId ? 'Registrata' : row.inviataAt ? 'Inviata' : row.rigaBloccata ? 'Sblocca' : 'Blinda'}</button>;
+        return <button type="button" className={`rounded px-2 py-1 text-xs font-semibold disabled:opacity-70 ${colore}`} disabled={Boolean(row.inviataAt || row.fatturaRegistrazioneId)} onClick={() => toggleLock(row)}>{row.fatturaRegistrazioneId ? 'Registrata' : row.inviataAt ? 'Inviata' : row.rigaBloccata ? 'Sblocca' : 'Blinda'}</button>;
       }
       if (isChiuso && !workflow.bloccati.includes(row.idCliente)) return <span className="text-emerald-300">Mese storico</span>;
       const separateIds = fattureSoloExtra(row);
