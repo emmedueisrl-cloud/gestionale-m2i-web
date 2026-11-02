@@ -22,6 +22,22 @@ function tipoRapporto(dati, fallback = 'continuativo') {
   return value;
 }
 
+function identitaCliente(dati) {
+  const tipo = getVal(dati, 'tipoCliente') || 'PARTITA_IVA';
+  if (!['PARTITA_IVA', 'PRIVATO'].includes(tipo)) throw new Error('Tipo cliente non valido.');
+  const partitaIva = String(getVal(dati, 'partitaIva') || '').trim();
+  const codiceFiscale = String(getVal(dati, 'codiceFiscale') || '').trim().toUpperCase();
+  const bozza = getVal(dati, 'isBozza') === true;
+  if (tipo === 'PRIVATO') {
+    if (!bozza && !/^[A-Z0-9]{16}$/.test(codiceFiscale)) {
+      throw new Error('Per un privato inserisci un codice fiscale di 16 caratteri.');
+    }
+    return { tipo_cliente: tipo, partita_iva: null, codice_fiscale: codiceFiscale || null };
+  }
+  if (!bozza && !partitaIva) throw new Error('La Partita IVA è obbligatoria (a meno di non salvare in Bozza).');
+  return { tipo_cliente: tipo, partita_iva: partitaIva || null, codice_fiscale: codiceFiscale || null };
+}
+
 function validaDataCessazione(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
       Number.isNaN(Date.parse(`${value}T00:00:00Z`)) ||
@@ -79,7 +95,7 @@ async function chiudiPeriodoAttivo(trx, cliente, data) {
 module.exports = {
   async recuperaClientiAttivi() {
     const list = await knex('clienti')
-      .select('id', 'ragione_sociale', 'partita_iva', 'citta', 'telefono', 'email', 'referente', 'tariffa_oraria_operatore', 'tariffa_oraria_commerciale', 'scadenza_contratto', 'note', 'note_fisse_elaborato', 'indirizzo_sede', 'civico_sede', 'cap', 'provincia', 'sede_legale', 'sede_operativa')
+      .select('id', 'ragione_sociale', 'tipo_cliente', 'partita_iva', 'codice_fiscale', 'citta', 'telefono', 'email', 'referente', 'tariffa_oraria_operatore', 'tariffa_oraria_commerciale', 'scadenza_contratto', 'note', 'note_fisse_elaborato', 'indirizzo_sede', 'civico_sede', 'cap', 'provincia', 'sede_legale', 'sede_operativa')
       .where(function() {
         this.where('attivo', 'SI').orWhereNull('attivo').orWhere('attivo', '');
       })
@@ -93,6 +109,8 @@ module.exports = {
       ragione_sociale: c.ragione_sociale ? c.ragione_sociale.toUpperCase() : '',
       partitaIva: c.partita_iva,
       partita_iva: c.partita_iva,
+      tipo_cliente: c.tipo_cliente,
+      codice_fiscale: c.codice_fiscale,
       citta: c.citta,
       indirizzo_sede: c.indirizzo_sede,
       civico_sede: c.civico_sede,
@@ -287,14 +305,12 @@ module.exports = {
 
   async salvaCliente(dati) {
     const ragioneSociale = getVal(dati, "ragioneSociale");
-    const partitaIva = getVal(dati, "partitaIva");
+    const identita = identitaCliente(dati);
+    const partitaIva = identita.partita_iva;
     const isBozza = getVal(dati, "isBozza") === true;
 
     if (!ragioneSociale) {
       throw new Error("La Ragione Sociale è obbligatoria.");
-    }
-    if (!isBozza && !partitaIva) {
-      throw new Error("La Partita IVA è obbligatoria (a meno di non salvare in Bozza).");
     }
     const outbound = await validaOutbound(getVal(dati, "operatore"));
     const inizioRichiesto = getVal(dati, 'dataInizioAttivita');
@@ -307,8 +323,7 @@ module.exports = {
         id,
         ragione_sociale: ragioneSociale,
         nome_attivita: getVal(dati, "nomeAttivita") || "",
-        partita_iva: partitaIva ? partitaIva : (isBozza ? `BOZZA_${Date.now()}` : ""),
-        codice_fiscale: getVal(dati, "codiceFiscale"),
+        ...identita,
         indirizzo_sede: getVal(dati, "indirizzoSede"),
         civico_sede: getVal(dati, "civicoSede"),
         cap: getVal(dati, "cap"),
@@ -397,14 +412,12 @@ module.exports = {
   async aggiornaDatiCliente(dati) {
     const id = getVal(dati, "id");
     const ragioneSociale = getVal(dati, "ragioneSociale");
-    const partitaIva = getVal(dati, "partitaIva");
+    const identita = identitaCliente(dati);
+    const partitaIva = identita.partita_iva;
     const isBozza = getVal(dati, "isBozza") === true;
 
     if (!id || !ragioneSociale) {
       throw new Error("ID e Ragione Sociale sono obbligatori.");
-    }
-    if (!isBozza && !partitaIva) {
-      throw new Error("La Partita IVA è obbligatoria (a meno di non salvare in Bozza).");
     }
     
     // Check current state, to not overwrite 'NO' with 'SI' unless we specifically handle it.
@@ -452,8 +465,7 @@ module.exports = {
           nome_attivita: getVal(dati, "nomeAttivita") || "",
           attivo: newStato,
           tipo_rapporto: tipoRapporto(dati, currentState.tipo_rapporto || 'continuativo'),
-          partita_iva: partitaIva ? partitaIva : (isBozza ? `BOZZA_${Date.now()}` : ""),
-          codice_fiscale: getVal(dati, "codiceFiscale"),
+          ...identita,
           indirizzo_sede: getVal(dati, "indirizzoSede"),
           civico_sede: getVal(dati, "civicoSede"),
           cap: getVal(dati, "cap"),

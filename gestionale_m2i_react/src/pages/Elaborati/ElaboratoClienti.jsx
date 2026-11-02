@@ -182,7 +182,7 @@ export default function ElaboratoClienti() {
   const valoreExtra = (extra, cliente) => {
     const imponibile = Number(extra.imponibile);
     const regime = String(cliente.tipoTassazione || 'IVA').trim().toUpperCase();
-    if (regime === 'REVERSE CHARGE') return imponibile;
+    if (['REVERSE CHARGE', "DICHIARAZIONE D'INTENTO"].includes(regime)) return imponibile;
     if (regime === 'TRAT. ACC.' || regime === 'TRATTENUTA ACCONTO') return Math.round(imponibile * 100 * 1.18) / 100;
     return Math.round(imponibile * 100 * (1 + (Number(cliente.percentualeTassazione) || 22) / 100)) / 100;
   };
@@ -321,10 +321,12 @@ export default function ElaboratoClienti() {
         const tipo = (row.tipoTassazione || 'IVA').toUpperCase();
         const colorClass = tipo === 'REVERSE CHARGE' 
           ? 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+          : tipo === "DICHIARAZIONE D'INTENTO"
+            ? 'text-sky-400 bg-sky-500/10 border-sky-500/30'
           : tipo.includes('TRAT') 
             ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
             : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-        const label = tipo === 'REVERSE CHARGE' ? 'REV' : tipo.includes('TRAT') ? 'TRAT' : 'IVA';
+        const label = tipo === 'REVERSE CHARGE' ? 'REV' : tipo === "DICHIARAZIONE D'INTENTO" ? 'D.INT' : tipo.includes('TRAT') ? 'TRAT' : 'IVA';
         return <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${colorClass}`}>{label}</span>;
       }
     },

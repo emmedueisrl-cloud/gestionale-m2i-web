@@ -18,6 +18,7 @@ const differenceCents = row => Math.round((Number(row.importoRealmenteFatturato)
 const regimeBreve = value => {
   const regime = String(value || 'IVA').trim().toUpperCase();
   if (regime === 'REVERSE CHARGE') return 'R.G';
+  if (regime === "DICHIARAZIONE D'INTENTO") return 'D.INT';
   if (regime === 'TRAT. ACC.' || regime === 'TRATTENUTA ACCONTO') return 'T.A';
   return regime;
 };

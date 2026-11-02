@@ -21,6 +21,11 @@ test('mostra tassa effettiva, aliquota e residuo senza stipendi', () => {
     residuoSenzaStipendi: 86.5
   });
   assert.equal(calcolaValoriContabilitaCliente({ imponibile: 100, importoTotale: 100, tipoTassazione: 'REVERSE CHARGE' }, 30).percentualeTassaEffettiva, 0);
+  assert.deepEqual(calcolaImportiFatturaCliente(100, "DICHIARAZIONE D'INTENTO", 0), {
+    importoIva: 0, importoRitenuta: 0, importoTotale: 100
+  });
+  assert.equal(calcolaValoriContabilitaCliente({ imponibile: 0, importoTotale: 0,
+    tipoTassazione: "DICHIARAZIONE D'INTENTO" }, 0).percentualeTassaEffettiva, 0);
 });
 
 test('con imponibile zero usa l’aliquota impostata o quella IVA predefinita', () => {

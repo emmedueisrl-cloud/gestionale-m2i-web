@@ -43,6 +43,39 @@ test('genera un XML FPR12 con dati IVA e importi coerenti', async () => {
   assert.equal(root.FatturaElettronicaBody.DatiPagamento.DettaglioPagamento.ImportoPagamento, '122.00');
 });
 
+test('fattura un privato con solo codice fiscale e destinatario 0000000', async () => {
+  const privato = { ...client, tipo_cliente: 'PRIVATO', partita_iva: null,
+    codice_fiscale: 'RSSMRA80A01H501U', fatturazione_id_paese_iva: '', codice_sdi: '', pec: '' };
+  const doc = await parse(buildInvoice({ ...base, client: privato }));
+  const header = doc.FatturaElettronica.FatturaElettronicaHeader;
+  assert.equal(header.CessionarioCommittente.DatiAnagrafici.CodiceFiscale, privato.codice_fiscale);
+  assert.equal(header.CessionarioCommittente.DatiAnagrafici.IdFiscaleIVA, undefined);
+  assert.equal(header.DatiTrasmissione.CodiceDestinatario, '0000000');
+  assert.equal(doc.FatturaElettronica.FatturaElettronicaBody.DatiBeniServizi.DatiRiepilogo.Imposta, '22.00');
+});
+
+test('anteprima Aruba accetta un privato senza SdI e PEC con ritenuta', async () => {
+  const privato = { ...client, tipo_cliente: 'PRIVATO', partita_iva: null,
+    codice_fiscale: 'RSSMRA80A01H501U', fatturazione_id_paese_iva: '', codice_sdi: '', pec: '',
+    tipo_tassazione: 'TRAT. ACC.', fatturazione_tipo_ritenuta: 'RT02',
+    fatturazione_aliquota_ritenuta: '4', fatturazione_causale_pagamento: 'A' };
+  const privateRow = { ...row, tipoTassazione: 'TRAT. ACC.', importoTotale: 118 };
+  const db = table => {
+    if (table === 'm2i_azienda_dati') return { where: () => ({ first: async () => company }) };
+    if (table === 'clienti') return { whereIn: async () => [privato] };
+    if (['fatture_aruba_elaborati', 'fatture'].includes(table)) return { whereIn: () => ({ select: async () => [] }) };
+    throw new Error(table);
+  };
+  const service = createArubaExport(db, { period: () => {}, accountingRows: async () => [privateRow] },
+    { groups: async () => [] });
+  const result = await service.prepare({ mese: 10, anno: 2026, keys: ['cliente:c1'],
+    data: '2026-10-13', primoNumero: 'FPR 618/26' });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.invoices.length, 1);
+  const doc = await parse(result.invoices[0].xml);
+  assert.equal(doc.FatturaElettronica.FatturaElettronicaBody.DatiGenerali.DatiGeneraliDocumento.DatiRitenuta.ImportoRitenuta, '4.00');
+});
+
 test('reverse charge con cliente identificato solo tramite codice fiscale', async () => {
   const cfOnly = { ...client, partita_iva: '96117270585', codice_fiscale: '96117270585',
     fatturazione_id_paese_iva: '', tipo_tassazione: 'REVERSE CHARGE',
@@ -55,6 +88,49 @@ test('reverse charge con cliente identificato solo tramite codice fiscale', asyn
   const summary = doc.FatturaElettronica.FatturaElettronicaBody.DatiBeniServizi.DatiRiepilogo;
   assert.equal(summary.Natura, 'N6.7');
   assert.equal(summary.Imposta, '0.00');
+});
+
+test('dichiarazione d’intento esporta N3.5 e i riferimenti della ricevuta', async () => {
+  const intentClient = { ...client, tipo_tassazione: "DICHIARAZIONE D'INTENTO",
+    percentuale_tassazione: 0, fatturazione_natura: 'N3.5',
+    fatturazione_riferimento_normativo: "Art. 8, c. 1, lett. c) DPR 633/72",
+    fatturazione_intento_protocollo: '08060120341234567-000001',
+    fatturazione_intento_data: '2026-10-01' };
+  const intentRow = { ...row, tipoTassazione: "DICHIARAZIONE D'INTENTO",
+    importoIva: 0, importoTotale: 100 };
+  const doc = await parse(buildInvoice({ ...base, client: intentClient, row: intentRow }));
+  const body = doc.FatturaElettronica.FatturaElettronicaBody;
+  const line = body.DatiBeniServizi.DettaglioLinee;
+  const summary = body.DatiBeniServizi.DatiRiepilogo;
+  assert.equal(line.AliquotaIVA, '0.00');
+  assert.equal(line.Natura, 'N3.5');
+  assert.equal(line.AltriDatiGestionali.TipoDato, 'INTENTO');
+  assert.equal(line.AltriDatiGestionali.RiferimentoTesto, intentClient.fatturazione_intento_protocollo);
+  assert.equal(line.AltriDatiGestionali.RiferimentoData, intentClient.fatturazione_intento_data);
+  assert.equal(summary.Imposta, '0.00');
+  assert.equal(summary.RiferimentoNormativo, intentClient.fatturazione_riferimento_normativo);
+  assert.equal(summary.EsigibilitaIVA, undefined);
+  assert.equal(body.DatiGenerali.DatiGeneraliDocumento.DatiRitenuta, undefined);
+});
+
+test('anteprima Aruba blocca la dichiarazione d’intento priva della ricevuta', async () => {
+  const intentClient = { ...client, tipo_tassazione: "DICHIARAZIONE D'INTENTO",
+    percentuale_tassazione: 0, fatturazione_natura: 'N3.5',
+    fatturazione_riferimento_normativo: "Art. 8, c. 1, lett. c) DPR 633/72" };
+  const intentRow = { ...row, tipoTassazione: "DICHIARAZIONE D'INTENTO",
+    importoIva: 0, importoTotale: 100 };
+  const db = table => {
+    if (table === 'm2i_azienda_dati') return { where: () => ({ first: async () => company }) };
+    if (table === 'clienti') return { whereIn: async () => [intentClient] };
+    if (['fatture_aruba_elaborati', 'fatture'].includes(table)) return { whereIn: () => ({ select: async () => [] }) };
+    throw new Error(table);
+  };
+  const result = await createArubaExport(db,
+    { period: () => {}, accountingRows: async () => [intentRow] }, { groups: async () => [] })
+    .prepare({ mese: 10, anno: 2026, keys: ['cliente:c1'],
+      data: '2026-10-13', primoNumero: 'FPR 618/26' });
+  assert.equal(result.invoices.length, 0);
+  assert.match(result.errors[0].issues.join(' '), /Protocollo dichiarazione d’intento/);
 });
 
 test('ritenuta al 4% applicata al pagamento netto', async () => {

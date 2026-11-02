@@ -19,7 +19,7 @@ function party(profile, issuer) {
   const identity = {};
   // Una scheda CF-only può contenere nel vecchio campo P.IVA una copia del CF.
   // Senza il Paese IVA verificato, quel dato non va emesso come IdFiscaleIVA.
-  if (country && vat) identity.IdFiscaleIVA = { IdPaese: country, IdCodice: vat };
+  if ((issuer || profile.tipo_cliente !== 'PRIVATO') && country && vat) identity.IdFiscaleIVA = { IdPaese: country, IdCodice: vat };
   if (fiscal) identity.CodiceFiscale = fiscal;
   identity.Anagrafica = { Denominazione: value(profile.ragione_sociale) };
   if (issuer) identity.RegimeFiscale = value(profile.fatturazione_regime);
@@ -45,8 +45,10 @@ function party(profile, issuer) {
 function buildInvoice({ company, client, row, lines, date, number, progressivo }) {
   const regime = value(client.tipo_tassazione || row.tipoTassazione).toUpperCase();
   const reverse = regime === 'REVERSE CHARGE';
+  const intento = regime === "DICHIARAZIONE D'INTENTO";
+  const nonImponibile = reverse || intento;
   const withholding = regime === 'TRAT. ACC.' || regime === 'TRATTENUTA ACCONTO';
-  const rate = reverse ? 0 : Number(client.percentuale_tassazione) > 0 ? Number(client.percentuale_tassazione) : 22;
+  const rate = nonImponibile ? 0 : Number(client.percentuale_tassazione) > 0 ? Number(client.percentuale_tassazione) : 22;
   const taxable = lines.reduce((sum, line) => sum + cents(line.amount), 0);
   const baseTax = row.importoIva == null ? Math.round(cents(row.imponibile) * rate / 100) : cents(row.importoIva);
   const tax = baseTax +
@@ -74,13 +76,16 @@ function buildInvoice({ company, client, row, lines, date, number, progressivo }
   const detail = lines.map((line, index) => ({ NumeroLinea: index + 1,
     Descrizione: value(line.description), Quantita: '1.00', PrezzoUnitario: money(cents(line.amount)),
     PrezzoTotale: money(cents(line.amount)), AliquotaIVA: rate.toFixed(2),
-    ...(reverse ? { Natura: value(client.fatturazione_natura) } : {}),
+    ...(nonImponibile ? { Natura: value(client.fatturazione_natura) } : {}),
+    ...(intento ? { AltriDatiGestionali: { TipoDato: 'INTENTO',
+      RiferimentoTesto: value(client.fatturazione_intento_protocollo),
+      RiferimentoData: value(client.fatturazione_intento_data) } } : {}),
     ...(withholding ? { Ritenuta: 'SI' } : {}) }));
   const summary = { AliquotaIVA: rate.toFixed(2),
-    ...(reverse ? { Natura: value(client.fatturazione_natura) } : {}),
+    ...(nonImponibile ? { Natura: value(client.fatturazione_natura) } : {}),
     ImponibileImporto: money(taxable), Imposta: money(tax) };
-  if (value(client.fatturazione_esigibilita_iva) && !reverse) summary.EsigibilitaIVA = value(client.fatturazione_esigibilita_iva);
-  if (reverse && value(client.fatturazione_riferimento_normativo)) summary.RiferimentoNormativo = value(client.fatturazione_riferimento_normativo);
+  if (value(client.fatturazione_esigibilita_iva) && !nonImponibile) summary.EsigibilitaIVA = value(client.fatturazione_esigibilita_iva);
+  if (nonImponibile && value(client.fatturazione_riferimento_normativo)) summary.RiferimentoNormativo = value(client.fatturazione_riferimento_normativo);
   const body = { DatiGenerali: { DatiGeneraliDocumento: generalDocument },
     DatiBeniServizi: { DettaglioLinee: detail, DatiRiepilogo: summary } };
   if (value(client.fatturazione_modalita_pagamento)) {
@@ -145,9 +150,7 @@ function createArubaExport(db, workflow, extrasService) {
       if (companyIssues.length) issues.push(`Dati M2I: ${companyIssues.join(', ')}`);
       if (client) {
         const clientIssues = readinessClient(client);
-        const cfOnly = !value(client.fatturazione_id_paese_iva) &&
-          value(client.codice_fiscale) && value(client.partita_iva) === value(client.codice_fiscale);
-        issues.push(...clientIssues.filter(issue => issue !== 'Paese partita IVA' || !cfOnly));
+        issues.push(...clientIssues);
         if (!/^[A-Z]{2}$/.test(value(client.fatturazione_paese).toUpperCase())) issues.push('Paese cliente non valido');
         if (value(client.fatturazione_paese).toUpperCase() === 'IT' && !/^\d{5}$/.test(value(client.cap))) issues.push('CAP cliente non valido');
         if (value(client.codice_sdi) && !/^[A-Z0-9]{7}$/i.test(value(client.codice_sdi))) issues.push('Codice destinatario non valido');
@@ -158,6 +161,11 @@ function createArubaExport(db, workflow, extrasService) {
         }
         if (value(client.tipo_tassazione).toUpperCase() === 'REVERSE CHARGE' &&
             !/^N6(?:\.[1-9])?$/.test(value(client.fatturazione_natura))) issues.push('Natura reverse charge non valida');
+        if (value(client.tipo_tassazione).toUpperCase() === "DICHIARAZIONE D'INTENTO" &&
+            (!/^\d{17}[-/]\d{6}$/.test(value(client.fatturazione_intento_protocollo)) ||
+              !dateValid(value(client.fatturazione_intento_data)))) {
+          issues.push('Protocollo o data della ricevuta della dichiarazione d’intento non validi');
+        }
       }
       if (occupied.has(numberFor(index))) issues.push(`Numero ${numberFor(index)} già registrato`);
       if (row && !(cents(row.imponibile) > 0)) issues.push('Imponibile nullo o negativo');

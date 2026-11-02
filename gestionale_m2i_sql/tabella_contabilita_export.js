@@ -34,7 +34,7 @@ function tableData(tipo, section, rows, buste, mese, anno, extraGroups = []) {
         const correction = Number(row.rettificaFatturazione) || 0;
         return [row.ragioneSociale || '', euro(row.prezzoServizio ?? row.imponibile),
           `${correction > 0 ? '+' : ''}${euro(correction)}`, euro(row.imponibile),
-          regime === 'REVERSE CHARGE' ? 'R.G' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
+          regime === 'REVERSE CHARGE' ? 'R.G' : regime === "DICHIARAZIONE D'INTENTO" ? 'D.INT' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
           `${euro(tax)}${Number(row.importoRitenuta) > 0 ? `\nRitenuta -${euro(row.importoRitenuta)}` : ''}`,
           euro(row.importoTotale), row.descrizioneFattura || '',
           notes(row, [['notaFissa', 'Nota fissa'], ['notaMensile', 'Nota del mese']])];
@@ -44,7 +44,7 @@ function tableData(tipo, section, rows, buste, mese, anno, extraGroups = []) {
         const totale = Number(group.totaleExtraPrevisto) || 0;
         const label = group.tipo === 'mensile' ? 'Quota extra unita al mensile (non è una fattura separata)' : 'Fattura extra separata';
         return [group.clienteNome || group.clienteId, euro(imponibile), euro(0), euro(imponibile),
-          regime === 'REVERSE CHARGE' ? 'R.G' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
+          regime === 'REVERSE CHARGE' ? 'R.G' : regime === "DICHIARAZIONE D'INTENTO" ? 'D.INT' : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 'T.A' : regime,
           euro(totale - imponibile), euro(totale), group.descrizioneFattura || '',
           `${label}: ${group.nomiServizi?.join(', ') || group.nome}`];
       })]

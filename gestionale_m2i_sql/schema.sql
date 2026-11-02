@@ -31,7 +31,8 @@ CREATE TABLE dipendenti (
 CREATE TABLE clienti (
     id TEXT PRIMARY KEY,
     ragione_sociale TEXT NOT NULL,
-    partita_iva TEXT UNIQUE NOT NULL,
+    partita_iva TEXT UNIQUE,
+    tipo_cliente TEXT NOT NULL DEFAULT 'PARTITA_IVA',
     sede_legale TEXT,
     sede_operativa TEXT,
     telefono TEXT,
@@ -55,7 +56,7 @@ CREATE TABLE clienti (
     note TEXT,
     data_creazione TEXT DEFAULT CURRENT_TIMESTAMP,
     creato_da TEXT
-, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text, causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA', periodo_causale_fattura TEXT NOT NULL DEFAULT 'corrente', fatturazione_paese TEXT, fatturazione_id_paese_iva TEXT, fatturazione_natura TEXT, fatturazione_riferimento_normativo TEXT, fatturazione_esigibilita_iva TEXT, fatturazione_tipo_ritenuta TEXT, fatturazione_aliquota_ritenuta TEXT, fatturazione_causale_pagamento TEXT, fatturazione_modalita_pagamento TEXT);
+, foto_servizio TEXT DEFAULT '[]', codice_fiscale TEXT, indirizzo_sede TEXT, civico_sede TEXT, cap TEXT, citta TEXT, provincia TEXT, pec TEXT, codice_sdi TEXT, banca TEXT, titolare TEXT, telefono_titolare TEXT, ruolo_referente TEXT, cestinato INTEGER DEFAULT 0, `note_chiavi` text, operatore TEXT, commerciale TEXT, quotazione_importo REAL, quotazione_tipo TEXT, operatore_assegnato TEXT, tipo_tassazione TEXT, tassazione_altro TEXT, percentuale_tassazione REAL, nome_attivita TEXT, email_secondaria TEXT, `note_fisse_elaborato` text, causale_fattura TEXT NOT NULL DEFAULT 'SERVIZIO DI PULIZIA', periodo_causale_fattura TEXT NOT NULL DEFAULT 'corrente', fatturazione_paese TEXT, fatturazione_id_paese_iva TEXT, fatturazione_natura TEXT, fatturazione_riferimento_normativo TEXT, fatturazione_intento_protocollo TEXT, fatturazione_intento_data TEXT, fatturazione_esigibilita_iva TEXT, fatturazione_tipo_ritenuta TEXT, fatturazione_aliquota_ritenuta TEXT, fatturazione_causale_pagamento TEXT, fatturazione_modalita_pagamento TEXT);
 
 CREATE TABLE clienti_periodi_attivita (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

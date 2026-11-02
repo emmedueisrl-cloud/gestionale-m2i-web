@@ -11,6 +11,7 @@ import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
 import DatiFatturazioneCliente from '../../components/clienti/DatiFatturazioneCliente';
 import { campiFatturazioneCliente } from '../../components/clienti/campiFatturazioneCliente';
+import { presetFatturazionePrivato } from '../../components/clienti/presetFatturazionePrivato';
 
 function ModificaCliente() {
   const navigate = useNavigate();
@@ -50,6 +51,7 @@ function ModificaCliente() {
   const [dati, setDati] = useState({
     id: '',
     ragioneSociale: '',
+    tipoCliente: 'PARTITA_IVA',
     nomeAttivita: '',
     partitaIva: '',
     codiceFiscale: '',
@@ -90,7 +92,7 @@ function ModificaCliente() {
   });
 
   useEffect(() => {
-    if (dati.tipoTassazione === 'REVERSE CHARGE') {
+    if (['REVERSE CHARGE', "DICHIARAZIONE D'INTENTO"].includes(dati.tipoTassazione)) {
       setDati(prev => ({ ...prev, percentualeTassazione: '0' }));
     } else if (['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(dati.tipoTassazione)) {
       setDati(prev => ({ ...prev, percentualeTassazione: '22' }));
@@ -107,7 +109,7 @@ function ModificaCliente() {
 
   const handleCaricaDati = async (id) => {
     if (!id) {
-      setDati({ id: '', ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', cap: '', citta: '', provincia: '', pec: '', sdi: '', titolare: '', telefonoTitolare: '', referente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '', condizioniPagamento: '', note: '', noteFisseElaborato: '', causaleFattura: 'SERVIZIO DI PULIZIA', possessoChiavi: 'NO', copie: 0, inPossessoDi: '', noteChiavi: '', operatore: '', dataInizioAttivita: '' });
+      setDati({ id: '', ragioneSociale: '', tipoCliente: 'PARTITA_IVA', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', cap: '', citta: '', provincia: '', pec: '', sdi: '', titolare: '', telefonoTitolare: '', referente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '', condizioniPagamento: '', note: '', noteFisseElaborato: '', causaleFattura: 'SERVIZIO DI PULIZIA', possessoChiavi: 'NO', copie: 0, inPossessoDi: '', noteChiavi: '', operatore: '', dataInizioAttivita: '' });
       setFotoEsistenti([]);
       setNuoveFoto([]);
       setNuovePreview([]);
@@ -139,6 +141,7 @@ function ModificaCliente() {
         setDati({
           id: id,
           ragioneSociale: datiCliente.ragione_sociale || '',
+          tipoCliente: datiCliente.tipo_cliente || 'PARTITA_IVA',
           nomeAttivita: datiCliente.nome_attivita || '',
           partitaIva: datiCliente.partita_iva || '',
           codiceFiscale: datiCliente.codice_fiscale || '',
@@ -197,7 +200,12 @@ function ModificaCliente() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setDati(prev => ({ ...prev, [name]: value }));
+    setDati(prev => ({ ...prev, [name]: value,
+      ...(name === 'tipoTassazione' && value === 'TRAT. ACC.' && prev.tipoCliente === 'PRIVATO' ? presetFatturazionePrivato : {}),
+      ...(name === 'tipoTassazione' && value === "DICHIARAZIONE D'INTENTO" ? {
+        percentualeTassazione: '0', fatturazione_natura: 'N3.5',
+        fatturazione_riferimento_normativo: prev.fatturazione_riferimento_normativo || "Non imponibile a seguito dichiarazione d'intento Art. 8, c. 1, lett. c) DPR 633/72"
+      } : {}) }));
   };
 
   const handleAggiornamentoChiavi = () => {
@@ -337,11 +345,13 @@ function ModificaCliente() {
     }
 
     const isBozzaAttuale = dati.attivo === 'Bozza';
-    const hasPiva = !!dati.partitaIva;
-    const isBozza = isBozzaAttuale && !hasPiva;
+    const isPrivato = dati.tipoCliente === 'PRIVATO';
+    const hasPiva = !!dati.partitaIva.trim();
+    const hasCf = /^[A-Z0-9]{16}$/i.test(dati.codiceFiscale.trim());
+    const isBozza = isBozzaAttuale && !(isPrivato ? hasCf : hasPiva);
 
-    if (!isBozza && !hasPiva) {
-      setModalState({ isOpen: true, type: 'warning', message: 'Il campo Partita IVA è obbligatorio.' });
+    if (!isBozza && !(isPrivato ? hasCf : hasPiva)) {
+      setModalState({ isOpen: true, type: 'warning', message: isPrivato ? 'Per un privato inserisci un codice fiscale di 16 caratteri.' : 'Il campo Partita IVA è obbligatorio.' });
       return;
     }
 
@@ -479,6 +489,13 @@ function ModificaCliente() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="md:col-span-2 max-w-sm">
+              <label htmlFor="tipoCliente" className="block text-sm font-medium text-slate-200 mb-1">Tipo cliente *</label>
+              <select id="tipoCliente" name="tipoCliente" value={dati.tipoCliente} onChange={e => setDati(prev => ({ ...prev, tipoCliente: e.target.value, partitaIva: e.target.value === 'PRIVATO' ? '' : prev.partitaIva, fatturazione_id_paese_iva: e.target.value === 'PRIVATO' ? '' : prev.fatturazione_id_paese_iva, fatturazione_paese: e.target.value === 'PRIVATO' ? (prev.fatturazione_paese || 'IT') : prev.fatturazione_paese }))} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg">
+                <option value="PARTITA_IVA">Partita IVA</option>
+                <option value="PRIVATO">Privato (solo codice fiscale)</option>
+              </select>
+            </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1">Ragione Sociale *</label>
               <input id="ragioneSociale" type="text" name="ragioneSociale" value={dati.ragioneSociale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
@@ -501,14 +518,16 @@ function ModificaCliente() {
               <input type="text" name="nomeAttivita" value={dati.nomeAttivita} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
             </div>
               <div>
-                <label className="block text-sm font-medium text-slate-200 mb-1">Partita IVA *</label>
-                <input id="partitaIva" type="text" name="partitaIva" value={dati.partitaIva} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" aria-describedby={dati.partitaIva.trim().length > 11 ? 'avvisoPartitaIva' : undefined} />
-                <AvvisoPartitaIva valore={dati.partitaIva} />
+                {dati.tipoCliente !== 'PRIVATO' && <>
+                  <label className="block text-sm font-medium text-slate-200 mb-1">Partita IVA *</label>
+                  <input id="partitaIva" type="text" name="partitaIva" value={dati.partitaIva} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" aria-describedby={dati.partitaIva.trim().length > 11 ? 'avvisoPartitaIva' : undefined} />
+                  <AvvisoPartitaIva valore={dati.partitaIva} />
+                </>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-200 mb-1 flex items-center justify-between">
-                  <span>Codice Fiscale</span>
-                  <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400 font-normal hover:text-indigo-400 transition-colors">
+                    <span>Codice Fiscale{dati.tipoCliente === 'PRIVATO' ? ' *' : ''}</span>
+                    {dati.tipoCliente !== 'PRIVATO' && <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400 font-normal hover:text-indigo-400 transition-colors">
                     <input
                       type="checkbox"
                       className="w-3.5 h-3.5 rounded accent-indigo-500 cursor-pointer"
@@ -518,7 +537,7 @@ function ModificaCliente() {
                       }}
                     />
                     <span>= P.IVA</span>
-                  </label>
+                    </label>}
                 </label>
                 <input type="text" name="codiceFiscale" value={dati.codiceFiscale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none uppercase" maxLength="16" />
               </div>

@@ -8,6 +8,7 @@ const multer = require('multer');
 const { ownerFolder, finalizeUpload } = require('./upload_paths');
 const excelGenerator = require('./excel_generator');
 const { knex, agendaMigration } = require('./db');
+const { ensureTipoCliente } = require('./tipo_cliente');
 const { createAuth } = require('./auth');
 const { createPublicAgenda, validMonday } = require('./public_agenda');
 const { createPublicAppuntamenti } = require('./public_appuntamenti');
@@ -1557,6 +1558,7 @@ app.use((req, res, next) => {
 
 Promise.resolve().then(async () => {
   await agendaMigration;
+  await ensureTipoCliente(knex);
   await auth.initialize();
   await publicAgenda.initialize();
   await appuntamentiPreventivi.ensureTable();

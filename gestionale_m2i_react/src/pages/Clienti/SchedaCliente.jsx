@@ -149,9 +149,10 @@ export default function SchedaCliente() {
             </h1>
             {data.nome_attivita && <p className="mb-3 text-slate-300">Nome attività: {data.nome_attivita}</p>}
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-medium text-slate-300">
-              <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">
-                <FileText className="w-4 h-4 text-slate-400" /> PI: {data.partita_iva}
-              </span>
+              {data.tipo_cliente === 'PRIVATO' ? <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">Privato</span> :
+                <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">
+                  <FileText className="w-4 h-4 text-slate-400" /> PI: {data.partita_iva}
+                </span>}
               {data.codice_fiscale && (
                 <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">
                   <FileText className="w-4 h-4 text-slate-400" /> CF: {data.codice_fiscale}
@@ -456,7 +457,7 @@ export default function SchedaCliente() {
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-50">Dati fatturazione elettronica</h2>
         </div>
         <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-          <CampoScheda etichetta="Trattamento fiscale" valore={data.tipo_tassazione} />
+          <CampoScheda etichetta="Trattamento fiscale" valore={data.tipo_tassazione === "DICHIARAZIONE D'INTENTO" ? 'Dichiarazione d’intento (D.INT)' : data.tipo_tassazione} />
           <CampoScheda etichetta="Aliquota IVA (%)" valore={data.percentuale_tassazione} />
           {data.tipo_tassazione === 'ALTRO' && <CampoScheda etichetta="Altro trattamento" valore={data.tassazione_altro} />}
           {campiFatturazione.map(([campo, etichetta]) => <CampoScheda key={campo} etichetta={etichetta} valore={data[campo]} />)}

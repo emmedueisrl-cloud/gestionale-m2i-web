@@ -504,12 +504,12 @@ async function saveInvoiceAdjustment({ mese, anno, clienteId, importo, userId })
     const client = await trx('clienti').where({ id }).first();
     if (!client) throw new Error('Cliente non trovato.');
     const tipo = String(client.tipo_tassazione || row.tipoTassazione || 'IVA').toUpperCase().trim();
-    if (!['IVA', 'REVERSE CHARGE', 'TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(tipo)) {
+    if (!['IVA', 'REVERSE CHARGE', "DICHIARAZIONE D'INTENTO", 'TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(tipo)) {
       throw new Error('Trattamento fiscale da verificare nella scheda cliente.');
     }
     const aliquotaImpostata = Number(client.percentuale_tassazione);
     const isWithholding = ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(tipo);
-    const aliquotaIva = tipo === 'REVERSE CHARGE' ? 0
+    const aliquotaIva = ['REVERSE CHARGE', "DICHIARAZIONE D'INTENTO"].includes(tipo) ? 0
       : isWithholding && aliquotaImpostata === 4 ? 22
         : aliquotaImpostata > 0 ? aliquotaImpostata : 22;
     const aliquotaRitenuta = Number(client.fatturazione_aliquota_ritenuta) > 0

@@ -44,6 +44,7 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/server.js
 !/gestionale_m2i_sql/backend_api.js
 !/gestionale_m2i_sql/db.js
+!/gestionale_m2i_sql/tipo_cliente.js
 !/gestionale_m2i_sql/excel_generator.js
 !/gestionale_m2i_sql/pdf_generator.js
 !/gestionale_m2i_sql/report_contabilita_clienti_pdf.js

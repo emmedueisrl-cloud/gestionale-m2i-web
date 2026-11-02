@@ -302,7 +302,7 @@ function buildStampaElaboratoClientiPDF(datiCompleti, mese, anno) {
       { text: '€\u00A0' + parseFloat(row.baseImponibile || 0).toFixed(2), style: 'testo', alignment: 'right' },
       scontiMaggText,
       { text: '€\u00A0' + parseFloat(row.imponibile || 0).toFixed(2), style: 'testo', alignment: 'right' },
-      { text: row.tipoTassazione || '', style: 'testo', alignment: 'center' },
+      { text: row.tipoTassazione === "DICHIARAZIONE D'INTENTO" ? 'D.INT' : row.tipoTassazione || '', style: 'testo', alignment: 'center' },
       { text: '€\u00A0' + parseFloat(row.importoTotale || 0).toFixed(2), style: 'testo', alignment: 'right', bold: true, fontSize: 11 },
       noteText.length > 0 ? noteText : { text: '' }
     ]);
@@ -779,7 +779,7 @@ function buildReportGraficoClientiPDF(datiCompleti, mese, anno) {
             valueCell(euro(row.baseImponibile)), valueCell(euro(differenza)),
             { text: specSM, fontSize: 13, color: '#215e4c', margin: [0, 8, 0, 0] },
             valueCell(euro(row.imponibile)),
-            { text: row.tipoTassazione || '-', fontSize: 14, color: verdeScuro, margin: [0, 10, 0, 0] },
+            { text: row.tipoTassazione === "DICHIARAZIONE D'INTENTO" ? 'D.INT' : row.tipoTassazione || '-', fontSize: 14, color: verdeScuro, margin: [0, 10, 0, 0] },
             valueCell(euro(row.importoTotale), true)
           ],
           ['', noteCell, '', '', '', '', '', '', '']

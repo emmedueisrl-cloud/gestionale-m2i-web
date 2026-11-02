@@ -9,6 +9,7 @@ import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
 import DatiFatturazioneCliente from '../../components/clienti/DatiFatturazioneCliente';
 import { campiFatturazioneCliente } from '../../components/clienti/campiFatturazioneCliente';
+import { presetFatturazionePrivato } from '../../components/clienti/presetFatturazionePrivato';
 
 const dataOdiernaItaliana = () => {
   const parti = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
@@ -41,6 +42,7 @@ export default function NuovoCliente() {
 
   const [dati, setDati] = useState({
     ragioneSociale: '',
+    tipoCliente: 'PARTITA_IVA',
     nomeAttivita: '',
     partitaIva: '',
     codiceFiscale: '',
@@ -82,7 +84,7 @@ export default function NuovoCliente() {
   });
 
   useEffect(() => {
-    if (dati.tipoTassazione === 'REVERSE CHARGE') {
+    if (['REVERSE CHARGE', "DICHIARAZIONE D'INTENTO"].includes(dati.tipoTassazione)) {
       setDati(prev => ({ ...prev, percentualeTassazione: '0' }));
     } else if (['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(dati.tipoTassazione)) {
       setDati(prev => ({ ...prev, percentualeTassazione: '22' }));
@@ -91,7 +93,12 @@ export default function NuovoCliente() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setDati(prev => ({ ...prev, [name]: value }));
+    setDati(prev => ({ ...prev, [name]: value,
+      ...(name === 'tipoTassazione' && value === 'TRAT. ACC.' && prev.tipoCliente === 'PRIVATO' ? presetFatturazionePrivato : {}),
+      ...(name === 'tipoTassazione' && value === "DICHIARAZIONE D'INTENTO" ? {
+        percentualeTassazione: '0', fatturazione_natura: 'N3.5',
+        fatturazione_riferimento_normativo: prev.fatturazione_riferimento_normativo || "Non imponibile a seguito dichiarazione d'intento Art. 8, c. 1, lett. c) DPR 633/72"
+      } : {}) }));
   };
 
   const handlePhoneChange = (index, field, value) => {
@@ -192,10 +199,15 @@ export default function NuovoCliente() {
       document.getElementById('ragioneSociale')?.focus({ preventScroll: true });
       return;
     }
-    if (!isBozza && !dati.partitaIva) {
+    if (!isBozza && dati.tipoCliente !== 'PRIVATO' && !dati.partitaIva.trim()) {
       setModalState({ isOpen: true, type: 'warning', message: 'Il campo Partita IVA è obbligatorio per un salvataggio definitivo.' });
       document.getElementById('partitaIva')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       document.getElementById('partitaIva')?.focus({ preventScroll: true });
+      return;
+    }
+    if (!isBozza && dati.tipoCliente === 'PRIVATO' && !/^[A-Z0-9]{16}$/i.test(dati.codiceFiscale.trim())) {
+      setModalState({ isOpen: true, type: 'warning', message: 'Per un privato inserisci un codice fiscale di 16 caratteri.' });
+      document.getElementById('codiceFiscale')?.focus();
       return;
     }
 
@@ -265,10 +277,12 @@ export default function NuovoCliente() {
       });
       
       setDati({
-        ragioneSociale: '', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '',
+        ragioneSociale: '', tipoCliente: 'PARTITA_IVA', nomeAttivita: '', partitaIva: '', codiceFiscale: '', indirizzoSede: '', civicoSede: '',
         cap: '', citta: '', provincia: '', pec: '', sdi: '',
         titolare: '', telefonoTitolare: '', referente: '', ruoloReferente: '', telefoni: [{ numero: '', referente: '' }], sediOperative: [''], email: '', emailSecondaria: '', banca: '', iban: '',
-        condizioniPagamento: 'Bonifico 30gg DF', note: '', noteFisseElaborato: '', causaleFattura: 'SERVIZIO DI PULIZIA', operatore: '', dataInizioAttivita: dataOdiernaItaliana()
+        condizioniPagamento: 'Bonifico 30gg DF', note: '', noteFisseElaborato: '', causaleFattura: 'SERVIZIO DI PULIZIA', operatore: '', dataInizioAttivita: dataOdiernaItaliana(),
+        tipoRapporto: 'continuativo', tipoTassazione: 'IVA', percentualeTassazione: '22', tassazioneAltro: '',
+        ...Object.fromEntries(campiFatturazioneCliente.map(key => [key, '']))
       });
       setFotoServizio([]);
       setPreviewUrls([]);
@@ -325,6 +339,13 @@ export default function NuovoCliente() {
             <p className="mt-1 text-xs text-slate-400">Da questa data il cliente compare negli elaborati mensili. Modificala se l’attività è iniziata prima.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="md:col-span-2 max-w-sm">
+              <label htmlFor="tipoCliente" className="block text-sm font-medium text-slate-200 mb-1">Tipo cliente *</label>
+              <select id="tipoCliente" name="tipoCliente" value={dati.tipoCliente} onChange={e => setDati(prev => ({ ...prev, tipoCliente: e.target.value, partitaIva: e.target.value === 'PRIVATO' ? '' : prev.partitaIva, fatturazione_id_paese_iva: e.target.value === 'PRIVATO' ? '' : prev.fatturazione_id_paese_iva, fatturazione_paese: e.target.value === 'PRIVATO' ? (prev.fatturazione_paese || 'IT') : prev.fatturazione_paese }))} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg">
+                <option value="PARTITA_IVA">Partita IVA</option>
+                <option value="PRIVATO">Privato (solo codice fiscale)</option>
+              </select>
+            </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1">Ragione Sociale *</label>
               <input id="ragioneSociale" type="text" name="ragioneSociale" value={dati.ragioneSociale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
@@ -347,14 +368,16 @@ export default function NuovoCliente() {
               <input type="text" name="nomeAttivita" value={dati.nomeAttivita} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-200 mb-1">Partita IVA *</label>
-              <input id="partitaIva" type="text" name="partitaIva" value={dati.partitaIva} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" aria-describedby={dati.partitaIva.trim().length > 11 ? 'avvisoPartitaIva' : undefined} />
-              <AvvisoPartitaIva valore={dati.partitaIva} />
+              {dati.tipoCliente !== 'PRIVATO' && <>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Partita IVA *</label>
+                <input id="partitaIva" type="text" name="partitaIva" value={dati.partitaIva} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" aria-describedby={dati.partitaIva.trim().length > 11 ? 'avvisoPartitaIva' : undefined} />
+                <AvvisoPartitaIva valore={dati.partitaIva} />
+              </>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 flex items-center justify-between">
-                <span>Codice Fiscale</span>
-                <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400 font-normal hover:text-indigo-400 transition-colors">
+                <span>Codice Fiscale{dati.tipoCliente === 'PRIVATO' ? ' *' : ''}</span>
+                {dati.tipoCliente !== 'PRIVATO' && <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400 font-normal hover:text-indigo-400 transition-colors">
                   <input
                     type="checkbox"
                     className="w-3.5 h-3.5 rounded accent-indigo-500 cursor-pointer"
@@ -364,9 +387,9 @@ export default function NuovoCliente() {
                     }}
                   />
                   <span>= P.IVA</span>
-                </label>
+                </label>}
               </label>
-              <input type="text" name="codiceFiscale" value={dati.codiceFiscale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none uppercase" maxLength="16" />
+              <input id="codiceFiscale" type="text" name="codiceFiscale" value={dati.codiceFiscale} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none uppercase" maxLength="16" />
             </div>
             <div className="grid grid-cols-4 gap-4 col-span-1 md:col-span-2">
               <div className="col-span-3">

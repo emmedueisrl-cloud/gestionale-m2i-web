@@ -53,6 +53,15 @@ test('legge XML con namespace e conserva l’indirizzo M2I diverso dallo storico
   } finally { await db.destroy(); }
 });
 
+test('riconosce N3.5 come dichiarazione d’intento e legge protocollo e data', async () => {
+  const document = xml().toString().replace('<DatiRiepilogo>',
+    '<DettaglioLinee><AltriDatiGestionali><TipoDato>INTENTO</TipoDato><RiferimentoTesto>08060120341234567-000001</RiferimentoTesto><RiferimentoData>2026-09-01</RiferimentoData></AltriDatiGestionali></DettaglioLinee><DatiRiepilogo><Natura>N3.5</Natura>');
+  const [invoice] = await importer.parseXml(Buffer.from(document), 'intento.xml');
+  assert.equal(invoice.recipient.tipo_tassazione, "DICHIARAZIONE D'INTENTO");
+  assert.equal(invoice.recipient.fatturazione_intento_protocollo, '08060120341234567-000001');
+  assert.equal(invoice.recipient.fatturazione_intento_data, '2026-09-01');
+});
+
 test('non aggiorna una scheda scelta manualmente con codice fiscale discordante', async () => {
   const db = await setup();
   try {

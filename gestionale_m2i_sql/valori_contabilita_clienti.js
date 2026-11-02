@@ -1,6 +1,6 @@
 function calcolaImportiFatturaCliente(imponibile, tipoTassazione, percentualeTassazione) {
   const regime = String(tipoTassazione || 'IVA').trim().toUpperCase();
-  if (regime === 'REVERSE CHARGE') {
+  if (regime === 'REVERSE CHARGE' || regime === "DICHIARAZIONE D'INTENTO") {
     return { importoIva: 0, importoRitenuta: 0, importoTotale: imponibile };
   }
   if (regime === 'TRAT. ACC.' || regime === 'TRATTENUTA ACCONTO') {
@@ -24,7 +24,7 @@ function calcolaValoriContabilitaCliente(row, costoPersonale) {
   const aliquotaImpostata = Number(row.percentualeTassazione) || 0;
   const percentualeTassaEffettiva = imponibile
     ? Number((importoTassa / imponibile * 100).toFixed(2))
-    : regime === 'REVERSE CHARGE' ? 0 : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 18
+    : ['REVERSE CHARGE', "DICHIARAZIONE D'INTENTO"].includes(regime) ? 0 : ['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(regime) ? 18
       : (regime === 'IVA' ? (aliquotaImpostata > 0 ? aliquotaImpostata : 22) : aliquotaImpostata);
   return {
     importoTassa,

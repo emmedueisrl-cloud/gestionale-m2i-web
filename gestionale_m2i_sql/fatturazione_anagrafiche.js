@@ -8,6 +8,8 @@ const CLIENT_FIELDS = {
   fatturazione_paese: 'Paese', fatturazione_id_paese_iva: 'Paese partita IVA',
   codice_sdi: 'Codice destinatario', pec: 'PEC destinatario',
   fatturazione_natura: 'Natura IVA', fatturazione_riferimento_normativo: 'Riferimento normativo',
+  fatturazione_intento_protocollo: 'Protocollo dichiarazione d’intento',
+  fatturazione_intento_data: 'Data ricevuta dichiarazione d’intento',
   fatturazione_esigibilita_iva: 'Esigibilità IVA', fatturazione_tipo_ritenuta: 'Tipo ritenuta',
   fatturazione_aliquota_ritenuta: 'Aliquota ritenuta', fatturazione_causale_pagamento: 'Causale pagamento',
   fatturazione_modalita_pagamento: 'Modalità pagamento',
@@ -91,13 +93,17 @@ async function parseXml(buffer, filename) {
   const invoices = bodies.map(body => {
     const general = node(node(body, 'DatiGenerali'), 'DatiGeneraliDocumento');
     const rows = [].concat(node(body, 'DatiBeniServizi').DatiRiepilogo || []);
+    const detailLines = [].concat(node(body, 'DatiBeniServizi').DettaglioLinee || []);
+    const intento = detailLines.flatMap(line => [].concat(line.AltriDatiGestionali || []))
+      .find(item => text(item, 'TipoDato').toUpperCase() === 'INTENTO');
     const withholding = node(general, 'DatiRitenuta');
     const payment = node(body, 'DatiPagamento');
     const detail = node(payment, 'DettaglioPagamento');
     const kinds = [...new Set(rows.map(row => text(row, 'Natura')).filter(Boolean))];
     const refs = [...new Set(rows.map(row => text(row, 'RiferimentoNormativo')).filter(Boolean))];
     const rates = [...new Set(rows.map(row => text(row, 'AliquotaIVA')).filter(Boolean))];
-    const taxType = kinds.some(kind => kind.startsWith('N6')) ? 'REVERSE CHARGE'
+    const taxType = kinds.includes('N3.5') ? "DICHIARAZIONE D'INTENTO"
+      : kinds.some(kind => kind.startsWith('N6')) ? 'REVERSE CHARGE'
       : text(withholding, 'TipoRitenuta') ? 'TRAT. ACC.' : 'IVA';
     return {
       filename, numero: text(general, 'Numero'), data: text(general, 'Data'),
@@ -106,6 +112,8 @@ async function parseXml(buffer, filename) {
         percentuale_tassazione: rates.length === 1 ? String(Number(rates[0])) : '',
         fatturazione_natura: kinds.join(', '),
         fatturazione_riferimento_normativo: refs.join('; '),
+        fatturazione_intento_protocollo: text(intento, 'RiferimentoTesto'),
+        fatturazione_intento_data: text(intento, 'RiferimentoData'),
         fatturazione_esigibilita_iva: text(first(rows), 'EsigibilitaIVA'),
         fatturazione_tipo_ritenuta: text(withholding, 'TipoRitenuta'),
         fatturazione_aliquota_ritenuta: text(withholding, 'AliquotaRitenuta'),
@@ -234,13 +242,22 @@ function readinessCompany(row) {
 
 function readinessClient(row) {
   const issues = [];
-  if (!validId(row.partita_iva) && !validId(row.codice_fiscale)) issues.push('Partita IVA o codice fiscale');
-  if (validId(row.partita_iva) && !val(row.fatturazione_id_paese_iva)) issues.push('Paese partita IVA');
+  const privato = row.tipo_cliente === 'PRIVATO';
+  if (privato && !/^[A-Z0-9]{16}$/i.test(val(row.codice_fiscale))) issues.push('Codice fiscale privato');
+  if (!privato && !validId(row.partita_iva) && !validId(row.codice_fiscale)) issues.push('Partita IVA o codice fiscale');
+  if (!privato && validId(row.partita_iva) && !val(row.fatturazione_id_paese_iva)) issues.push('Paese partita IVA');
   for (const [key, label] of Object.entries({ ragione_sociale: 'Ragione sociale', indirizzo_sede: 'Indirizzo', cap: 'CAP', citta: 'Comune', fatturazione_paese: 'Paese' })) {
     if (!val(row[key])) issues.push(label);
   }
-  if (!/^([A-Z0-9]{7})$/i.test(val(row.codice_sdi)) && !val(row.pec).includes('@')) issues.push('Codice SdI (7 caratteri) o PEC');
+  if (!privato && !/^([A-Z0-9]{7})$/i.test(val(row.codice_sdi)) && !val(row.pec).includes('@')) issues.push('Codice SdI (7 caratteri) o PEC');
   if (row.tipo_tassazione === 'REVERSE CHARGE' && !val(row.fatturazione_natura)) issues.push('Natura reverse charge');
+  if (row.tipo_tassazione === "DICHIARAZIONE D'INTENTO") {
+    if (val(row.fatturazione_natura) !== 'N3.5') issues.push('Natura dichiarazione d’intento N3.5');
+    if (!val(row.fatturazione_riferimento_normativo)) issues.push('Riferimento normativo dichiarazione d’intento');
+    if (!/^\d{17}[-/]\d{6}$/.test(val(row.fatturazione_intento_protocollo))) issues.push('Protocollo dichiarazione d’intento (17 cifre + 6)');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(val(row.fatturazione_intento_data)) ||
+        Number.isNaN(Date.parse(`${val(row.fatturazione_intento_data)}T00:00:00Z`))) issues.push('Data ricevuta dichiarazione d’intento');
+  }
   if (['TRAT. ACC.', 'TRATTENUTA ACCONTO'].includes(row.tipo_tassazione) && !val(row.fatturazione_tipo_ritenuta)) issues.push('Dati ritenuta');
   return issues;
 }
