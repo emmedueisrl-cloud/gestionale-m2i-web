@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, ChevronDown } from 'lucide-react';
 
 export default function SearchableClientSelect({ 
@@ -12,10 +13,13 @@ export default function SearchableClientSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const wrapperRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuPosition, setMenuPosition] = useState(null);
 
   useEffect(() => {
     function handleClickOutside(event) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target) &&
+          !menuRef.current?.contains(event.target)) {
         setIsOpen(false);
       }
     }
@@ -30,6 +34,32 @@ export default function SearchableClientSelect({
     const nome = (c.ragione_sociale || c.ragioneSociale || '').toLowerCase();
     return nome.includes(searchTerm.toLowerCase());
   });
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const updatePosition = () => {
+      const trigger = wrapperRef.current?.getBoundingClientRect();
+      if (!trigger) return;
+      const margin = 8;
+      const width = Math.min(Math.max(trigger.width, 220), window.innerWidth - margin * 2);
+      const left = Math.max(margin, Math.min(trigger.left, window.innerWidth - width - margin));
+      const menuHeight = menuRef.current?.offsetHeight || 280;
+      const below = window.innerHeight - trigger.bottom - margin;
+      const above = trigger.top - margin;
+      const openAbove = below < menuHeight && above > below;
+      const top = openAbove
+        ? Math.max(margin, trigger.top - menuHeight - 4)
+        : Math.min(window.innerHeight - margin, trigger.bottom + 4);
+      setMenuPosition({ top, left, width });
+    };
+    updatePosition();
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isOpen, filteredClienti.length]);
 
   return (
     <div className="relative w-full" ref={wrapperRef}>
@@ -48,8 +78,8 @@ export default function SearchableClientSelect({
         <ChevronDown className="w-3 h-3 flex-shrink-0 ml-1 opacity-50" />
       </button>
 
-      {isOpen && (
-        <div className="absolute z-[100] top-full left-0 w-full mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden min-w-[220px]">
+      {isOpen && createPortal(
+        <div ref={menuRef} style={{ position: 'fixed', ...menuPosition, visibility: menuPosition ? 'visible' : 'hidden' }} className="z-[100] bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden">
           <div className="p-2 border-b border-slate-700 flex items-center gap-2 bg-slate-900/50">
             <Search className="w-4 h-4 text-slate-400" />
             <input 
@@ -89,7 +119,7 @@ export default function SearchableClientSelect({
               ))
             )}
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );
