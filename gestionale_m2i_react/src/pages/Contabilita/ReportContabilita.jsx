@@ -52,7 +52,14 @@ const remainderColor = row => {
   return `rgb(${start.rgb.map((value, index) => Math.round(value + (end.rgb[index] - value) * progress)).join(', ')})`;
 };
 
-function AdjustableCard({ field, additionalField = null, label, value, adjustments, clientAdjustments = [], employeeAdjustments = [], pairedAdjustments = [], onEdit, onDelete, deletingId, hours = false, children }) {
+function SummaryCard({ label, value }) {
+  return <div className="flex min-h-[132px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <p className="min-h-[40px] text-sm font-semibold leading-5 text-slate-600">{label}</p>
+    <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+  </div>;
+}
+
+function AdjustableCard({ field, additionalField = null, label, value, adjustments, clientAdjustments = [], employeeAdjustments = [], pairedAdjustments = [], onEdit, onDelete, deletingId, hours = false }) {
   const fields = additionalField ? [field, additionalField] : [field];
   const clientField = field === 'oreTotali' ? 'ore' : field === 'imponibileClienti' ? 'imponibile' : null;
   const employeeField = field === 'oreTotali' ? 'ore' : field === 'totaleNetti' ? 'netto' : null;
@@ -63,15 +70,14 @@ function AdjustableCard({ field, additionalField = null, label, value, adjustmen
       ...item, valore: item.differenza, nota: `${item.dipendente}: ${item.nota}` })),
     ...(field === 'oreTotali' ? pairedAdjustments.map(item => ({
       pairedId: item.id, valore: item.abbinamenti.reduce((sum, row) => sum + row.differenza, 0), nota: item.nota })) : [])];
-  return <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+  return <div className="flex min-h-[132px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-3">
-      <p className="text-sm font-semibold text-slate-600">{label}</p>
-      <div className="flex shrink-0 flex-wrap justify-end gap-1">{fields.map(editField => <button key={editField} type="button" onClick={() => onEdit(editField)} aria-label={`Rettifica ${adjustmentLabels[editField]}`} title={`Rettifica ${adjustmentLabels[editField]}`} className="inline-flex items-center gap-1 rounded-lg p-2 text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">
+      <p className="min-h-[40px] text-sm font-semibold leading-5 text-slate-600">{label}</p>
+      <div className="flex shrink-0 flex-wrap justify-end gap-1">{fields.map(editField => <button key={editField} type="button" onClick={() => onEdit(editField)} aria-label={editField === 'f24' ? 'Modifica importo F24' : `Rettifica ${adjustmentLabels[editField]}`} title={editField === 'f24' ? 'Modifica importo F24' : `Rettifica ${adjustmentLabels[editField]}`} className="inline-flex items-center gap-1 rounded-lg p-2 text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">
         <Pencil size={18} aria-hidden="true" />{additionalField && <span className="text-xs font-semibold">{editField === 'totaleNetti' ? 'Buste' : 'CC'}</span>}
       </button>)}</div>
     </div>
     <p className="mt-2 text-2xl font-bold">{value}</p>
-    {children}
     {notes.length > 0 && <ul className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
       {notes.map(item => <li key={item.clienteId ? `client:${item.clienteId}:${item.voce}` : item.dipendenteId ? `employee:${item.dipendenteId}:${item.voce}` : item.pairedId ? `paired:${item.pairedId}` : item.id} className="flex items-start justify-between gap-2">
         <span className="min-w-0 break-words"><strong className={item.valore < 0 ? 'text-red-700' : 'text-emerald-700'}>{item.valore < 0 ? '−' : '+'}{hours ? `${ore(Math.abs(item.valore))} h` : euro(Math.abs(item.valore))}</strong> · {item.nota}</span>
@@ -182,6 +188,15 @@ export default function ReportContabilita() {
   const openAdjustment = field => {
     setAdjustmentField(field); setAdjustmentOperation('aggiungi');
     setAdjustmentValue(''); setAdjustmentNote(''); setAdjustmentError('');
+  };
+  const openCardEditor = field => {
+    if (field === 'f24') {
+      setF24Input(report.valoriBase.f24 == null ? '' : String(report.valoriBase.f24).replace('.', ','));
+      setError('');
+      setEditingF24(true);
+    } else {
+      openAdjustment(field);
+    }
   };
   const saveAdjustment = async event => {
     event.preventDefault();
@@ -352,7 +367,7 @@ export default function ReportContabilita() {
     {loading && <p className="text-slate-600">Caricamento report...</p>}
     {report && <>
       <section aria-label="Valori del mese" className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {[
             ['totaleNetti', euro(Math.round((Number(report.totaleNetti) + Number(report.totaleCc)) * 100) / 100), 'totaleCc'],
             ['f24', report.f24 == null ? 'Da inserire' : euro(report.f24)],
@@ -362,45 +377,19 @@ export default function ReportContabilita() {
             clientAdjustments={report.rettificheClienti || []}
             employeeAdjustments={report.rettificheDipendenti || []}
             pairedAdjustments={report.rettificheOreAbbinate || []}
-            onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId}>
-              {additionalField && <p className="mt-2 text-xs text-slate-600">Buste {euro(report.totaleNetti)} + CC {euro(report.totaleCc)}</p>}
-              {field === 'f24' && <div className="mt-3 border-t border-slate-200 pt-3 text-sm">
-                {editingF24 ? <form onSubmit={saveF24} className="space-y-2">
-                  <label className="block font-semibold text-slate-700">Importo F24 del mese (€)
-                    <input type="text" inputMode="decimal" autoFocus value={f24Input} onChange={event => setF24Input(event.target.value)} placeholder="Es. 1500,00" className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base" />
-                  </label>
-                  <div className="flex flex-wrap gap-2"><button type="submit" disabled={saving || !f24Input.trim()} className="rounded-lg bg-indigo-700 px-3 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{saving ? 'Salvataggio...' : 'Salva'}</button><button type="button" disabled={saving} onClick={() => setEditingF24(false)} className="rounded-lg bg-slate-100 px-3 py-2 hover:bg-slate-200">Annulla</button></div>
-                </form> : <button type="button" onClick={() => { setF24Input(report.valoriBase.f24 == null ? '' : String(report.valoriBase.f24).replace('.', ',')); setEditingF24(true); }} className="font-semibold text-indigo-700 underline">{report.valoriBase.f24 == null ? 'Inserisci importo F24' : 'Modifica importo F24'}</button>}
-              </div>}
-          </AdjustableCard>)}
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
-            <p className="text-sm font-semibold text-indigo-900">Totale costo personale incluse BP, CC e F24</p>
-            <p className="mt-2 text-3xl font-bold text-indigo-950">{report.costoTotale == null ? '—' : euro(report.costoTotale)}</p>
-          </div>
-          <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
-            <p className="text-sm font-semibold text-sky-900">Totale imponibili dei clienti del mese</p>
-            <p className="mt-2 text-3xl font-bold text-sky-950">{euro(report.imponibileFatturazioneMese)}</p>
-          </div>
+            onEdit={openCardEditor} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />)}
+          <SummaryCard label="Totale costo personale incluse BP, CC e F24"
+            value={report.costoTotale == null ? '—' : euro(report.costoTotale)} />
+          <SummaryCard label="Totale imponibili dei clienti del mese" value={euro(report.imponibileFatturazioneMese)} />
           <AdjustableCard field="imponibileClienti" label={adjustmentLabels.imponibileClienti}
             value={euro(report.imponibileClientiFissiConOre)} adjustments={report.rettifiche || []}
             clientAdjustments={report.rettificheClienti || []}
             employeeAdjustments={report.rettificheDipendenti || []}
             pairedAdjustments={report.rettificheOreAbbinate || []}
             onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
-            <p className="text-sm font-semibold text-amber-900">Totale imponibili degli extra</p>
-            <p className="mt-2 text-3xl font-bold text-amber-950">{euro(report.imponibileExtraMese)}</p>
-          </div>
-          <div className="rounded-xl border border-violet-200 bg-violet-50 p-5">
-            <p className="text-sm font-semibold text-violet-900">Totale imponibili dei clienti fissi senza ore</p>
-            <p className="mt-2 text-3xl font-bold text-violet-950">{euro(report.imponibileClientiFissiSenzaOre)}</p>
-          </div>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-            <p className="text-sm font-semibold text-emerald-900">Totale rimanenze</p>
-            <p className="mt-2 text-3xl font-bold text-emerald-950">{report.rimanenzaTotale == null ? '—' : euro(report.rimanenzaTotale)}</p>
-          </div>
+          <SummaryCard label="Totale imponibili degli extra" value={euro(report.imponibileExtraMese)} />
+          <SummaryCard label="Totale imponibili dei clienti fissi senza ore"
+            value={euro(report.imponibileClientiFissiSenzaOre)} />
         </div>
       </section>
 
@@ -618,6 +607,24 @@ export default function ReportContabilita() {
           <div className="flex flex-wrap gap-3">
             <button type="submit" disabled={clientSaving || !clientValue.trim() || !clientNote.trim()} className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{clientSaving ? 'Salvataggio...' : 'Salva modifica'}</button>
             {clientCellAdjustment && <button type="button" disabled={deletingAdjustmentId === `client:${clientCell.clienteId}:${clientCell.voce}`} onClick={() => deleteAdjustment(clientCellAdjustment)} className="rounded-lg bg-red-50 px-4 py-2 font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50">Elimina rettifica</button>}
+          </div>
+        </form>
+      </div>
+    </div>}
+    {report && editingF24 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="report-f24-title" className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="report-f24-title" className="text-xl font-bold">F24 · {mesi[mese - 1]} {anno}</h2>
+          <button type="button" disabled={saving} onClick={() => setEditingF24(false)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold hover:bg-slate-200 disabled:opacity-50">Chiudi</button>
+        </div>
+        <form onSubmit={saveF24} className="mt-5 space-y-4">
+          <label className="block text-sm font-semibold text-slate-700">Importo F24 del mese (€)
+            <input type="text" inputMode="decimal" autoFocus value={f24Input} onChange={event => setF24Input(event.target.value)} placeholder="Es. 1500,00" className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base" />
+          </label>
+          {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={saving || !f24Input.trim()} className="rounded-lg bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">{saving ? 'Salvataggio...' : 'Salva F24'}</button>
+            <button type="button" disabled={saving} onClick={() => { setEditingF24(false); openAdjustment('f24'); }} className="rounded-lg bg-slate-100 px-4 py-2 font-semibold text-indigo-700 hover:bg-slate-200 disabled:opacity-50">Aggiungi rettifica F24</button>
           </div>
         </form>
       </div>
