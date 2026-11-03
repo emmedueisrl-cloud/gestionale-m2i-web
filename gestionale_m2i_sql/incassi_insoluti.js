@@ -24,6 +24,11 @@ const dateInItaly = timestamp => {
   const get = type => parts.find(part => part.type === type).value;
   return `${get('year')}-${get('month')}-${get('day')}`;
 };
+const dueDateForPeriod = (year, month) => {
+  const y = Number(year), m = Number(month);
+  if (!Number.isInteger(y) || y < 2000 || y > 2099 || !Number.isInteger(m) || m < 1 || m > 12) return null;
+  return new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
+};
 const statusFor = (invoice, today) => {
   if (invoice.tipo_documento === 'TD04' || cents(invoice.importo_totale) < 0) return 'Nota di credito';
   const remaining = Math.max(0, cents(invoice.importo_totale) - cents(invoice.importo_pagato));
@@ -262,7 +267,7 @@ function createReceiptsService(knex) {
       const credited = (creditByRegistration.get(invoice.registrazione_id) || 0) / 100;
       const effectiveTotal = Math.max(0, total - credited);
       const activeLedgerCents = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + cents(row.importo), 0);
-      const scadenza = linked && !awaitingTransfer ? invoice.data_scadenza : invoice.scadenza_aruba;
+      const scadenza = dueDateForPeriod(invoice.anno, invoice.mese);
       return {
         id: linked && !awaitingTransfer ? invoice.fattura_id : `aruba:${invoice.registrazione_id}`,
         clienteId: invoice.cliente_id, cliente: invoice.ragione_sociale || 'Cliente non disponibile',
@@ -297,15 +302,16 @@ function createReceiptsService(knex) {
       const total = validTotal ? rawTotal : 0;
       const paid = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + row.importo, 0);
       const inconsistent = !validTotal || cents(paid) > cents(total);
+      const scadenza = dueDateForPeriod(sent.anno, sent.mese);
       rows.push({
         id: `inviata:${sent.cliente_id}:${sent.anno}:${sent.mese}`,
         clienteId: sent.cliente_id, cliente: sent.ragione_sociale || 'Cliente non disponibile',
         descrizione: monthlyDescription(sent.cliente_id, sent.mese, sent.anno),
         numero: '', registrata: false, gestibile: true,
         periodo: `${sent.anno}-${String(sent.mese).padStart(2, '0')}`,
-        dataFattura: dateInItaly(sent.inviata_at), scadenza: null,
+        dataFattura: dateInItaly(sent.inviata_at), scadenza,
         totale: total, incassato: paid, residuo: Math.max(0, (cents(total) - cents(paid)) / 100),
-        stato: validTotal ? statusFor({ importo_totale: total, importo_pagato: paid }, today) : 'Importo da verificare',
+        stato: validTotal ? statusFor({ importo_totale: total, importo_pagato: paid, data_scadenza: scadenza }, today) : 'Importo da verificare',
         incongruenza: inconsistent, storico: history
       });
     }
@@ -325,15 +331,16 @@ function createReceiptsService(knex) {
       }));
       const total = Number(group.totale_cent || 0) / 100;
       const paid = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + row.importo, 0);
+      const scadenza = dueDateForPeriod(group.anno, group.mese);
       rows.push({ id: `extra:${group.id}`, clienteId: group.cliente_id,
         descrizione: descriptionByKey.get(`extra:${group.id}:${group.anno}:${group.mese}`) || extraDescriptionByGroup.get(group.id),
         cliente: group.ragione_sociale || 'Cliente non disponibile', numero: group.nome,
         registrata: false, gestibile: !daCollegare, daCollegare, tipoDocumento: 'TD01',
         periodo: `${group.anno}-${String(group.mese).padStart(2, '0')}`,
-        dataFattura: dateInItaly(group.inviata_at), scadenza: group.data_scadenza || null,
+        dataFattura: dateInItaly(group.inviata_at), scadenza,
         totale: total, incassato: paid, residuo: Math.max(0, total - paid),
         stato: daCollegare ? 'Da collegare ad Aruba'
-          : statusFor({ importo_totale: total, importo_pagato: paid, data_scadenza: group.data_scadenza }, today),
+          : statusFor({ importo_totale: total, importo_pagato: paid, data_scadenza: scadenza }, today),
         incongruenza: cents(paid) > cents(total), storico: history });
     }
     const sum = (selector, includePending = false) => rows.reduce((total, row) =>
@@ -606,4 +613,4 @@ function createReceiptsService(knex) {
   return { initialize, list, register, cancel, setDueDate };
 }
 
-module.exports = { createReceiptsService, validDate, todayInItaly, transferSentReceipts };
+module.exports = { createReceiptsService, dueDateForPeriod, validDate, todayInItaly, transferSentReceipts };

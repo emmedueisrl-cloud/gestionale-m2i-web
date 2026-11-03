@@ -1,8 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const knexFactory = require('knex');
-const { createReceiptsService, todayInItaly, transferSentReceipts } = require('../incassi_insoluti');
+const { createReceiptsService, dueDateForPeriod, todayInItaly, transferSentReceipts } = require('../incassi_insoluti');
 const { reconcileOfficial } = require('../fatture_reconciliation');
+
+test('la scadenza segue il mese dell’elaborato, anche a fine anno', () => {
+  assert.equal(dueDateForPeriod(2026, 10), '2026-11-30');
+  assert.equal(dueDateForPeriod(2026, 11), '2026-12-31');
+  assert.equal(dueDateForPeriod(2026, 12), '2027-01-31');
+  assert.equal(dueDateForPeriod(2026, 0), null);
+});
 
 test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async t => {
   const db = knexFactory({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
@@ -36,21 +43,26 @@ test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async
     { id: 'F1', cliente_id: 'C1', numero_fattura: '1', data_fattura: '2026-09-01',
       data_scadenza: '2026-09-30', importo_totale: 120, importo_pagato: 20,
       data_pagamento: '2026-09-20', stato_pagamento: 'Parzialmente Pagata' },
-    { id: 'F2', cliente_id: 'C1', numero_fattura: '2', data_fattura: '2026-10-01',
+    { id: 'F2', cliente_id: 'C1', numero_fattura: '2', data_fattura: '2026-11-03',
       importo_totale: 100, importo_pagato: 0, stato_pagamento: 'Da Pagare' }
   ]);
   await db('fatture_aruba_elaborati').insert([
     { fattura_id: 'F1', cliente_id: 'C1', mese: 9, anno: 2026,
       numero_fattura: '1', data_fattura: '2026-09-01', importo_totale: 120 },
     { fattura_id: 'F2', cliente_id: 'C1', mese: 10, anno: 2026,
-      numero_fattura: '2', data_fattura: '2026-10-01', importo_totale: 100 }
+      numero_fattura: '2', data_fattura: '2026-11-03', importo_totale: 100 }
   ]);
   const service = createReceiptsService(db);
   await service.initialize();
   await service.initialize();
   let dashboard = await service.list();
+  const octoberOverdue = todayInItaly() > '2026-11-30';
   assert.equal(dashboard.riepilogo.daIncassare, 200);
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').stato, 'Insoluta');
+  assert.equal(dashboard.fatture.find(row => row.id === 'F1').scadenza, '2026-10-31');
+  assert.equal(dashboard.fatture.find(row => row.id === 'F2').scadenza, '2026-11-30');
+  assert.equal(dashboard.fatture.find(row => row.id === 'F2').stato, octoberOverdue ? 'Insoluta' : 'Da incassare');
+  assert.equal(dashboard.riepilogo.insoluto, octoberOverdue ? 200 : 100);
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').registrata, true);
   assert.equal(dashboard.fatture.find(row => row.id === 'F2').registrata, true);
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').storico.length, 1);
@@ -67,15 +79,16 @@ test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async
   dashboard = await service.list();
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').stato, 'Incassata');
   assert.equal(dashboard.riepilogo.daIncassare, 100);
+  assert.equal(dashboard.riepilogo.insoluto, octoberOverdue ? 100 : 0);
   await service.cancel({ receiptId: final.id, reason: 'Registrazione duplicata' });
   dashboard = await service.list();
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').residuo, 69.5);
   assert.equal(dashboard.fatture.find(row => row.id === 'F1').storico.find(row => row.id === final.id).motivoAnnullamento, 'Registrazione duplicata');
   await assert.rejects(service.cancel({ receiptId: dashboard.fatture.find(row => row.id === 'F1').storico.find(row => row.origine === 'storico').id, reason: 'Errore storico' }), /storico/);
   await service.setDueDate({ fatturaId: 'F1', date: '2099-01-01' });
-  assert.equal((await service.list()).fatture.find(row => row.id === 'F1').stato, 'Parziale');
+  assert.equal((await service.list()).fatture.find(row => row.id === 'F1').stato, 'Insoluta');
   await service.setDueDate({ fatturaId: 'F1', date: null });
-  assert.equal((await service.list()).fatture.find(row => row.id === 'F1').scadenza, null);
+  assert.equal((await service.list()).fatture.find(row => row.id === 'F1').scadenza, '2026-10-31');
   await db.schema.createTable('documenti_rettifica_extra', table => {
     table.text('id').primary(); table.integer('fattura_origine_id'); table.integer('totale_cent');
   });
@@ -157,8 +170,8 @@ test('incassi mostra solo le fatture elaborate, anche senza importazione general
   await service.setDueDate({ fatturaId: registrationId, date: '2099-01-01' });
   const withPayment = (await service.list()).fatture.find(row => row.clienteId === 'SEP');
   assert.equal(withPayment.incassato, 300);
-  assert.equal(withPayment.stato, 'Parziale');
-  assert.equal(withPayment.scadenza, '2099-01-01');
+  assert.equal(withPayment.stato, 'Insoluta');
+  assert.equal(withPayment.scadenza, '2026-10-31');
   const conflicting = { id: 'CONFLICT', cliente_id: 'SEP', numero_fattura: '12/26',
     data_fattura: '2026-09-29', importo_totale: 936, importo_pagato: 100, stato_pagamento: 'Parzialmente Pagata' };
   await db('fatture').insert(conflicting);

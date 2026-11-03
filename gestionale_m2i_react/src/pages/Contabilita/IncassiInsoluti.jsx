@@ -75,7 +75,7 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCance
             <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap">{euro(invoice.totale)}{invoice.accreditato > 0 && <div className="text-xs text-amber-700">Nota di credito: −{euro(invoice.accreditato)}</div>}</td>
             <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap">{euro(invoice.incassato)}</td>
             <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap font-bold">{euro(invoice.residuo)}</td>
-            <td className="border-b border-slate-200 px-3 py-4"><span className={`rounded-full px-2 py-1 text-xs font-bold ${invoice.stato === 'Incassata' ? 'bg-emerald-100 text-emerald-800' : invoice.stato === 'Insoluta' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{invoice.stato}</span></td>
+            <td className="border-b border-slate-200 px-3 py-4"><span className={`rounded-full px-2 py-1 text-xs font-bold ${invoice.stato === 'Incassata' ? 'bg-emerald-100 text-emerald-800' : invoice.stato === 'Insoluta' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{invoice.stato}</span>{invoice.scadenza && invoice.stato !== 'Nota di credito' && <div className="mt-1 text-xs text-slate-600">Scadenza: {dateIt(invoice.scadenza)}</div>}</td>
             <td className="border-b border-slate-200 px-3 py-4"><div className="flex flex-col items-start gap-1.5">
               {invoice.residuo > 0 && invoice.gestibile && !invoice.incongruenza && <>
                 <button type="button" onClick={() => onPay(invoice, true)} className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800">Segna come incassata</button>
@@ -203,7 +203,7 @@ export default function IncassiInsoluti() {
       <button type="button" disabled={busy} onClick={() => { setBusy(true); void load().finally(() => setBusy(false)); }} className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 font-semibold hover:bg-slate-200 disabled:opacity-50"><RefreshCw className="h-4 w-4" />Aggiorna</button></header>
     <section aria-label="Riepilogo generale" className="grid gap-3 sm:grid-cols-2">
       <Metric label="Da incassare" amount={data.riepilogo?.daIncassare} detail={`${allOpen.length} fatture aperte`} style="border-amber-300 bg-amber-50 text-amber-900" />
-      <Metric label="Di cui insoluti" amount={data.riepilogo?.insoluto} detail="Parte del da incassare già scaduta o segnata insoluta" style="border-red-300 bg-red-50 text-red-900" />
+      <Metric label="Di cui insoluti" amount={data.riepilogo?.insoluto} detail="Residui scaduti dei mesi precedenti: scadenza a fine mese successivo all’elaborato" style="border-red-300 bg-red-50 text-red-900" />
     </section>
     {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">{message}</p>}
     {loading && <p role="status" className="rounded-lg bg-slate-100 p-3 text-sm text-slate-700">Caricamento fatture e incassi...</p>}
