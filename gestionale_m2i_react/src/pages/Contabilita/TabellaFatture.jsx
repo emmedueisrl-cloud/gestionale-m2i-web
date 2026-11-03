@@ -22,14 +22,11 @@ const regimeBreve = value => {
   return regime;
 };
 
-export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onEmail, onSaveDescription, onSaveAdjustment, onSplit, selectedKeys = [], onSelect, busy, euro }) {
+export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onEmail, onSaveDescription, onSplit, selectedKeys = [], onSelect, busy, euro }) {
   const [detailsRow, setDetailsRow] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [draftDescription, setDraftDescription] = useState('');
   const [descriptionError, setDescriptionError] = useState('');
-  const [editingAdjustmentId, setEditingAdjustmentId] = useState(null);
-  const [draftAdjustment, setDraftAdjustment] = useState('');
-  const [adjustmentError, setAdjustmentError] = useState('');
   useEffect(() => {
     if (!detailsRow) return;
     const closeOnEscape = event => { if (event.key === 'Escape') setDetailsRow(null); };
@@ -80,14 +77,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                 <div className="font-semibold text-slate-900"><span className="text-[17px]">{paroleNome.slice(0, 3).join(' ')}</span>{paroleNome.length > 3 && <> <span>{paroleNome.slice(3).join(' ')}</span></>}</div>
                 </div>
               </td>
-              <td className={numberCell}>
-                <div>{euro(row.imponibile)}</div>
-                {editingAdjustmentId === row.idCliente && !row.gruppoExtraId ? <div className="mt-1 space-y-1 whitespace-normal text-sm">
-                  <input aria-label={`Rettifica fattura di ${row.ragioneSociale}`} type="text" inputMode="decimal" autoFocus value={draftAdjustment} onChange={event => setDraftAdjustment(event.target.value)} placeholder="-50,00 o 50,00" className="w-full rounded border border-indigo-400 bg-white p-1 text-center text-sm" />
-                  {adjustmentError && <p role="alert" className="text-xs text-red-700">{adjustmentError}</p>}
-                  <div className="flex justify-center gap-1"><button type="button" disabled={busy} onClick={async () => { try { await onSaveAdjustment(row, draftAdjustment); setEditingAdjustmentId(null); setAdjustmentError(''); } catch (error) { setAdjustmentError(error.message); } }} className="rounded bg-indigo-700 px-2 py-1 text-xs text-white disabled:opacity-50">Salva</button><button type="button" onClick={() => setEditingAdjustmentId(null)} className="rounded bg-slate-200 px-2 py-1 text-xs">Annulla</button></div>
-                </div> : !elaborate && !row.gruppoExtraId && !row.rigaExtra && !registered && !row.fatturaInviataAt && <button type="button" onClick={() => { setEditingAdjustmentId(row.idCliente); setDraftAdjustment(String(row.rettificaFatturazione || 0).replace('.', ',')); setAdjustmentError(''); }} className="mt-1 block w-full whitespace-normal text-xs font-semibold text-indigo-700 underline">Rettifica imponibile</button>}
-              </td>
+              <td className={numberCell}>{euro(row.imponibile)}</td>
               <td className={`${cell} whitespace-nowrap`} title={row.tipoTassazione || 'IVA'}>{regimeBreve(row.tipoTassazione)}</td>
               <td className={numberCell}>{euro(tassa)}{Number(row.importoRitenuta) > 0 && <span className="block text-xs text-rose-800">− {euro(row.importoRitenuta)} ritenuta</span>}</td>
               <td className={`${numberCell} font-semibold`}>{euro(totale)}</td>

@@ -146,18 +146,6 @@ export default function ContabilitaElaborati({ tipo }) {
     finally { setBusy(false); }
   };
 
-  const saveAdjustment = async (row, importo) => {
-    setBusy(true); setError('');
-    try {
-      await workflowRequest('contabilita/fatture/rettifica', { method: 'PUT', body: JSON.stringify({
-        clienteId: row.idCliente, mese, anno, importo
-      }) });
-      await load();
-      showMessage('Rettifica della fattura salvata. Imponibile, imposta e totale aggiornati.');
-    } catch (err) { setError(err.message); throw err; }
-    finally { setBusy(false); }
-  };
-
   const saveSplit = async righe => {
     setBusy(true); setError('');
     try {
@@ -444,7 +432,7 @@ export default function ContabilitaElaborati({ tipo }) {
       <span className="text-sm font-semibold text-slate-700">{selectedCurrentKeys.length} selezionate</span>
       <button type="button" disabled={!selectedCurrentKeys.length || busy} onClick={() => { setExportPreview(null); setXmlFiles(null); setExportError(''); setExportOpen(true); }} className="ml-auto rounded bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">Scarica XML per Aruba</button>
     </div>}
-    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onEmail={openInvoiceEmail} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} onSplit={setSelectedSplit} selectedKeys={selectedCurrentKeys} onSelect={setExportSelection} busy={busy || emailFatturaBusy} euro={euro} /> :
+    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onEmail={openInvoiceEmail} onSaveDescription={saveDescription} onSplit={setSelectedSplit} selectedKeys={selectedCurrentKeys} onSelect={setExportSelection} busy={busy || emailFatturaBusy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
     {selectedSplit && <ScorporaImportoModal row={selectedSplit} onClose={() => setSelectedSplit(null)} onSave={saveSplit} />}
