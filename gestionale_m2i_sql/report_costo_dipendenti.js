@@ -143,6 +143,16 @@ function createEmployeeCostReport(knex, workflow) {
       : [];
     const imponibileExtraMeseCent = extraGroups.reduce((sum, group) =>
       sum + Number(group.imponibile_cent ?? group.servizi_cent ?? 0), 0);
+    const lavoriExtra = await knex.schema.hasTable('lavori_servizi_extra')
+      ? await knex('lavori_servizi_extra as l')
+        .join('servizi_extra as e', 'e.id', 'l.servizio_id')
+        .where({ 'e.mese': period.mese, 'e.anno': period.anno })
+        .select('l.dipendente_id', 'l.modalita', 'l.compenso_cent', 'l.giornate_json')
+      : [];
+    const oreExtraCent = lavoriExtra.filter(lavoro => lavoro.modalita === 'elaborato').reduce((sum, lavoro) => sum +
+      JSON.parse(lavoro.giornate_json).reduce((ore, giornata) => ore + Math.round(Number(giornata.ore || 0) * 100), 0), 0);
+    const compensoFissoExtraCent = lavoriExtra.filter(lavoro => lavoro.modalita === 'solo_nota').reduce((sum, lavoro) =>
+      sum + Number(lavoro.compenso_cent || 0), 0);
     const imponibileClientiFissiSenzaOreCent = billingClientRows
       .filter(row => Number(row.oreLavorate || 0) === 0)
       .reduce((sum, row) => sum + Math.round(Number(row.imponibile || 0) * 100), 0);
@@ -267,6 +277,22 @@ function createEmployeeCostReport(knex, workflow) {
         costoDipendente: costoDipendenteCent == null ? null : costoDipendenteCent / 100,
         resa: resaCent == null ? null : resaCent / 100, clientiSenzaTariffa };
     });
+    const quotaF24OrariaCent = oreTotali > 0 ? Math.round((f24Cent || 0) / oreTotali) : null;
+    const dipendentiPerExtra = new Map(adjustedEmployeeRows.map(row => [String(row.idDipendente), row]));
+    let costoOreExtraCent = 0;
+    let costoOreExtraDisponibile = true;
+    for (const lavoro of lavoriExtra.filter(item => item.modalita === 'elaborato')) {
+      const oreLavoro = JSON.parse(lavoro.giornate_json).reduce((sum, giorno) => sum + Number(giorno.ore || 0), 0);
+      const dipendente = dipendentiPerExtra.get(String(lavoro.dipendente_id));
+      if (!dipendente || dipendente.productiveHoursCent <= 0 || quotaF24OrariaCent == null) {
+        costoOreExtraDisponibile = false;
+        continue;
+      }
+      const stipendioCent = dipendente.reportNetCent + (ccByEmployee.get(String(lavoro.dipendente_id)) || 0) - dipendente.illnessCostCent;
+      const costoOrarioDipendenteCent = Math.round(stipendioCent / (dipendente.productiveHoursCent / 100));
+      costoOreExtraCent += Math.round(oreLavoro * (costoOrarioDipendenteCent + quotaF24OrariaCent));
+    }
+    const costoPersonaleExtraCent = costoOreExtraDisponibile ? costoOreExtraCent + compensoFissoExtraCent : null;
     return {
       mese: period.mese, anno: period.anno, dipendenti: monthlyRows.length,
       buste: payrollRows.length,
@@ -315,6 +341,10 @@ function createEmployeeCostReport(knex, workflow) {
       imponibileFatturazioneMese: imponibileFatturazioneMeseCent / 100,
       imponibileClientiFissiConOre: imponibileClientiFissiConOreCent / 100,
       imponibileExtraMese: imponibileExtraMeseCent / 100,
+      oreExtraElaborato: oreExtraCent / 100,
+      compensoFissoExtra: compensoFissoExtraCent / 100,
+      costoPersonaleExtra: costoPersonaleExtraCent == null ? null : costoPersonaleExtraCent / 100,
+      ricavoExtra: costoPersonaleExtraCent == null ? null : (imponibileExtraMeseCent - costoPersonaleExtraCent) / 100,
       imponibileClientiFissiSenzaOre: imponibileClientiFissiSenzaOreCent / 100,
       rimanenzaTotale: rimanenzaTotaleCent == null ? null : rimanenzaTotaleCent / 100,
       clientiDettaglio,

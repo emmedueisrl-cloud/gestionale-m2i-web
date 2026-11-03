@@ -400,13 +400,18 @@ export default function ReportContabilita() {
 
       <section aria-label="Risultati del mese" className="space-y-3">
         <h2 className="text-xl font-bold">Risultati del mese</h2>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
             <p className="text-sm font-semibold text-emerald-900">Ricavo totale del mese</p>
-            <p className="text-sm text-emerald-900">Imponibili {euro(report.imponibileFatturazioneMese)} − costo personale {euro(costoPersonaleMeseCent / 100)}</p>
+            <p className="mt-2 text-3xl font-bold text-emerald-950">{euro(ricavoTotaleMese)}</p>
+            <p className="mt-2 text-sm text-emerald-900">Imponibili {euro(report.imponibileFatturazioneMese)} − costo personale {euro(costoPersonaleMeseCent / 100)}</p>
+            {report.f24 == null && <p className="mt-1 text-sm text-emerald-900">F24 non inserito: considerato 0 € nel calcolo.</p>}
           </div>
-          <p className="mt-2 text-3xl font-bold text-emerald-950">{euro(ricavoTotaleMese)}</p>
-          {report.f24 == null && <p className="mt-2 text-sm text-emerald-900">F24 non inserito: considerato 0 € nel calcolo.</p>}
+          <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
+            <p className="text-sm font-semibold text-sky-900">Di cui extra</p>
+            <p className="mt-2 text-3xl font-bold text-sky-950">{report.ricavoExtra == null ? '—' : euro(report.ricavoExtra)}</p>
+            <p className="mt-2 text-sm text-sky-900">Imponibili extra {euro(report.imponibileExtraMese)} − costo personale extra {report.costoPersonaleExtra == null ? '—' : euro(report.costoPersonaleExtra)}</p>
+          </div>
         </div>
       </section>
 

@@ -19,10 +19,21 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     table.text('id').primary(); table.integer('mese'); table.integer('anno'); table.integer('imponibile_cent');
   });
   await db.schema.createTable('servizi_extra', table => {
-    table.text('id').primary(); table.text('gruppo_id'); table.integer('imponibile_cent');
+    table.text('id').primary(); table.text('gruppo_id'); table.integer('mese'); table.integer('anno');
+    table.integer('imponibile_cent');
+  });
+  await db.schema.createTable('lavori_servizi_extra', table => {
+    table.text('servizio_id'); table.text('dipendente_id'); table.text('modalita');
+    table.integer('compenso_cent'); table.text('giornate_json');
   });
   await db('gruppi_fatturazione_extra').insert({ id: 'G1', mese: 9, anno: 2026, imponibile_cent: 45000 });
-  await db('servizi_extra').insert({ id: 'E1', gruppo_id: 'G1', imponibile_cent: 45000 });
+  await db('servizi_extra').insert({ id: 'E1', gruppo_id: 'G1', mese: 9, anno: 2026, imponibile_cent: 45000 });
+  await db('lavori_servizi_extra').insert([
+    { servizio_id: 'E1', dipendente_id: 'D1', modalita: 'elaborato',
+      giornate_json: JSON.stringify([{ data: '2026-09-10', ore: 20 }]) },
+    { servizio_id: 'E1', dipendente_id: 'D2', modalita: 'solo_nota', compenso_cent: 5000,
+      giornate_json: JSON.stringify([{ data: '2026-09-10', ore: 3 }]) }
+  ]);
   await db('dipendenti').insert([{ id: 'D1' }, { id: 'D2' }, { id: 'D3' }]);
   await db('buste_paga').insert([
     { id: 'B1', dipendente_id: 'D1', mese: '9', anno: '2026', importo_netto: 1200 },
@@ -68,6 +79,10 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withoutF24.imponibileFatturazioneMese, 14369);
   assert.equal(withoutF24.imponibileClientiFissiConOre, 3920);
   assert.equal(withoutF24.imponibileExtraMese, 450);
+  assert.equal(withoutF24.oreExtraElaborato, 20);
+  assert.equal(withoutF24.compensoFissoExtra, 50);
+  assert.equal(withoutF24.costoPersonaleExtra, 310);
+  assert.equal(withoutF24.ricavoExtra, 140);
   assert.equal(withoutF24.imponibileClientiFissiSenzaOre, 9999);
   assert.equal(withoutF24.rimanenzaTotale, null);
   assert.equal(withoutF24.dipendentiDettaglio[0].stipendio, 1300);
@@ -85,6 +100,8 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(saved.f24, 850);
   assert.equal(saved.oreTotali, 200);
   assert.equal(saved.costoOrario, 15);
+  assert.equal(saved.costoPersonaleExtra, 395);
+  assert.equal(saved.ricavoExtra, 55);
   assert.equal(saved.imponibileClienti, 3920);
   assert.equal(saved.clientiConOre, 2);
   assert.equal(saved.clientiEsclusiZeroOre, 1);
