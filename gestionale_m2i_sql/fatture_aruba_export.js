@@ -176,12 +176,12 @@ function createArubaExport(db, workflow, extrasService) {
       const splits = row?.gruppoExtraId ? [] : row?.scorporiFattura || [];
       const splitCent = splits.reduce((sum, line) => sum + cents(line.imponibile), 0);
       const remainingCent = row ? cents(row.imponibile) - splitCent : 0;
-      if (row && remainingCent > 0 && !value(row.descrizioneFattura)) issues.push('Descrizione fattura assente');
-      if (row && remainingCent > 0 && value(row.descrizioneFattura).length > 1000) issues.push('Descrizione fattura oltre 1000 caratteri');
+      if (row && !splits.length && !value(row.descrizioneFattura)) issues.push('Descrizione fattura assente');
+      if (row && !splits.length && value(row.descrizioneFattura).length > 1000) issues.push('Descrizione fattura oltre 1000 caratteri');
       if (splits.some(line => !value(line.descrizione) || value(line.descrizione).length > 1000 ||
           !Number.isSafeInteger(cents(line.imponibile)) || cents(line.imponibile) <= 0) ||
-          (splits.length && (!Number.isSafeInteger(remainingCent) || remainingCent < 0))) {
-        issues.push('Scorporo non valido: verifica descrizioni e imponibili delle righe');
+          (splits.length && (!Number.isSafeInteger(remainingCent) || remainingCent !== 0))) {
+        issues.push('Scorporo non valido: le righe devono coprire tutto l’imponibile con una descrizione per ciascuna');
       }
       if (row && client && value(row.tipoTassazione).toUpperCase() !== value(client.tipo_tassazione || 'IVA').toUpperCase()) {
         issues.push('Trattamento fiscale dell’elaborato diverso dalla scheda cliente');
@@ -193,7 +193,7 @@ function createArubaExport(db, workflow, extrasService) {
         issues.push('Descrizione dei servizi extra mensili assente o troppo lunga');
       }
       if (!issues.length) {
-        const lines = [...(remainingCent > 0 ? [{ description: row.descrizioneFattura, amount: remainingCent / 100 }] : []),
+        const lines = [...(!splits.length ? [{ description: row.descrizioneFattura, amount: cents(row.imponibile) / 100 }] : []),
           ...splits.map(line => ({ description: line.descrizione, amount: line.imponibile })),
           ...monthly.map(group => ({ description: group.descrizioneFattura, amount: group.imponibileExtra,
             expectedTotal: group.totaleExtraPrevisto, extraMonthly: true }))];

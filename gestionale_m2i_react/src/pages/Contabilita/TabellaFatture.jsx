@@ -64,10 +64,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
             const scorpori = row.scorporiFattura || [];
             const residuoCent = Math.round((Number(row.imponibile) || 0) * 100) - scorpori.reduce(
               (sum, line) => sum + Math.round((Number(line.imponibile) || 0) * 100), 0);
-            const righeFattura = scorpori.length ? [
-              ...(residuoCent > 0 ? [{ descrizione: row.descrizioneFattura, imponibile: residuoCent / 100 }] : []),
-              ...scorpori
-            ] : null;
+            const righeFattura = scorpori.length ? scorpori : null;
             const cell = 'border-r border-r-slate-200 border-b-2 border-b-slate-400 px-2 py-2 align-middle last:border-r-0';
             const numberCell = `${cell} whitespace-nowrap text-[18px]`;
             const rowColor = elaborate
@@ -96,8 +93,9 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                 </div> : <>
                   {righeFattura ? <div className="max-h-32 space-y-1 overflow-y-auto">
                     {righeFattura.map((line, lineIndex) => <div key={lineIndex} className="whitespace-pre-wrap"><span className="font-semibold">{euro(line.imponibile)}</span> · {line.descrizione}</div>)}
+                    {residuoCent !== 0 && <div className="font-semibold text-red-800">Scorporo incompleto: correggi le righe prima di esportare.</div>}
                   </div> : <span className="whitespace-pre-wrap">{row.descrizioneFattura || '—'}</span>}
-                  {!elaborate && !row.fatturaInviataAt && !registered && row.gruppoExtraTipo !== 'mensile' && (!righeFattura || residuoCent > 0) && <button type="button" onClick={() => { setEditingId(row.gruppoExtraId || row.idCliente); setDraftDescription(row.descrizioneFattura || ''); setDescriptionError(''); }} className="mt-1 block text-xs font-semibold text-indigo-700 underline">{righeFattura ? 'Modifica riga principale' : 'Modifica'}</button>}
+                  {!righeFattura && !elaborate && !row.fatturaInviataAt && !registered && row.gruppoExtraTipo !== 'mensile' && <button type="button" onClick={() => { setEditingId(row.gruppoExtraId || row.idCliente); setDraftDescription(row.descrizioneFattura || ''); setDescriptionError(''); }} className="mt-1 block text-xs font-semibold text-indigo-700 underline">Modifica</button>}
                 </>}
               </td>
               <td className={`${cell} break-words px-3 text-left text-[18px] text-slate-800`}>

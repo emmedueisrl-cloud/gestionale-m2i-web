@@ -72,16 +72,15 @@ test('scorpora l’imponibile di una riga blindata senza toccare le altre fattur
   await knex('fatture_aruba_elaborati').insert({ cliente_id: 'C_SENT', mese: 4, anno: 2026,
     numero_fattura: 'ALTRA-4', data_fattura: '2026-04-02', importo_totale: 122,
     registrata_at: new Date().toISOString() });
-  const result = await workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
-    righe: [{ descrizione: 'Seconda dicitura', imponibile: '30,00' }] });
-  assert.equal(result.residuo, 70);
-  const row = (await workflow.accountingRows('cliente', 4, 2026)).find(item => item.idCliente === 'C_PENDING');
-  assert.deepEqual(row.scorporiFattura, [{ descrizione: 'Seconda dicitura', imponibile: 30 }]);
+  await assert.rejects(() => workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
+    righe: [{ descrizione: 'Seconda dicitura', imponibile: '30,00' }] }), /ripartire esattamente/);
   const complete = await workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
     righe: [{ descrizione: 'Prima dicitura', imponibile: '60' }, { descrizione: 'Seconda dicitura', imponibile: '40' }] });
   assert.equal(complete.residuo, 0);
+  const row = (await workflow.accountingRows('cliente', 4, 2026)).find(item => item.idCliente === 'C_PENDING');
+  assert.deepEqual(row.scorporiFattura, [{ descrizione: 'Prima dicitura', imponibile: 60 }, { descrizione: 'Seconda dicitura', imponibile: 40 }]);
   await assert.rejects(() => workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
-    righe: [{ descrizione: 'Troppo', imponibile: '100,01' }] }), /non può superare/);
+    righe: [{ descrizione: 'Troppo', imponibile: '100,01' }] }), /ripartire esattamente/);
   await assert.rejects(() => workflow.saveInvoiceAdjustment({ mese: 4, anno: 2026, clienteId: 'C_PENDING', importo: '-1' }), /righe scorporate/);
   assert.equal((await knex('scorpori_fatture_mensili').where({ cliente_id: 'C_PENDING', mese: 4, anno: 2026 })).length, 2);
   await knex('fatture_inviate_elaborati').insert({ cliente_id: 'C_PENDING', mese: 4, anno: 2026,

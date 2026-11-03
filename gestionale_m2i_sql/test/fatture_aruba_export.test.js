@@ -53,7 +53,7 @@ test('senza nome banca il bonifico conserva l’IBAN senza inventare l’istitut
   assert.equal(payment.IBAN, company.fatturazione_iban);
 });
 
-test('esporta due righe imponibili con descrizioni distinte e totale invariato', async () => {
+test('rifiuta uno scorporo parziale senza aggiungere la vecchia descrizione', async () => {
   const splitRow = { ...row, scorporiFattura: [{ descrizione: 'Secondo servizio', imponibile: 30 }] };
   const db = table => {
     if (table === 'm2i_azienda_dati') return { where: () => ({ first: async () => company }) };
@@ -65,12 +65,8 @@ test('esporta due righe imponibili con descrizioni distinte e totale invariato',
     { groups: async () => [] });
   const result = await service.prepare({ mese: 10, anno: 2026, keys: ['cliente:c1'],
     data: '2026-10-13', primoNumero: 'FPR 618/26' });
-  assert.deepEqual(result.errors, []);
-  const doc = await parse(result.invoices[0].xml);
-  const lines = doc.FatturaElettronica.FatturaElettronicaBody.DatiBeniServizi.DettaglioLinee;
-  assert.deepEqual(lines.map(line => [line.Descrizione, line.PrezzoTotale]),
-    [[row.descrizioneFattura, '70.00'], ['Secondo servizio', '30.00']]);
-  assert.equal(doc.FatturaElettronica.FatturaElettronicaBody.DatiGenerali.DatiGeneraliDocumento.ImportoTotaleDocumento, '122.00');
+  assert.equal(result.invoices.length, 0);
+  assert.match(result.errors[0].issues.join(' '), /tutto l’imponibile/);
 });
 
 test('scorporo completo omette la riga principale a zero e conserva il totale', async () => {
