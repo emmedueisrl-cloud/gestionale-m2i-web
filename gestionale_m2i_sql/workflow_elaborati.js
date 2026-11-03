@@ -405,12 +405,30 @@ async function accountingRows(tipo, mese, anno) {
       .where({ mese: String(p.mese), anno: String(p.anno) })
       .orderBy('data_creazione', 'asc');
     const payrollByEmployee = new Map(payrollRows.map(item => [String(item.dipendente_id), item]));
+    const registeredHours = await trx('registro_ore')
+      .select('dipendente_id', 'causale_assenza', 'ore_totali')
+      .where({ mese: p.mese, anno: p.anno });
+    const absenceByEmployee = new Map();
+    for (const record of registeredHours) {
+      const reason = String(record.causale_assenza || 'Ordinario').trim();
+      if (['ordinario', 'straordinario', 'extra'].includes(reason.toLowerCase())) continue;
+      const id = String(record.dipendente_id);
+      const detail = absenceByEmployee.get(id) || {};
+      detail[reason] = (detail[reason] || 0) + Number(record.ore_totali || 0);
+      absenceByEmployee.set(id, detail);
+    }
     return rows.map(row => {
       const payment = payments.find(x => x.dipendente_id === row.idDipendente);
       const inProva = trialEmployees.has(String(row.idDipendente));
       const payroll = inProva ? null : payrollByEmployee.get(String(row.idDipendente));
+      const dettaglioFPM = Object.keys(row.dettaglioFPM || {}).length
+        ? row.dettaglioFPM : absenceByEmployee.get(String(row.idDipendente)) || {};
+      const oreTotali = Number(row.oreLavorate || 0);
+      const oreAssenza = Object.values(dettaglioFPM).reduce((sum, ore) => sum + Number(ore || 0), 0);
       return {
         ...row,
+        dettaglioFPM,
+        oreLavorateEffettive: Math.round((oreTotali - oreAssenza) * 100) / 100,
         storicoPreesistente: Boolean(header && !frozenIds.has(row.idDipendente)),
         nettoBusta: payroll ? Number(payroll.importo_netto) : null,
         allegatoBustaPaga: payroll?.allegato_busta_paga || null,

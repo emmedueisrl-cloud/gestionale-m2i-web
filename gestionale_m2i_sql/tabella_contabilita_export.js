@@ -70,13 +70,13 @@ function tableData(tipo, section, rows, buste, mese, anno, extraGroups = []) {
   ];
   return {
     period, section: 'Da elaborato',
-    columns: ['Dipendente', 'Ore lavorate', 'Ferie / permessi / malattia', 'Netto da elaborato', 'Note', 'Netto busta', 'CC'],
-    widths: [30, 13, 28, 22, 72, 22, 16],
+    columns: ['Dipendente', 'Ore totali', 'Ore lavorate', 'Ferie / permessi / malattia', 'Netto da elaborato', 'Note', 'Netto busta', 'CC'],
+    widths: [30, 13, 13, 28, 22, 72, 22, 16],
     rows: ordered.map(row => {
       const absences = [['Ferie', /ferie/i], ['Permessi', /permess/i], ['Malattia', /malatt/i]]
         .map(([label, pattern]) => [label, Object.entries(row.dettaglioFPM || {}).reduce((sum, [reason, hours]) => sum + (pattern.test(reason) ? Number(hours) || 0 : 0), 0)])
         .filter(([, hours]) => hours > 0).map(([label, hours]) => `${label} ${number(hours)} h`).join('\n') || '—';
-      return [row.cognomeNome || '', number(row.oreLavorate), absences, euro(row.stipendioNetto),
+      return [row.cognomeNome || '', number(row.oreLavorate), number(row.oreLavorateEffettive), absences, euro(row.stipendioNetto),
         notes(row, [['notaFissa', 'Nota fissa'], ['notaMensile', 'Nota del mese'], ['noteMaggiorazioni', 'Maggiorazione'], ['noteDetrazioni', 'Detrazione'], ['noteGenerali', 'Note']]),
         row.inProva ? 'Non prevista' : row.nettoBusta == null ? 'Busta non caricata' : euro(row.nettoBusta),
         row.cc == null ? '—' : euro(row.cc)];

@@ -223,6 +223,29 @@ test('blindatura reale usa snapshot transazionale; il costo diventa definitivo e
   await assert.rejects(() => save(5), /sola lettura/);
 });
 
+test('stipendi: ore totali e ore effettive distinguono ferie, permessi e malattia anche a mese chiuso', async () => {
+  const f = await fixture();
+  await knex('registro_ore').insert([
+    { dipendente_id: f.id, cliente_id: f.a, mese: 3, anno: 2026, causale_assenza: 'Ordinario', ore_totali: 3 },
+    { dipendente_id: f.id, cliente_id: f.b, mese: 3, anno: 2026, causale_assenza: 'Straordinario', ore_totali: 2 },
+    { dipendente_id: f.id, mese: 3, anno: 2026, causale_assenza: 'Ferie', ore_totali: 2 },
+    { dipendente_id: f.id, mese: 3, anno: 2026, causale_assenza: 'Permesso', ore_totali: 1 },
+    { dipendente_id: f.id, mese: 3, anno: 2026, causale_assenza: 'Malattia', ore_totali: 1 }
+  ]);
+  await workflow.lockRow('dipendente', 3, 2026, f.id);
+  let row = (await workflow.accountingRows('dipendente', 3, 2026)).find(item => item.idDipendente === f.id);
+  assert.equal(row.oreLavorate, 9);
+  assert.equal(row.oreLavorateEffettive, 5);
+  const table = require('../tabella_contabilita_export').tableData('dipendente', 0, [row], [], 3, 2026);
+  assert.deepEqual(table.columns.slice(1, 3), ['Ore totali', 'Ore lavorate']);
+  assert.deepEqual(table.rows[0].slice(1, 3), ['9', '5']);
+  await require('../controllers/elaborati').chiudiMeseDipendenti(3, 2026,
+    (await require('../controllers/elaborati').ottieniElaboratoMensile(3, 2026)).dati);
+  row = (await workflow.accountingRows('dipendente', 3, 2026)).find(item => item.idDipendente === f.id);
+  assert.equal(row.oreLavorate, 9);
+  assert.equal(row.oreLavorateEffettive, 5);
+});
+
 test('mesi chiusi: clienti impedisce nuove ore cliente, dipendenti impedisce qualsiasi ora', async () => {
   const f = await fixture();
   await knex('mesi_chiusi_clienti').insert({ mese: 9, anno: 2026, stato: 'Chiuso' });

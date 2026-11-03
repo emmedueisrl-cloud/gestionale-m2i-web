@@ -27,6 +27,9 @@ module.exports = {
           iban: r.iban,
           pagaOraria: r.paga_oraria_reale,
           oreLavorate: r.ore_lavorate,
+          dettaglioFPM: Object.fromEntries([
+            ['Ferie', r.ore_ferie], ['Permesso', r.ore_permessi], ['Malattia', r.ore_malattia]
+          ].filter(([, ore]) => Number(ore) > 0)),
           pagaLavorato: r.paga_lavorato,
           pagaFPM: r.paga_ferie_permessi_malattia || 0,
           maggiorazioni: r.maggiorazioni,

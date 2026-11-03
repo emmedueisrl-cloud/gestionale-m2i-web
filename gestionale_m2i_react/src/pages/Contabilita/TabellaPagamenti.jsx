@@ -3,13 +3,14 @@ import { ChevronDown, ChevronUp, MessageSquareText, Pencil, Trash2 } from 'lucid
 
 const columns = [
   ['Dipendente', '16%'],
-  ['Ore\nlavorate', '5%'],
+  ['Ore\ntotali', '6%'],
+  ['Ore\nlavorate', '6%'],
   ['Ferie /\npermessi /\nmalattia', '9%'],
   ['Netto da\nelaborato', '11%'],
-  ['Note', '28%'],
+  ['Note', '22%'],
   ['Netto\nbusta', '10%'],
   ['CC', '8%'],
-  ['Azioni', '13%']
+  ['Azioni', '12%']
 ];
 
 const haNotaConsulente = row => Boolean(row.notaConsulente?.trim());
@@ -56,7 +57,7 @@ export default function TabellaPagamenti({ righe, vuoto, euro, onNotaConsulente,
   ];
   return <section className="pt-16">
     <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-sm">
-      <table className="w-full min-w-[1280px] table-fixed border-collapse text-center text-[13px] text-slate-800">
+      <table className="w-full min-w-[1400px] table-fixed border-collapse text-center text-[13px] text-slate-800">
         <colgroup>{columns.map(([label, width]) => <col key={label} style={{ width }} />)}</colgroup>
         <thead className="bg-slate-100 text-slate-900"><tr>
           {columns.map(([label]) => <th key={label} scope="col" className="whitespace-pre-line border-b border-r border-slate-300 px-2 py-3 align-middle font-semibold uppercase last:border-r-0">{label}</th>)}
@@ -83,6 +84,7 @@ export default function TabellaPagamenti({ righe, vuoto, euro, onNotaConsulente,
                   <div className="max-h-24 overflow-y-auto font-semibold text-slate-900"><span className="text-[17px]">{paroleNome.slice(0, 3).join(' ')}</span>{paroleNome.length > 3 && <> <span>{paroleNome.slice(3).join(' ')}</span></>}</div>
                 </td>
                 <td className={numberCell}>{Number(row.oreLavorate || 0).toLocaleString('it-IT', { maximumFractionDigits: 2 })}</td>
+                <td className={numberCell}>{Number(row.oreLavorateEffettive || 0).toLocaleString('it-IT', { maximumFractionDigits: 2 })}</td>
                 <td className={`${cell} text-[14px]`}>
                   {oreAssenze.length ? <div className="inline-grid grid-cols-[max-content_max-content] gap-x-2 gap-y-1 text-left">
                     {oreAssenze.map(({ label, ore }) => <Fragment key={label}>
