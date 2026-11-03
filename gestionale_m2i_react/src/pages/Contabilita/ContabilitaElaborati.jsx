@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { contabilitaPeriod, workflowRequest } from '../../api/workflowElaborati';
 import TabellaFatture from './TabellaFatture';
 import ScorporaImportoModal from './ScorporaImportoModal';
@@ -377,12 +378,10 @@ export default function ContabilitaElaborati({ tipo }) {
       {toolbar}
       <div aria-label="Sezione fatture" className="col-span-full flex flex-wrap items-stretch gap-5">
         <div aria-label={mancanti === 0 ? 'Preparazione clienti completata' : `Clienti in preparazione: ${mancanti}`} className={`flex min-h-[100px] min-w-[176px] flex-col justify-center rounded-xl border px-4 py-3 shadow-sm ${mancanti === 0 ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
-          {mancanti === 0 ? <div className="text-[14px] font-bold uppercase text-emerald-900">Preparazione clienti completata</div> : <><div className="text-[13px] font-bold uppercase text-amber-900">Clienti in preparazione</div><div className="text-[22px] font-bold text-slate-900">{mancanti}</div></>}
+          {mancanti === 0 ? <div className="flex items-center gap-2 text-[14px] font-bold uppercase text-emerald-900"><CheckCircle2 className="h-6 w-6 shrink-0" aria-hidden="true" /><span>Preparazione clienti completata</span></div> : <><div className="text-[13px] font-bold uppercase text-amber-900">Clienti in preparazione</div><div className="text-[22px] font-bold text-slate-900">{mancanti}</div></>}
         </div>
-        <button type="button" aria-pressed={sezioneAttiva === 0} onClick={() => selectSection(0)} className={`min-h-[100px] min-w-[176px] rounded-xl border border-sky-300 bg-sky-100 px-4 py-3 text-left transition-colors hover:bg-sky-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700 ${sezioneAttiva === 0 ? 'ring-2 ring-sky-600 ring-offset-2' : ''}`}>
-          <div className="text-[14px] font-bold uppercase text-sky-900">{gruppi[0].etichetta}</div>
-          <div className="text-[22px] font-bold text-slate-900">{euro(totaleGruppo(gruppi[0]))}</div>
-          <div className="text-[14px] font-semibold text-sky-900">{gruppi[0].righe.length} {gruppi[0].contatore}</div>
+        <button type="button" aria-pressed={sezioneAttiva === 0} onClick={() => selectSection(0)} className={`min-h-[100px] min-w-[176px] rounded-xl border px-4 py-3 text-left transition-colors focus-visible:outline focus-visible:outline-2 ${gruppi[0].righe.length === 0 ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 focus-visible:outline-emerald-700' : 'border-sky-300 bg-sky-100 hover:bg-sky-200 focus-visible:outline-sky-700'} ${sezioneAttiva === 0 ? gruppi[0].righe.length === 0 ? 'ring-2 ring-emerald-600 ring-offset-2' : 'ring-2 ring-sky-600 ring-offset-2' : ''}`}>
+          {gruppi[0].righe.length === 0 ? <div className="flex items-center gap-2 text-[14px] font-bold uppercase"><CheckCircle2 className="h-6 w-6 shrink-0" aria-hidden="true" /><span>Tutte le fatture elaborate</span></div> : <><div className="text-[14px] font-bold uppercase text-sky-900">{gruppi[0].etichetta}</div><div className="text-[22px] font-bold text-slate-900">{euro(totaleGruppo(gruppi[0]))}</div><div className="text-[14px] font-semibold text-sky-900">{gruppi[0].righe.length} {gruppi[0].contatore}</div></>}
         </button>
         <button type="button" aria-pressed={sezioneAttiva === 1} onClick={() => selectSection(1)} className={`min-h-[100px] min-w-[176px] rounded-xl border border-emerald-300 bg-emerald-100 px-4 py-3 text-left transition-colors hover:bg-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 ${sezioneAttiva === 1 ? 'ring-2 ring-emerald-600 ring-offset-2' : ''}`}>
           <div className="text-[14px] font-bold uppercase text-emerald-900">{gruppi[1].etichetta}</div>
