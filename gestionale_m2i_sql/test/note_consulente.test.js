@@ -86,6 +86,16 @@ test('Pagato per ufficio paghe salva una sola data e ora per busta', async () =>
   assert.equal((await knex('pagamenti_ufficio_paghe').where({ busta_id: 'BUSTA_TEST' })).length, 1);
 });
 
+test('una busta segnata pagata può tornare da pagare e poi essere segnata pagata di nuovo', async () => {
+  await assert.rejects(workflow.markOfficePayrollUnpaid({ bustaId: 'BUSTA_ASSENTE' }), /non trovata/);
+  assert.deepEqual(await workflow.markOfficePayrollUnpaid({ bustaId: 'BUSTA_TEST' }), { pagatoAt: null });
+  assert.equal(await knex('pagamenti_ufficio_paghe').where({ busta_id: 'BUSTA_TEST' }).first(), undefined);
+  assert.deepEqual(await workflow.markOfficePayrollUnpaid({ bustaId: 'BUSTA_TEST' }), { pagatoAt: null });
+  const paidAgain = await workflow.markOfficePayrollPaid({ bustaId: 'BUSTA_TEST', userId: 1 });
+  assert.ok(!Number.isNaN(Date.parse(paidAgain.pagatoAt)));
+  assert.equal((await knex('pagamenti_ufficio_paghe').where({ busta_id: 'BUSTA_TEST' })).length, 1);
+});
+
 test('email consulente salvata e PDF della tabella generato dal periodo', async () => {
   await assert.rejects(consulenteEmail.saveRecipient('indirizzo non valido'), /email valido/);
   await consulenteEmail.saveRecipient('simone@example.com');

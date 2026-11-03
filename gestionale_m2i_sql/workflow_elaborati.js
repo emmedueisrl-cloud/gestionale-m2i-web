@@ -501,6 +501,16 @@ async function markOfficePayrollPaid({ bustaId, userId }) {
   });
 }
 
+async function markOfficePayrollUnpaid({ bustaId }) {
+  const id = String(bustaId || '');
+  if (!id) throw new Error('Busta paga non valida.');
+  return knex.transaction(async trx => {
+    if (!await trx('buste_paga').where({ id }).first()) throw new Error('Busta paga non trovata.');
+    await trx('pagamenti_ufficio_paghe').where({ busta_id: id }).del();
+    return { pagatoAt: null };
+  });
+}
+
 async function saveInvoiceSplit({ mese, anno, clienteId, righe }) {
   const p = period('cliente', mese, anno);
   const id = String(clienteId || '');
@@ -722,4 +732,4 @@ async function registerPayment({ mese, anno, dipendenteId, userId, confermaStori
   return { id };
 }
 
-module.exports = { initialize, lockRow, unlockRow, lockedRows, monthlyEmployeeRows, status, missingCount, accountingRows, saveConsultantNote, saveOfficePayrollNote, saveCcAmount, markOfficePayrollPaid, saveInvoiceSplit, saveInvoiceAdjustment, markInvoiceSent, registerInvoice, registerPayment, period };
+module.exports = { initialize, lockRow, unlockRow, lockedRows, monthlyEmployeeRows, status, missingCount, accountingRows, saveConsultantNote, saveOfficePayrollNote, saveCcAmount, markOfficePayrollPaid, markOfficePayrollUnpaid, saveInvoiceSplit, saveInvoiceAdjustment, markInvoiceSent, registerInvoice, registerPayment, period };

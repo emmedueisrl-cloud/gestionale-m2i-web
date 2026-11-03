@@ -522,6 +522,8 @@ app.put('/api/contabilita/dipendenti/:anno/:mese/:id/cc', handleWorkflow(req =>
   workflowElaborati.saveCcAmount({ mese: req.params.mese, anno: req.params.anno, dipendenteId: req.params.id, importo: req.body?.importo })));
 app.post('/api/contabilita/ufficio-paghe/:bustaId/pagato', handleWorkflow(req =>
   workflowElaborati.markOfficePayrollPaid({ bustaId: req.params.bustaId, userId: req.authUser.id })));
+app.delete('/api/contabilita/ufficio-paghe/:bustaId/pagato', handleWorkflow(req =>
+  workflowElaborati.markOfficePayrollUnpaid({ bustaId: req.params.bustaId })));
 app.get('/api/contabilita/consulente/email', handleWorkflow(() => consulenteEmail.getRecipient()));
 app.put('/api/contabilita/consulente/email', handleWorkflow(req => consulenteEmail.saveRecipient(req.body?.email)));
 app.post('/api/contabilita/consulente/invia', handleWorkflow(req => consulenteEmail.send(req.body || {})));

@@ -43,6 +43,16 @@ export default function PerUfficioPaghe({ buste, mese, anno, euro, onChanged, se
     finally { setBusyPaidId(null); }
   };
 
+  const markUnpaid = async busta => {
+    setBusyPaidId(busta.id); setPaidError(''); setPaidMessage('');
+    try {
+      await workflowRequest(`contabilita/ufficio-paghe/${encodeURIComponent(busta.id)}/pagato`, { method: 'DELETE' });
+      await onChanged();
+      setPaidMessage(`${busta.cognome} ${busta.nome} riportato tra gli stipendi da pagare.`);
+    } catch (err) { setPaidError(err.message); }
+    finally { setBusyPaidId(null); }
+  };
+
   return <section aria-label="Per ufficio paghe" className="space-y-3 pt-16">
     {paidMessage && <p role="status" className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 font-semibold text-emerald-900">{paidMessage}</p>}
     {paidError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{paidError}</p>}
@@ -69,7 +79,7 @@ export default function PerUfficioPaghe({ buste, mese, anno, euro, onChanged, se
                 <p className="whitespace-pre-wrap break-words text-base">{busta.nota_ufficio_paghe}</p>
                 <button type="button" onClick={() => startEditing(busta)} aria-label={`Modifica nota di ${busta.cognome} ${busta.nome}`} title="Modifica nota" className="shrink-0 rounded p-1 text-indigo-700 hover:bg-indigo-100"><Pencil className="h-4 w-4" aria-hidden="true" /></button>
               </div> : <button type="button" onClick={() => startEditing(busta)} className="rounded-lg bg-indigo-100 px-3 py-2 text-sm font-semibold text-indigo-900 hover:bg-indigo-200">Inserisci nota</button>}
-              {busta.pagato_ufficio_at ? <div className="shrink-0 text-right font-semibold text-emerald-900"><div>Pagato</div><time dateTime={busta.pagato_ufficio_at} className="text-sm font-normal">{new Date(busta.pagato_ufficio_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })}</time></div> : <button type="button" disabled={busyPaidId === busta.id} onClick={() => markPaid(busta)} aria-label={`Segna come pagato ${busta.cognome} ${busta.nome}`} className="shrink-0 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-800 disabled:opacity-50">{busyPaidId === busta.id ? 'Salvataggio...' : 'Segna come pagato'}</button>}
+              {busta.pagato_ufficio_at ? <div className="shrink-0 space-y-2 text-right font-semibold text-emerald-900"><div>Pagato</div><time dateTime={busta.pagato_ufficio_at} className="block text-sm font-normal">{new Date(busta.pagato_ufficio_at).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })}</time><button type="button" disabled={busyPaidId === busta.id} onClick={() => markUnpaid(busta)} aria-label={`Correggi come non ancora pagato ${busta.cognome} ${busta.nome}`} className="rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50">{busyPaidId === busta.id ? 'Correzione...' : 'Correggi: non ancora pagato'}</button></div> : <button type="button" disabled={busyPaidId === busta.id} onClick={() => markPaid(busta)} aria-label={`Segna come pagato ${busta.cognome} ${busta.nome}`} className="shrink-0 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-800 disabled:opacity-50">{busyPaidId === busta.id ? 'Salvataggio...' : 'Segna come pagato'}</button>}
               </div>
             </td>
           </tr>
