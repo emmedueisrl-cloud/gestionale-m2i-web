@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChartNoAxesCombined, ChevronLeft, ChevronRight, History, RefreshCw, X } from 'lucide-react';
 import { workflowRequest } from '../../api/workflowElaborati';
@@ -38,18 +39,20 @@ const invoiceSortColumns = [
   { key: 'stato', label: 'Stato', value: invoice => invoice.stato }
 ];
 
-function Metric({ label, amount, detail, style }) {
-  return <div className={`min-w-[190px] flex-1 rounded-xl border px-4 py-3 ${style}`}>
-    <p className="text-xs font-bold uppercase tracking-wide">{label}</p>
-    <p className="mt-1 text-2xl font-bold">{euro(amount)}</p>
-    {detail && <p className="text-sm font-medium">{detail}</p>}
-  </div>;
+function Metric({ label, amount, detail, style, onClick }) {
+  const Component = onClick ? 'button' : 'div';
+  return <Component {...(onClick ? { type: 'button', onClick } : {})} className={`min-w-[190px] flex-1 rounded-xl border px-4 py-3 text-left ${style} ${onClick ? 'cursor-pointer hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700' : ''}`}>
+    <span className="block text-xs font-bold uppercase tracking-wide">{label}</span>
+    <span className="mt-1 block text-2xl font-bold">{euro(amount)}</span>
+    {detail && <span className="block text-sm font-medium">{detail}</span>}
+  </Component>;
 }
 
-function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCancel }) {
+function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCancel, showPeriod = false }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
-  const selectedColumn = invoiceSortColumns.find(column => column.key === sortKey);
+  const columns = showPeriod ? [{ key: 'periodo', label: 'Elaborato', value: invoice => invoice.periodo }, ...invoiceSortColumns] : invoiceSortColumns;
+  const selectedColumn = columns.find(column => column.key === sortKey);
   const orderedRows = selectedColumn ? [...rows].sort((a, b) => {
     const first = selectedColumn.value(a);
     const second = selectedColumn.value(b);
@@ -62,12 +65,13 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCance
     else { setSortKey(key); setSortDirection('asc'); }
   };
   return <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white shadow-sm">
-    <table className="w-full min-w-[1050px] border-collapse text-left text-sm">
-      <thead className="bg-slate-100 text-xs uppercase"><tr>{invoiceSortColumns.map(column => <th key={column.key} scope="col" aria-sort={sortKey === column.key ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-3 py-3"><button type="button" onClick={() => changeSort(column.key)} className="inline-flex items-center gap-1 font-bold hover:text-indigo-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">{column.label}{sortKey === column.key ? sortDirection === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />}</button></th>)}<th scope="col" className="border-b border-slate-300 px-3 py-3">Azioni</th></tr></thead>
+    <table className={`w-full ${showPeriod ? 'min-w-[1160px]' : 'min-w-[1050px]'} border-collapse text-left text-sm`}>
+      <thead className="bg-slate-100 text-xs uppercase"><tr>{columns.map(column => <th key={column.key} scope="col" aria-sort={sortKey === column.key ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'} className="border-b border-slate-300 px-3 py-3"><button type="button" onClick={() => changeSort(column.key)} className="inline-flex items-center gap-1 font-bold hover:text-indigo-700 focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">{column.label}{sortKey === column.key ? sortDirection === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUpDown className="h-3.5 w-3.5 text-slate-400" />}</button></th>)}<th scope="col" className="border-b border-slate-300 px-3 py-3">Azioni</th></tr></thead>
       <tbody>
-        {!rows.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">{empty}</td></tr>}
+        {!rows.length && <tr><td colSpan={columns.length + 1} className="px-4 py-8 text-center text-slate-500">{empty}</td></tr>}
         {orderedRows.map((invoice, index) => <Fragment key={invoice.id}>
           <tr className={invoice.incongruenza ? 'bg-amber-50' : index % 2 ? 'bg-sky-50' : 'bg-white'}>
+            {showPeriod && <td className="border-b border-slate-200 px-3 py-4 whitespace-nowrap">{invoice.periodo ? monthLabel(invoice.periodo) : '—'}</td>}
             <td className="border-b border-slate-200 px-3 py-4 font-semibold" title={invoice.cliente}>{shortCompany(invoice.cliente)}</td>
             <td className="border-b border-slate-200 px-3 py-4 font-semibold">{invoice.registrata ? invoice.numero : 'Da registrare'}</td>
             <td className="max-w-[220px] border-b border-slate-200 px-3 py-4 text-xs" title={invoice.descrizione}>{invoice.descrizione || '—'}</td>
@@ -84,8 +88,8 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCance
               {invoice.gestibile ? <button type="button" onClick={() => onExpand(invoice.id)} aria-expanded={expandedId === invoice.id} className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold hover:bg-slate-200"><History className="h-3.5 w-3.5" />Storico</button> : <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900" title={invoice.sincronizzazioneDaVerificare ? 'Gli incassi della fattura elaborata devono essere riconciliati con quelli della fattura importata.' : 'La fattura inviata deve ancora essere registrata.'}>{invoice.sincronizzazioneDaVerificare ? 'Verifica incassi' : 'In attesa registrazione'}</span>}
             </div></td>
           </tr>
-          {invoice.incongruenza && <tr className="bg-amber-50"><td colSpan={9} className="border-b border-amber-200 px-3 pb-3 font-medium text-amber-900">{invoice.stato === 'Importo da verificare' ? 'Importo dell’elaborato non disponibile: verifica la riga in Fatturazione.' : invoice.sincronizzazioneDaVerificare ? 'Gli incassi registrati prima dell’importazione richiedono una verifica con la fattura importata.' : 'Gli importi della fattura e del registro non coincidono. Verifica prima di aggiungere incassi.'}</td></tr>}
-          {expandedId === invoice.id && <tr className="bg-slate-50"><td colSpan={9} className="border-b border-slate-300 px-4 py-4">
+          {invoice.incongruenza && <tr className="bg-amber-50"><td colSpan={columns.length + 1} className="border-b border-amber-200 px-3 pb-3 font-medium text-amber-900">{invoice.stato === 'Importo da verificare' ? 'Importo dell’elaborato non disponibile: verifica la riga in Fatturazione.' : invoice.sincronizzazioneDaVerificare ? 'Gli incassi registrati prima dell’importazione richiedono una verifica con la fattura importata.' : 'Gli importi della fattura e del registro non coincidono. Verifica prima di aggiungere incassi.'}</td></tr>}
+          {expandedId === invoice.id && <tr className="bg-slate-50"><td colSpan={columns.length + 1} className="border-b border-slate-300 px-4 py-4">
             <h4 className="mb-3 font-bold">Storico incassi · {invoice.registrata ? invoice.numero : invoice.cliente}</h4>
             {!invoice.storico.length ? <p className="text-slate-600">Nessun incasso registrato.</p> : <div className="space-y-2">{invoice.storico.map(receipt => <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
               <div><span className="font-semibold">{receipt.data ? dateIt(receipt.data) : 'Data non disponibile'} · {euro(receipt.importo)}</span>
@@ -104,6 +108,9 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCance
 }
 
 export default function IncassiInsoluti() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedView = searchParams.get('vista');
+  const view = requestedView === 'da-incassare' || requestedView === 'insoluti' ? requestedView : null;
   const [data, setData] = useState({ fatture: [], riepilogo: {} });
   const [period, setPeriod] = useState(null);
   const [showAll, setShowAll] = useState(false);
@@ -152,11 +159,15 @@ export default function IncassiInsoluti() {
   const monthPaid = monthInvoices.filter(invoice => !isOpen(invoice) && !['Nota di credito', 'Stornata'].includes(invoice.stato));
   const monthCredits = monthInvoices.filter(invoice => ['Nota di credito', 'Stornata'].includes(invoice.stato));
   const allOpen = invoices.filter(isOpen).sort(priority);
+  const generalOpen = invoices.filter(invoice => !invoice.daCollegare && invoice.residuo > 0).sort(priority);
+  const generalOverdue = generalOpen.filter(invoice => invoice.stato === 'Insoluta');
   const matchesSearch = invoice => `${invoice.cliente} ${invoice.numero} ${invoice.descrizione || ''}`.toLocaleLowerCase('it-IT').includes(search.trim().toLocaleLowerCase('it-IT'));
   const visibleMonthOpen = monthOpen.filter(matchesSearch);
   const visibleMonthPaid = monthPaid.filter(matchesSearch);
   const visibleMonthCredits = monthCredits.filter(matchesSearch);
   const visibleOpen = allOpen.filter(matchesSearch);
+  const detailRows = view === 'insoluti' ? generalOverdue : generalOpen;
+  const visibleDetailRows = detailRows.filter(matchesSearch);
   const shownCount = (visible, total) => search.trim() ? `${visible} di ${total}` : total;
   const monthRevenue = monthInvoices.filter(invoice => !invoice.daCollegare).reduce((sum, invoice) => sum + cents(invoice.totale), 0) / 100;
   const monthCollected = monthInvoices.filter(invoice => !invoice.daCollegare).reduce((sum, invoice) => sum + cents(invoice.incassato), 0) / 100;
@@ -197,18 +208,24 @@ export default function IncassiInsoluti() {
   };
   const tableActions = { today: data.oggi || italyDate(), expandedId, onExpand: id => setExpandedId(current => current === id ? null : id), onPay: openPayment,
     onCancel: (invoice, receipt) => { setCancelTarget({ invoice, receipt }); setCancelReason(''); setError(''); } };
+  const openView = target => { setSearch(''); setExpandedId(null); setSearchParams({ vista: target }); };
+  const closeView = () => { setSearch(''); setExpandedId(null); setSearchParams({}); };
 
   return <div className="space-y-7 bg-white pb-12 text-slate-900">
     <header className="flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-3"><h1 className="text-[29px] font-bold">Incassi e Insoluti</h1><button type="button" onClick={() => setChartOpen(true)} aria-label="Apri grafico fatturato e incassato" title="Visualizza grafico" className="rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-indigo-700 hover:bg-indigo-100"><ChartNoAxesCombined className="h-5 w-5" /></button></div><p className="text-sm text-slate-600">Fatture emesse, incassi registrati e importi ancora aperti.</p></div>
       <button type="button" disabled={busy} onClick={() => { setBusy(true); void load().finally(() => setBusy(false)); }} className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 font-semibold hover:bg-slate-200 disabled:opacity-50"><RefreshCw className="h-4 w-4" />Aggiorna</button></header>
-    <section aria-label="Riepilogo generale" className="grid gap-3 sm:grid-cols-2">
-      <Metric label="Da incassare" amount={data.riepilogo?.daIncassare} detail={`${allOpen.length} fatture aperte`} style="border-amber-300 bg-amber-50 text-amber-900" />
-      <Metric label="Di cui insoluti" amount={data.riepilogo?.insoluto} detail="Residui scaduti dei mesi precedenti: scadenza a fine mese successivo all’elaborato" style="border-red-300 bg-red-50 text-red-900" />
-    </section>
+    {!view && <section aria-label="Riepilogo generale" className="grid gap-3 sm:grid-cols-2">
+      <Metric label="Da incassare" amount={data.riepilogo?.daIncassare} detail={`${generalOpen.length} fatture aperte · Apri elenco`} style="border-amber-300 bg-amber-50 text-amber-900" onClick={() => openView('da-incassare')} />
+      <Metric label="Di cui insoluti" amount={data.riepilogo?.insoluto} detail={`${generalOverdue.length} fatture scadute · Apri elenco`} style="border-red-300 bg-red-50 text-red-900" onClick={() => openView('insoluti')} />
+    </section>}
     {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">{message}</p>}
     {loading && <p role="status" className="rounded-lg bg-slate-100 p-3 text-sm text-slate-700">Caricamento fatture e incassi...</p>}
     {error && !payment && !cancelTarget && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">{error}</p>}
-    <section className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-4"><div>{showAll ? <h2 className="text-2xl font-bold">Tutti i mesi</h2> : <><h2 className="text-2xl font-bold">{monthLabel(month)}</h2><p className="text-sm text-slate-600">Fatture raggruppate per mese di riferimento in Fatturazione.</p></>}</div><div className="flex flex-wrap items-center gap-2">{!showAll && <button type="button" aria-label="Mese precedente" onClick={() => setPeriod(shiftMonth(month, -1))} className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>}<input type="month" aria-label="Mese da visualizzare" value={month} onChange={event => { if (event.target.value) { setPeriod(event.target.value); setShowAll(false); } }} className="rounded-lg border border-slate-300 bg-white p-2 font-semibold" />{!showAll && <button type="button" aria-label="Mese successivo" onClick={() => setPeriod(shiftMonth(month, 1))} className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>}<button type="button" onClick={() => setShowAll(current => !current)} aria-pressed={showAll} className={`rounded-lg border px-4 py-2 font-semibold ${showAll ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-300 bg-white hover:bg-slate-100'}`}>{showAll ? 'Vedi mese' : 'Vedi tutte'}</button></div></div>
+    {view ? <section className="space-y-4" aria-label={view === 'insoluti' ? 'Fatture insolute' : 'Fatture da incassare'}>
+      <button type="button" onClick={closeView} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 font-semibold hover:bg-slate-100"><ChevronLeft className="h-4 w-4" />Torna al riepilogo</button>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-bold">{view === 'insoluti' ? 'Tutte le fatture insolute' : 'Tutte le fatture da incassare'}</h2><p className="text-sm text-slate-600">Tutti i mesi dell’elaborato · {shownCount(visibleDetailRows.length, detailRows.length)} fatture · {euro(view === 'insoluti' ? data.riepilogo?.insoluto : data.riepilogo?.daIncassare)}</p></div><input type="search" aria-label="Cerca azienda o numero fattura" placeholder="Cerca azienda o fattura" value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-64" /></div>
+      <InvoiceTable rows={visibleDetailRows} showPeriod empty={search ? 'Nessuna fattura corrisponde alla ricerca.' : view === 'insoluti' ? 'Non ci sono fatture insolute.' : 'Non ci sono fatture da incassare.'} {...tableActions} />
+    </section> : <section className="space-y-4"><div className="flex flex-wrap items-center justify-between gap-4"><div>{showAll ? <h2 className="text-2xl font-bold">Tutti i mesi</h2> : <><h2 className="text-2xl font-bold">{monthLabel(month)}</h2><p className="text-sm text-slate-600">Fatture raggruppate per mese di riferimento in Fatturazione.</p></>}</div><div className="flex flex-wrap items-center gap-2">{!showAll && <button type="button" aria-label="Mese precedente" onClick={() => setPeriod(shiftMonth(month, -1))} className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>}<input type="month" aria-label="Mese da visualizzare" value={month} onChange={event => { if (event.target.value) { setPeriod(event.target.value); setShowAll(false); } }} className="rounded-lg border border-slate-300 bg-white p-2 font-semibold" />{!showAll && <button type="button" aria-label="Mese successivo" onClick={() => setPeriod(shiftMonth(month, 1))} className="rounded-lg border border-slate-300 p-2 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>}<button type="button" onClick={() => setShowAll(current => !current)} aria-pressed={showAll} className={`rounded-lg border px-4 py-2 font-semibold ${showAll ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-300 bg-white hover:bg-slate-100'}`}>{showAll ? 'Vedi mese' : 'Vedi tutte'}</button></div></div>
       <div className="flex justify-end"><input type="search" aria-label="Cerca azienda o numero fattura" placeholder="Cerca azienda o fattura" value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-64" /></div>
       {!showAll && <>
       <div className="grid gap-3 sm:grid-cols-3"><Metric label="Fatturato del mese" amount={monthRevenue} detail={`${monthInvoices.filter(invoice => !invoice.daCollegare).length} fatture elaborate o inviate`} style="border-indigo-300 bg-indigo-50 text-indigo-900" /><Metric label="Incassato delle fatture del mese" amount={monthCollected} detail={`${monthPaidCount} fatture con incassi`} style="border-emerald-300 bg-emerald-50 text-emerald-900" /><Metric label="Residuo delle fatture del mese" amount={monthRemaining} style="border-amber-300 bg-amber-50 text-amber-900" /></div>
@@ -217,7 +234,7 @@ export default function IncassiInsoluti() {
       {monthCredits.length > 0 && <div className="space-y-3"><h3 className="text-lg font-bold">Note di credito · {shownCount(visibleMonthCredits.length, monthCredits.length)}</h3><InvoiceTable rows={visibleMonthCredits} empty="Nessuna nota di credito corrisponde alla ricerca." {...tableActions} /></div>}
       </>}
       {showAll && <div className="space-y-3"><div className="flex flex-wrap items-center gap-3"><h2 className="text-xl font-bold">Tutte le fatture da incassare</h2><span className="text-sm font-semibold text-slate-600">{shownCount(visibleOpen.length, allOpen.length)} · {euro(data.riepilogo?.daIncassare)}</span></div><InvoiceTable rows={visibleOpen} empty={search ? 'Nessuna fattura corrisponde alla ricerca.' : 'Non ci sono fatture da incassare.'} {...tableActions} /></div>}
-    </section>
+    </section>}
 
     {chartOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="incassi-chart-title" className="w-full max-w-6xl rounded-xl bg-white p-5 shadow-2xl sm:p-7"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 id="incassi-chart-title" className="text-xl font-bold">Fatturato e incassato per mese</h2><p className="text-sm text-slate-600">Fatturato per mese di riferimento · incassato per data di pagamento</p></div><button type="button" onClick={() => setChartOpen(false)} aria-label="Chiudi grafico" className="rounded-lg p-2 hover:bg-slate-100"><X className="h-5 w-5" /></button></div>
       <div className="h-[360px] w-full overflow-x-auto"><div className="h-full min-w-[700px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart} margin={{ top: 8, right: 12, left: 12, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} /><XAxis dataKey="mese" tick={{ fill: '#475569', fontSize: 11 }} interval={0} /><YAxis tickFormatter={value => `${Math.round(value / 1000)}k`} tick={{ fill: '#475569', fontSize: 11 }} /><Tooltip formatter={(value, name) => [euro(value), name]} /><Legend /><Bar name="Fatturato" dataKey="fatturato" fill="#4f46e5" radius={[4, 4, 0, 0]} /><Bar name="Incassato" dataKey="incassato" fill="#059669" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div>
