@@ -52,10 +52,11 @@ const remainderColor = row => {
   return `rgb(${start.rgb.map((value, index) => Math.round(value + (end.rgb[index] - value) * progress)).join(', ')})`;
 };
 
-function AdjustableCard({ field, label, value, adjustments, clientAdjustments = [], employeeAdjustments = [], pairedAdjustments = [], onEdit, onDelete, deletingId, hours = false, children }) {
+function AdjustableCard({ field, additionalField = null, label, value, adjustments, clientAdjustments = [], employeeAdjustments = [], pairedAdjustments = [], onEdit, onDelete, deletingId, hours = false, children }) {
+  const fields = additionalField ? [field, additionalField] : [field];
   const clientField = field === 'oreTotali' ? 'ore' : field === 'imponibileClienti' ? 'imponibile' : null;
   const employeeField = field === 'oreTotali' ? 'ore' : field === 'totaleNetti' ? 'netto' : null;
-  const notes = [...adjustments.filter(item => item.voce === field),
+  const notes = [...adjustments.filter(item => fields.includes(item.voce)),
     ...clientAdjustments.filter(item => item.voce === clientField).map(item => ({
       ...item, valore: item.differenza, nota: `${item.cliente}: ${item.nota}` })),
     ...employeeAdjustments.filter(item => item.voce === employeeField).map(item => ({
@@ -65,9 +66,9 @@ function AdjustableCard({ field, label, value, adjustments, clientAdjustments = 
   return <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-3">
       <p className="text-sm font-semibold text-slate-600">{label}</p>
-      <button type="button" onClick={() => onEdit(field)} aria-label={`Rettifica ${label}`} title={`Rettifica ${label}`} className="rounded-lg p-2 text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">
-        <Pencil size={18} aria-hidden="true" />
-      </button>
+      <div className="flex shrink-0 flex-wrap justify-end gap-1">{fields.map(editField => <button key={editField} type="button" onClick={() => onEdit(editField)} aria-label={`Rettifica ${adjustmentLabels[editField]}`} title={`Rettifica ${adjustmentLabels[editField]}`} className="inline-flex items-center gap-1 rounded-lg p-2 text-indigo-700 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">
+        <Pencil size={18} aria-hidden="true" />{additionalField && <span className="text-xs font-semibold">{editField === 'totaleNetti' ? 'Buste' : 'CC'}</span>}
+      </button>)}</div>
     </div>
     <p className="mt-2 text-2xl font-bold">{value}</p>
     {children}
@@ -374,18 +375,18 @@ export default function ReportContabilita() {
       </section>
 
       <section aria-label="Valori del mese" className="space-y-4 border-t border-slate-200 pt-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[
-            ['totaleNetti', euro(report.totaleNetti)],
-            ['totaleCc', euro(report.totaleCc)],
+            ['totaleNetti', euro(Math.round((Number(report.totaleNetti) + Number(report.totaleCc)) * 100) / 100), 'totaleCc'],
             ['f24', report.f24 == null ? 'Da inserire' : euro(report.f24)],
             ['oreTotali', `${ore(report.oreTotali)} h`]
-          ].map(([field, value]) => <AdjustableCard key={field} field={field} label={adjustmentLabels[field]}
+          ].map(([field, value, additionalField]) => <AdjustableCard key={field} field={field} additionalField={additionalField} label={additionalField ? 'Stipendi del mese (CC + buste)' : adjustmentLabels[field]}
             value={value} hours={field === 'oreTotali'} adjustments={report.rettifiche || []}
             clientAdjustments={report.rettificheClienti || []}
             employeeAdjustments={report.rettificheDipendenti || []}
             pairedAdjustments={report.rettificheOreAbbinate || []}
             onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId}>
+              {additionalField && <p className="mt-2 text-xs text-slate-600">Buste {euro(report.totaleNetti)} + CC {euro(report.totaleCc)}</p>}
               {field === 'f24' && <div className="mt-3 border-t border-slate-200 pt-3 text-sm">
                 {editingF24 ? <form onSubmit={saveF24} className="space-y-2">
                   <label className="block font-semibold text-slate-700">Importo F24 del mese (€)
