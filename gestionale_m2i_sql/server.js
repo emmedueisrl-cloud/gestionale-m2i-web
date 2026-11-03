@@ -464,6 +464,8 @@ app.put('/api/contabilita/fatture/descrizione', handleWorkflow(req =>
   descrizioniFatture.save(knex, req.body || {})));
 app.put('/api/contabilita/fatture/rettifica', handleWorkflow(req =>
   workflowElaborati.saveInvoiceAdjustment({ ...req.body, userId: req.authUser.id })));
+app.put('/api/contabilita/fatture/scorpori', handleWorkflow(req =>
+  workflowElaborati.saveInvoiceSplit(req.body || {})));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWorkflow(req =>
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));

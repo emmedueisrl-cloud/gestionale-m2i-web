@@ -9,9 +9,9 @@ const columns = [
   ['R. FIS.', '6%'],
   ['Tassa', '9%'],
   ['Totale\nfattura', '9%'],
-  ['Descrizione', '16%'],
+  ['Descrizione', '12%'],
   ['Note', '9%'],
-  ['Azioni', '7%']
+  ['Azioni', '11%']
 ];
 
 const differenceCents = row => Math.round((Number(row.importoRealmenteFatturato) || 0) * 100) - Math.round((Number(row.importoTotale) || 0) * 100);
@@ -23,7 +23,7 @@ const regimeBreve = value => {
   return regime;
 };
 
-export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onEmail, onSaveDescription, onSaveAdjustment, selectedKeys = [], onSelect, busy, euro }) {
+export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, onRegistra, onSostituisci, onInviata, onEmail, onSaveDescription, onSaveAdjustment, onSplit, selectedKeys = [], onSelect, busy, euro }) {
   const [detailsRow, setDetailsRow] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [draftDescription, setDraftDescription] = useState('');
@@ -108,7 +108,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                 </div>
               </td>
               <td className={cell}>
-                <div className="flex items-center justify-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                   {row.gruppoExtraId && row.gruppoExtraTipo === 'mensile' ? <span className="text-xs font-semibold text-slate-700">Con la fattura mensile</span> : registered ? <>
                     <span role="status" title="Documenti registrati" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-2 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Documenti registrati</span></span>
                     <button type="button" onClick={() => setDetailsRow(row)} aria-label={`Apri documenti e allegati di ${row.ragioneSociale}`} title="Apri documenti e allegati" className={`rounded-full bg-white p-1.5 ring-1 hover:bg-red-50 ${hasDifference ? 'text-red-700 ring-red-700' : 'text-indigo-700 ring-indigo-500'}`}>
@@ -121,6 +121,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                       !elaborate && <button type="button" disabled={busy || Boolean(row.gruppoExtraId && !row.tuttiBlindati)} onClick={() => onInviata(row)} aria-label={`Segna come inviata la fattura di ${row.ragioneSociale}`} title={row.gruppoExtraId && !row.tuttiBlindati ? 'Blinda prima i servizi extra' : 'Fattura inviata'} className="rounded-lg bg-white/70 p-1.5 text-emerald-700 hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 disabled:opacity-50"><Send className="h-5 w-5" aria-hidden="true" /></button>}
                     {row.storicoPreesistente && <span title="Storico: verifica prima di registrare" aria-label="Storico: verifica prima di registrare" className="text-amber-800"><CircleAlert className="h-5 w-5" aria-hidden="true" /></span>}
                   </>}
+                  {!elaborate && !row.gruppoExtraId && !row.rigaExtra && !registered && !row.fatturaInviataAt && <button type="button" disabled={busy} onClick={() => onSplit(row)} className="w-full rounded bg-indigo-700 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">Scorpora importo{row.scorporiFattura?.length ? ` (${row.scorporiFattura.length})` : ''}</button>}
                 </div>
               </td>
             </tr>;

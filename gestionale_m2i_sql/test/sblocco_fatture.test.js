@@ -65,6 +65,26 @@ test('la rettifica usa reverse charge e aliquota ritenuta della scheda cliente',
   assert.equal(ritenuta.importoTotale, 129.8);
 });
 
+test('scorpora l’imponibile di una riga blindata senza toccare le altre fatture', async () => {
+  await knex('righe_bloccate_elaborati').insert({ tipo: 'cliente', mese: 4, anno: 2026,
+    soggetto_id: 'C_PENDING', snapshot: JSON.stringify({ idCliente: 'C_PENDING', ragioneSociale: 'Da elaborare',
+      imponibile: 100, importoTotale: 122 }), bloccata_at: new Date().toISOString() });
+  await knex('fatture_aruba_elaborati').insert({ cliente_id: 'C_SENT', mese: 4, anno: 2026,
+    numero_fattura: 'ALTRA-4', data_fattura: '2026-04-02', importo_totale: 122,
+    registrata_at: new Date().toISOString() });
+  const result = await workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
+    righe: [{ descrizione: 'Seconda dicitura', imponibile: '30,00' }] });
+  assert.equal(result.residuo, 70);
+  const row = (await workflow.accountingRows('cliente', 4, 2026)).find(item => item.idCliente === 'C_PENDING');
+  assert.deepEqual(row.scorporiFattura, [{ descrizione: 'Seconda dicitura', imponibile: 30 }]);
+  await assert.rejects(() => workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
+    righe: [{ descrizione: 'Troppo', imponibile: '100' }] }), /riga principale/);
+  assert.equal((await knex('scorpori_fatture_mensili').where({ cliente_id: 'C_PENDING', mese: 4, anno: 2026 })).length, 1);
+  await knex('fatture_inviate_elaborati').insert({ cliente_id: 'C_PENDING', mese: 4, anno: 2026,
+    inviata_at: new Date().toISOString() });
+  await assert.rejects(() => workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING', righe: [] }), /già inviata/);
+});
+
 test('la riga da elaborare si sblinda, anche se un altro cliente ha una fattura inviata', async () => {
   await workflow.markInvoiceSent({ mese: 8, anno: 2026, clienteId: 'C_SENT' });
   const result = await workflow.unlockRow('cliente', 8, 2026, 'C_PENDING');

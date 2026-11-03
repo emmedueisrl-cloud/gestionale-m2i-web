@@ -98,6 +98,15 @@ async function initialize() {
       t.primary(['cliente_id', 'mese', 'anno']);
     });
   }
+  if (!await knex.schema.hasTable('scorpori_fatture_mensili')) {
+    await knex.schema.createTable('scorpori_fatture_mensili', t => {
+      t.string('cliente_id').notNullable().references('id').inTable('clienti').onDelete('RESTRICT');
+      t.integer('mese').notNullable(); t.integer('anno').notNullable();
+      t.integer('posizione').notNullable(); t.text('descrizione').notNullable();
+      t.integer('imponibile_cent').notNullable();
+      t.primary(['cliente_id', 'mese', 'anno', 'posizione']);
+    });
+  }
   if (!await knex.schema.hasColumn('fatture_aruba_elaborati', 'fattura_id')) {
     // ALTER TABLE diretto: Knex ricostruirebbe la tabella e fallirebbe sui vecchi FK orfani.
     await knex.raw('ALTER TABLE fatture_aruba_elaborati ADD COLUMN fattura_id TEXT REFERENCES fatture(id) ON DELETE SET NULL');
@@ -251,6 +260,8 @@ async function unlockRow(tipo, mese, anno, subjectId) {
     await trx('righe_bloccate_elaborati').where({ tipo, mese: p.mese, anno: p.anno, soggetto_id: subjectId }).del();
     if (tipo === 'cliente') await trx('rettifiche_fatturazione_mensili')
       .where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).del();
+    if (tipo === 'cliente') await trx('scorpori_fatture_mensili')
+      .where({ cliente_id: subjectId, mese: p.mese, anno: p.anno }).del();
     return { sbloccata: true, meseRiaperto: Boolean(header) };
   });
 }
@@ -312,6 +323,13 @@ async function accountingRows(tipo, mese, anno) {
       const descriptionByClient = new Map(descriptions.map(item => [String(item.soggetto_id), item.descrizione]));
       const adjustments = await trx('rettifiche_fatturazione_mensili').where({ mese: p.mese, anno: p.anno });
       const adjustmentByClient = new Map(adjustments.map(item => [String(item.cliente_id), item]));
+      const splits = await trx('scorpori_fatture_mensili').where({ mese: p.mese, anno: p.anno }).orderBy('posizione');
+      const splitsByClient = new Map();
+      for (const split of splits) {
+        const key = String(split.cliente_id);
+        if (!splitsByClient.has(key)) splitsByClient.set(key, []);
+        splitsByClient.get(key).push({ descrizione: split.descrizione, imponibile: split.imponibile_cent / 100 });
+      }
       const clientDescriptions = await trx('clienti').select('*');
       const clientById = new Map(clientDescriptions.map(item => [String(item.id), item]));
       const sentByClient = new Map(sent.map(item => [item.cliente_id, item.inviata_at]));
@@ -349,7 +367,7 @@ async function accountingRows(tipo, mese, anno) {
           tipoTassazione: adjustment.tipo_tassazione } :
           { ...row, prezzoServizio: Number(row.imponibile) || 0, rettificaFatturazione: 0 };
         const importi = calcolaValoriContabilitaCliente(invoiceRow, costiPersonale.get(String(row.idCliente)) || 0);
-        return { ...invoiceRow, ...importi, descrizioneFattura: descriptionByClient.get(String(row.idCliente)) || descrizionePredefinita(clientById.get(String(row.idCliente)), p.mese, p.anno), costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, fattureMensili: monthlyInvoices, documentiAruba: attachments, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: monthlyInvoices.length ? Number((actual - Number(invoiceRow.importoTotale || 0)).toFixed(2)) : null };
+        return { ...invoiceRow, ...importi, descrizioneFattura: descriptionByClient.get(String(row.idCliente)) || descrizionePredefinita(clientById.get(String(row.idCliente)), p.mese, p.anno), scorporiFattura: splitsByClient.get(String(row.idCliente)) || [], costoPersonaleDefinitivo: statoCosti.get(String(row.idCliente)) !== false, storicoPreesistente: Boolean(header && !frozenIds.has(row.idCliente)), fatture: linked, fattureMensili: monthlyInvoices, documentiAruba: attachments, fatturaInviataAt: sentByClient.get(row.idCliente) || null, importoRealmenteFatturato: actual, differenza: monthlyInvoices.length ? Number((actual - Number(invoiceRow.importoTotale || 0)).toFixed(2)) : null };
       });
       const known = new Set(rows.map(row => String(row.idCliente)));
       const extraIds = [...new Set([...invoices, ...documents].map(item => String(item.cliente_id)))].filter(id => !known.has(id));
@@ -465,6 +483,55 @@ async function markOfficePayrollPaid({ bustaId, userId }) {
   });
 }
 
+async function saveInvoiceSplit({ mese, anno, clienteId, righe }) {
+  const p = period('cliente', mese, anno);
+  const id = String(clienteId || '');
+  if (!id || !Array.isArray(righe) || righe.length > 20) {
+    throw new Error('Indica al massimo 20 righe da scorporare.');
+  }
+  const parsed = righe.map((line, index) => {
+    const descrizione = String(line?.descrizione || '').trim();
+    const raw = String(line?.imponibile ?? '').trim().replace(',', '.');
+    if (!descrizione || descrizione.length > 1000 || !/^\d{1,9}(?:\.\d{1,2})?$/.test(raw)) {
+      throw new Error(`Riga ${index + 1}: inserisci descrizione e imponibile validi.`);
+    }
+    const cent = Math.round(Number(raw) * 100);
+    if (!Number.isSafeInteger(cent) || cent <= 0) throw new Error(`Riga ${index + 1}: l’imponibile deve essere positivo.`);
+    return { posizione: index + 1, descrizione, imponibile_cent: cent };
+  });
+  return knex.transaction(async trx => {
+    const row = (await lockedRows('cliente', p.mese, p.anno, trx))
+      .find(item => String(item.idCliente) === id);
+    if (!row) throw new Error('Blinda la riga cliente prima di scorporare la fattura.');
+    const key = { cliente_id: id, mese: p.mese, anno: p.anno };
+    if (await trx('fatture_inviate_elaborati').where(key).first()) {
+      throw new Error('Fattura già inviata: scorporo non consentito.');
+    }
+    const groups = await trx.schema.hasTable('gruppi_fatturazione_extra')
+      ? await trx('gruppi_fatturazione_extra').where(key) : [];
+    if (groups.some(group => group.tipo === 'mensile' && (group.inviata_at || group.fattura_registrazione_id))) {
+      throw new Error('Fattura mensile già inviata o registrata.');
+    }
+    const extraIds = new Set(groups.filter(group => group.tipo === 'extra' && group.fattura_registrazione_id)
+      .map(group => Number(group.fattura_registrazione_id)));
+    const invoices = await trx('fatture_aruba_elaborati').where(key).select('id');
+    if (invoices.some(invoice => !extraIds.has(Number(invoice.id))) ||
+        await trx('documenti_aruba_mese').where(key).first()) {
+      throw new Error('Fattura già registrata: scorporo non consentito.');
+    }
+    const adjustment = await trx('rettifiche_fatturazione_mensili').where(key).first();
+    const totalCent = adjustment?.imponibile_cent ?? Math.round(Number(row.imponibile) * 100);
+    const splitCent = parsed.reduce((sum, line) => sum + line.imponibile_cent, 0);
+    if (!Number.isSafeInteger(totalCent) || totalCent <= 0 || splitCent >= totalCent) {
+      throw new Error('La somma delle righe scorporate deve lasciare un imponibile positivo alla riga principale.');
+    }
+    await trx('scorpori_fatture_mensili').where(key).del();
+    if (parsed.length) await trx('scorpori_fatture_mensili').insert(parsed.map(line => ({ ...key, ...line })));
+    return { righe: parsed.map(line => ({ descrizione: line.descrizione, imponibile: line.imponibile_cent / 100 })),
+      residuo: (totalCent - splitCent) / 100 };
+  });
+}
+
 async function saveInvoiceAdjustment({ mese, anno, clienteId, importo, userId }) {
   const p = period('cliente', mese, anno);
   const id = String(clienteId || '');
@@ -495,6 +562,10 @@ async function saveInvoiceAdjustment({ mese, anno, clienteId, importo, userId })
     const imponibileCent = prezzoCent + deltaCent;
     if (!Number.isSafeInteger(prezzoCent) || !Number.isSafeInteger(imponibileCent) || imponibileCent <= 0) {
       throw new Error('La rettifica deve lasciare un imponibile positivo.');
+    }
+    const splitTotal = await trx('scorpori_fatture_mensili').where(key).sum('imponibile_cent as totale').first();
+    if (Number(splitTotal?.totale || 0) >= imponibileCent) {
+      throw new Error('La rettifica deve lasciare un imponibile positivo alla riga principale della fattura.');
     }
     if (!deltaCent) {
       await trx('rettifiche_fatturazione_mensili').where(key).del();
@@ -633,4 +704,4 @@ async function registerPayment({ mese, anno, dipendenteId, userId, confermaStori
   return { id };
 }
 
-module.exports = { initialize, lockRow, unlockRow, lockedRows, monthlyEmployeeRows, status, missingCount, accountingRows, saveConsultantNote, saveOfficePayrollNote, saveCcAmount, markOfficePayrollPaid, saveInvoiceAdjustment, markInvoiceSent, registerInvoice, registerPayment, period };
+module.exports = { initialize, lockRow, unlockRow, lockedRows, monthlyEmployeeRows, status, missingCount, accountingRows, saveConsultantNote, saveOfficePayrollNote, saveCcAmount, markOfficePayrollPaid, saveInvoiceSplit, saveInvoiceAdjustment, markInvoiceSent, registerInvoice, registerPayment, period };

@@ -171,6 +171,14 @@ function createArubaExport(db, workflow, extrasService) {
       if (row && !(cents(row.imponibile) > 0)) issues.push('Imponibile nullo o negativo');
       if (row && !value(row.descrizioneFattura)) issues.push('Descrizione fattura assente');
       if (row && value(row.descrizioneFattura).length > 1000) issues.push('Descrizione fattura oltre 1000 caratteri');
+      const splits = row?.gruppoExtraId ? [] : row?.scorporiFattura || [];
+      const splitCent = splits.reduce((sum, line) => sum + cents(line.imponibile), 0);
+      const remainingCent = row ? cents(row.imponibile) - splitCent : 0;
+      if (splits.some(line => !value(line.descrizione) || value(line.descrizione).length > 1000 ||
+          !Number.isSafeInteger(cents(line.imponibile)) || cents(line.imponibile) <= 0) ||
+          (splits.length && (!Number.isSafeInteger(remainingCent) || remainingCent <= 0))) {
+        issues.push('Scorporo non valido: verifica descrizioni e imponibili delle righe');
+      }
       if (row && client && value(row.tipoTassazione).toUpperCase() !== value(client.tipo_tassazione || 'IVA').toUpperCase()) {
         issues.push('Trattamento fiscale dell’elaborato diverso dalla scheda cliente');
       }
@@ -181,7 +189,8 @@ function createArubaExport(db, workflow, extrasService) {
         issues.push('Descrizione dei servizi extra mensili assente o troppo lunga');
       }
       if (!issues.length) {
-        const lines = [{ description: row.descrizioneFattura, amount: row.imponibile },
+        const lines = [{ description: row.descrizioneFattura, amount: remainingCent / 100 },
+          ...splits.map(line => ({ description: line.descrizione, amount: line.imponibile })),
           ...monthly.map(group => ({ description: group.descrizioneFattura, amount: group.imponibileExtra,
             expectedTotal: group.totaleExtraPrevisto, extraMonthly: true }))];
         try {

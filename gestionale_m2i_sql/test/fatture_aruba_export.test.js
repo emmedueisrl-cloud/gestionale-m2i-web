@@ -43,6 +43,26 @@ test('genera un XML FPR12 con dati IVA e importi coerenti', async () => {
   assert.equal(root.FatturaElettronicaBody.DatiPagamento.DettaglioPagamento.ImportoPagamento, '122.00');
 });
 
+test('esporta due righe imponibili con descrizioni distinte e totale invariato', async () => {
+  const splitRow = { ...row, scorporiFattura: [{ descrizione: 'Secondo servizio', imponibile: 30 }] };
+  const db = table => {
+    if (table === 'm2i_azienda_dati') return { where: () => ({ first: async () => company }) };
+    if (table === 'clienti') return { whereIn: async () => [client] };
+    if (['fatture_aruba_elaborati', 'fatture'].includes(table)) return { whereIn: () => ({ select: async () => [] }) };
+    throw new Error(table);
+  };
+  const service = createArubaExport(db, { period: () => {}, accountingRows: async () => [splitRow] },
+    { groups: async () => [] });
+  const result = await service.prepare({ mese: 10, anno: 2026, keys: ['cliente:c1'],
+    data: '2026-10-13', primoNumero: 'FPR 618/26' });
+  assert.deepEqual(result.errors, []);
+  const doc = await parse(result.invoices[0].xml);
+  const lines = doc.FatturaElettronica.FatturaElettronicaBody.DatiBeniServizi.DettaglioLinee;
+  assert.deepEqual(lines.map(line => [line.Descrizione, line.PrezzoTotale]),
+    [[row.descrizioneFattura, '70.00'], ['Secondo servizio', '30.00']]);
+  assert.equal(doc.FatturaElettronica.FatturaElettronicaBody.DatiGenerali.DatiGeneraliDocumento.ImportoTotaleDocumento, '122.00');
+});
+
 test('fattura un privato con solo codice fiscale e destinatario 0000000', async () => {
   const privato = { ...client, tipo_cliente: 'PRIVATO', partita_iva: null,
     codice_fiscale: 'RSSMRA80A01H501U', fatturazione_id_paese_iva: '', codice_sdi: '', pec: '' };

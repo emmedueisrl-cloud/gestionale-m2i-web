@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { contabilitaPeriod, workflowRequest } from '../../api/workflowElaborati';
 import TabellaFatture from './TabellaFatture';
+import ScorporaImportoModal from './ScorporaImportoModal';
 import TabellaPagamenti from './TabellaPagamenti';
 import CaricaBusteElaborato from './CaricaBusteElaborato';
 import PerUfficioPaghe from './PerUfficioPaghe';
@@ -37,6 +38,7 @@ export default function ContabilitaElaborati({ tipo }) {
   const [sezioneAttiva, setSezioneAttiva] = useState(0);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
+  const [selectedSplit, setSelectedSplit] = useState(null);
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [selectedConsultant, setSelectedConsultant] = useState(null);
   const [selectedCc, setSelectedCc] = useState(null);
@@ -149,6 +151,18 @@ export default function ContabilitaElaborati({ tipo }) {
       }) });
       await load();
       showMessage('Rettifica della fattura salvata. Imponibile, imposta e totale aggiornati.');
+    } catch (err) { setError(err.message); throw err; }
+    finally { setBusy(false); }
+  };
+
+  const saveSplit = async righe => {
+    setBusy(true); setError('');
+    try {
+      await workflowRequest('contabilita/fatture/scorpori', { method: 'PUT', body: JSON.stringify({
+        clienteId: selectedSplit.idCliente, mese, anno, righe
+      }) });
+      await load();
+      showMessage('Righe della fattura salvate. Il totale mensile è invariato.');
     } catch (err) { setError(err.message); throw err; }
     finally { setBusy(false); }
   };
@@ -379,9 +393,10 @@ export default function ContabilitaElaborati({ tipo }) {
       <span className="text-sm font-semibold text-slate-700">{selectedCurrentKeys.length} selezionate</span>
       <button type="button" disabled={!selectedCurrentKeys.length || busy} onClick={() => { setExportPreview(null); setExportError(''); setExportOpen(true); }} className="ml-auto rounded bg-indigo-700 px-4 py-2 font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">Scarica XML per Aruba</button>
     </div>}
-    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onEmail={openInvoiceEmail} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} selectedKeys={selectedCurrentKeys} onSelect={setExportSelection} busy={busy || emailFatturaBusy} euro={euro} /> :
+    {tipo === 'cliente' ? <TabellaFatture key={sezioneAttiva} {...visibleGroup} base={base} onRegistra={openInvoice} onSostituisci={openInvoice} onInviata={markInvoiceSent} onEmail={openInvoiceEmail} onSaveDescription={saveDescription} onSaveAdjustment={saveAdjustment} onSplit={setSelectedSplit} selectedKeys={selectedCurrentKeys} onSelect={setExportSelection} busy={busy || emailFatturaBusy} euro={euro} /> :
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
+    {selectedSplit && <ScorporaImportoModal row={selectedSplit} onClose={() => setSelectedSplit(null)} onSave={saveSplit} />}
     {exportOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <form onSubmit={previewExport} className="max-h-[90vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-xl bg-white p-5 text-slate-900 shadow-xl">
         <h2 className="text-xl font-bold">XML per Aruba · {selectedCurrentKeys.length} fatture</h2>
