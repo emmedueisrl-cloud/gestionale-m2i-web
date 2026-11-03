@@ -65,6 +65,7 @@ function createInvoiceUploadCleanup(db, dataDir) {
         const check = await inspect(trx, registration);
         result.push({ id: registration.id, cliente: names.get(String(registration.cliente_id)) || registration.cliente_id,
           numero: registration.numero_fattura, data: registration.data_fattura,
+          registrataAt: registration.registrata_at,
           importo: Number(registration.importo_totale), tipoDocumento: registration.tipo_documento || 'TD01',
           bloccata: Boolean(check.reason), motivo: check.reason });
       }

@@ -41,6 +41,8 @@ test('pulizia multipla atomica: conserva gli incassi e rimuove solo i caricament
     const cleanup = createInvoiceUploadCleanup(db, root);
     const listed = await cleanup.list({ mese: 11, anno: 2026 });
     assert.equal(listed.find(row => row.id === firstId).bloccata, false);
+    assert.equal(listed.find(row => row.id === firstId).registrataAt,
+      (await db('fatture_aruba_elaborati').where({ id: firstId }).first()).registrata_at);
     assert.match(listed.find(row => row.id === paidId).motivo, /Pagamento/);
     await assert.rejects(() => cleanup.remove({ mese: 11, anno: 2026, ids: [firstId, paidId] }), /Pagamento/);
     assert.equal((await db('fatture_aruba_elaborati')).length, 2);

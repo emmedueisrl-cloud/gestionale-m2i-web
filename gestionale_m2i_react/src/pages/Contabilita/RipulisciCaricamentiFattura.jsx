@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { workflowRequest } from '../../api/workflowElaborati';
+import { dataRegistrazione, giornoRegistrazione } from './dataRegistrazioneFattura';
 
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 
@@ -7,6 +8,7 @@ export default function RipulisciCaricamentiFattura({ mese, anno, onClose, onCha
   const [fatture, setFatture] = useState([]);
   const [selected, setSelected] = useState([]);
   const [search, setSearch] = useState('');
+  const [giorno, setGiorno] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -21,8 +23,9 @@ export default function RipulisciCaricamentiFattura({ mese, anno, onClose, onCha
     return () => { active = false; };
   }, [mese, anno]);
 
-  const visible = fatture.filter(row => `${row.cliente} ${row.numero}`.toLocaleLowerCase('it-IT')
-    .includes(search.trim().toLocaleLowerCase('it-IT')));
+  const visible = fatture.filter(row => (!giorno || giornoRegistrazione(row.registrataAt) === giorno) &&
+    `${row.cliente} ${row.numero}`.toLocaleLowerCase('it-IT')
+      .includes(search.trim().toLocaleLowerCase('it-IT')));
   const eligible = visible.filter(row => !row.bloccata).map(row => row.id);
   const toggle = id => { setConfirming(false); setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]); };
   const clean = async () => {
@@ -44,19 +47,24 @@ export default function RipulisciCaricamentiFattura({ mese, anno, onClose, onCha
         <button type="button" disabled={busy} onClick={onClose} className="rounded border border-slate-300 px-3 py-2 disabled:opacity-50">Chiudi</button>
       </div>
       <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">La pulizia rimuove il caricamento e i relativi allegati dal gestionale. Non modifica l’esito della fattura su Aruba o SdI. Le fatture con un pagamento registrato non possono essere selezionate.</p>
-      <input type="search" aria-label="Cerca fattura caricata" placeholder="Cerca cliente o numero" value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded border border-slate-300 p-2" />
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-sm font-semibold">Registrate il giorno<input type="date" value={giorno} onChange={event => { setGiorno(event.target.value); setSelected([]); setConfirming(false); }} className="mt-1 block rounded border border-slate-300 p-2" /></label>
+        <button type="button" onClick={() => { setGiorno(giornoRegistrazione(new Date())); setSelected([]); setConfirming(false); }} className="rounded bg-indigo-100 px-3 py-2 text-sm font-semibold text-indigo-900">Oggi</button>
+        <button type="button" disabled={!giorno} onClick={() => { setGiorno(''); setSelected([]); setConfirming(false); }} className="rounded bg-slate-100 px-3 py-2 text-sm font-semibold disabled:opacity-50">Tutti i giorni</button>
+        <input type="search" aria-label="Cerca fattura caricata" placeholder="Cerca cliente o numero" value={search} onChange={event => setSearch(event.target.value)} className="min-w-[200px] flex-1 rounded border border-slate-300 p-2" />
+      </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={busy || !eligible.length} onClick={() => { setSelected(current => [...new Set([...current, ...eligible])]); setConfirming(false); }} className="rounded bg-indigo-100 px-3 py-2 text-sm font-semibold text-indigo-900 disabled:opacity-50">Seleziona tutte le disponibili</button>
+        <button type="button" disabled={busy || !eligible.length} onClick={() => { setSelected(current => [...new Set([...current, ...eligible])]); setConfirming(false); }} className="rounded bg-indigo-100 px-3 py-2 text-sm font-semibold text-indigo-900 disabled:opacity-50">Seleziona tutte le disponibili{giorno ? ' del giorno' : ''}</button>
         <button type="button" disabled={busy || !selected.length} onClick={() => { setSelected([]); setConfirming(false); }} className="rounded bg-slate-100 px-3 py-2 text-sm font-semibold disabled:opacity-50">Deseleziona tutte</button>
         <span className="text-sm font-semibold">{selected.length} selezionate</span>
       </div>
       <div className="max-h-[45vh] overflow-auto rounded border border-slate-200">
-        <table className="w-full min-w-[650px] text-left text-sm"><thead className="sticky top-0 bg-slate-100"><tr><th className="p-2">Seleziona</th><th className="p-2">Numero</th><th className="p-2">Cliente</th><th className="p-2">Data</th><th className="p-2">Totale</th><th className="p-2">Stato</th></tr></thead>
+        <table className="w-full min-w-[750px] text-left text-sm"><thead className="sticky top-0 bg-slate-100"><tr><th className="p-2">Seleziona</th><th className="p-2">Numero</th><th className="p-2">Cliente</th><th className="p-2">Registrata il</th><th className="p-2">Data fattura</th><th className="p-2">Totale</th><th className="p-2">Stato</th></tr></thead>
           <tbody>{visible.map(row => <tr key={row.id} className="border-t border-slate-200">
             <td className="p-2"><input type="checkbox" aria-label={`Seleziona caricamento ${row.numero} di ${row.cliente}`} checked={selected.includes(row.id)} disabled={busy || row.bloccata} onChange={() => toggle(row.id)} /></td>
-            <td className="p-2 font-semibold">{row.numero}</td><td className="p-2">{row.cliente}</td><td className="p-2">{row.data}</td><td className="p-2">{euro(row.importo)}</td>
+            <td className="p-2 font-semibold">{row.numero}</td><td className="p-2">{row.cliente}</td><td className="p-2">{dataRegistrazione(row.registrataAt)}</td><td className="p-2">{row.data}</td><td className="p-2">{euro(row.importo)}</td>
             <td className={`p-2 ${row.bloccata ? 'text-red-800' : 'text-emerald-800'}`}>{row.motivo || 'Ripulibile'}</td>
-          </tr>)}{!visible.length && <tr><td colSpan={6} className="p-4 text-center text-slate-600">{busy ? 'Caricamento...' : 'Nessuna fattura caricata per questa ricerca.'}</td></tr>}</tbody>
+          </tr>)}{!visible.length && <tr><td colSpan={7} className="p-4 text-center text-slate-600">{busy ? 'Caricamento...' : 'Nessuna fattura caricata per questa ricerca o per il giorno scelto.'}</td></tr>}</tbody>
         </table>
       </div>
       {error && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{error}</p>}

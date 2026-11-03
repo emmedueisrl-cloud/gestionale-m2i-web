@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, CircleAlert, FilePlus2, Mail, Send, X } from 'lucide-react';
+import { dataRegistrazione, giornoRegistrazione } from './dataRegistrazioneFattura';
 
 const columns = [
   ['Cliente (ragione sociale)', '16%'],
@@ -59,6 +60,11 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
             const tassa = row.importoIva != null && Number.isFinite(Number(row.importoIva)) ? Number(row.importoIva)
               : Number.isFinite(Number(row.importoTassa)) ? Number(row.importoTassa) : totale - (Number(row.imponibile) || 0);
             const registered = fatture.length > 0 || Boolean(row.documentiAruba?.length);
+            const registrationDays = [...new Set([...fatture, ...(row.documentiAruba || [])]
+              .map(document => giornoRegistrazione(document.registrataAt)).filter(Boolean))].sort().reverse();
+            const registrationLabel = registrationDays.length
+              ? `${dataRegistrazione(registrationDays[0])}${registrationDays.length > 1 ? ` +${registrationDays.length - 1}` : ''}`
+              : 'Data non disponibile';
             const hasDifference = registered && Math.abs(differenceCents(row)) > 20;
             const cell = 'border-r border-r-slate-200 border-b-2 border-b-slate-400 px-2 py-2 align-middle last:border-r-0';
             const numberCell = `${cell} whitespace-nowrap text-[18px]`;
@@ -110,7 +116,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
               <td className={cell}>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {row.gruppoExtraId && row.gruppoExtraTipo === 'mensile' ? <span className="text-xs font-semibold text-slate-700">Con la fattura mensile</span> : registered ? <>
-                    <span role="status" title="Documenti registrati" className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-2 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Documenti registrati</span></span>
+                    <span role="status" title={`Date di registrazione: ${registrationDays.map(dataRegistrazione).join(', ') || 'non disponibili'}`} className="flex flex-col items-center gap-1 rounded-lg bg-white/70 p-2 text-emerald-900"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="text-[11px] font-bold">Documenti registrati</span><span className="text-[11px] font-semibold">{registrationLabel}</span></span>
                     <button type="button" onClick={() => setDetailsRow(row)} aria-label={`Apri documenti e allegati di ${row.ragioneSociale}`} title="Apri documenti e allegati" className={`rounded-full bg-white p-1.5 ring-1 hover:bg-red-50 ${hasDifference ? 'text-red-700 ring-red-700' : 'text-indigo-700 ring-indigo-500'}`}>
                       {hasDifference ? <CircleAlert className="h-5 w-5" aria-hidden="true" /> : <FilePlus2 className="h-5 w-5" aria-hidden="true" />}
                     </button>
@@ -149,7 +155,7 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
         <div className="mt-4 space-y-2 border-t border-slate-200 pt-3 text-sm">
           <h4 className="font-bold">Fatture e allegati</h4>
           {(detailsRow.fatture || []).map(f => <p key={f.id}>{f.tipoDocumento === 'TD04' ? 'Nota di credito' : 'Fattura'} {f.numero} · {f.data} · {euro(f.importo)} · registrata {new Date(f.registrataAt).toLocaleString('it-IT')} · {f.statoRiconciliazione === 'riconciliata' ? 'Riconciliata' : f.statoRiconciliazione === 'da_verificare' ? 'Da verificare' : 'In attesa XML/CSV'}{f.allegato && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/allegato`}>Apri PDF</a>{elaborate && f.tipoDocumento !== 'TD04' && <> · <button type="button" disabled={busy} onClick={() => { setDetailsRow(null); onEmail(f.id); }} className="font-semibold text-indigo-700 underline disabled:opacity-50">Invia email al cliente</button></>}</>}{f.xml && <> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/fatture/${f.id}/xml`}>Scarica XML</a></>}{f.modificabile ? <> · <button type="button" disabled={busy} onClick={() => { setDetailsRow(null); onSostituisci(detailsRow, f); }} className="font-semibold text-indigo-700 underline disabled:opacity-50">Modifica XML e PDF</button></> : f.motivoModifica && <> · <span className="text-slate-600">{f.motivoModifica}</span></>}</p>)}
-          {(detailsRow.documentiAruba || []).map(d => <p key={`doc-${d.id}`}>Nota di credito {d.numero} · {d.data} · {euro(d.importo)} · solo allegato, senza effetto sui totali · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/pdf`}>Apri PDF</a> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/xml`}>Scarica XML</a></p>)}
+          {(detailsRow.documentiAruba || []).map(d => <p key={`doc-${d.id}`}>Nota di credito {d.numero} · {d.data} · {euro(d.importo)} · registrata il {dataRegistrazione(d.registrataAt)} · solo allegato, senza effetto sui totali · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/pdf`}>Apri PDF</a> · <a className="font-semibold text-indigo-700 underline" href={`${base}/api/contabilita/documenti-aruba/${d.id}/xml`}>Scarica XML</a></p>)}
         </div>
       </div>
     </div>}
