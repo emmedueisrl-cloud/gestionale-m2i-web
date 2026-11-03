@@ -430,7 +430,7 @@ export default function ContabilitaElaborati({ tipo }) {
         </div>)}
       </div>}
       {tipo === 'dipendente' && sezioneAttiva === 0
-        ? <CaricaBusteElaborato mese={mese} anno={anno} buste={buste} onChanged={load} />
+        ? <CaricaBusteElaborato mese={mese} anno={anno} buste={buste} elaborati={rows} onChanged={load} />
         : toolbar}
       </div>}
     </div>

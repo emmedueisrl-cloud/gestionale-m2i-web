@@ -8,7 +8,7 @@ const sqlite3 = require('sqlite3');
 const makeKnex = require('knex');
 const { PDFDocument, StandardFonts } = require('pdf-lib');
 const { createPayrollStore } = require('../payroll_store');
-const { extractNet, matchEmployee } = require('../payroll_extraction');
+const { extractNet, extractNetFromLayout, matchEmployee } = require('../payroll_extraction');
 
 async function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'm2i-payroll-lifecycle-'));
@@ -62,6 +62,15 @@ test('estrazione prudente: importi italiani, zero, CF univoco e ambiguità',()=>
   assert.equal(matchEmployee('RSSMRA80A01H501U',employees).employee.id,'1');
   assert.equal(matchEmployee('RSSMRA80A01H501U VRDNNA80A41H501X',employees).employee,null);
   assert.equal(matchEmployee('ROSSI MARIO',employees).employee,null);
+});
+
+test('riconosce il netto nella cella del cedolino INAIL anche se la scritta non è testo PDF',()=>{
+  const signature = ['Codice CCNL: K511', 'PAGA BASE', 'LAVORO ORDINARIO ORE']
+    .map(text => ({ text, x: 50, y: 400, width: 180 }));
+  const net = { text: '-57,71                   1.015,81', x: 72, y: 222, width: 498 };
+  assert.equal(extractNetFromLayout([...signature, net], 595, 842), 1015.81);
+  assert.equal(extractNetFromLayout([net], 595, 842), null);
+  assert.equal(extractNetFromLayout([...signature, net, { ...net, text: '1.016,43' }], 595, 842), null);
 });
 
 test('ciclo buste: split, raggruppamento, rollback, riavvio, idempotenza e cancellazione recuperabile',{timeout:30000},async()=>{

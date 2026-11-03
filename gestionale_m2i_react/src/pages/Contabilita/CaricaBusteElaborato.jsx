@@ -4,7 +4,7 @@ import { workflowRequest } from '../../api/workflowElaborati';
 
 const nomeDipendente = dipendente => dipendente.nomeCompleto || `${dipendente.cognome} ${dipendente.nome}`;
 
-export default function CaricaBusteElaborato({ mese, anno, buste, onChanged }) {
+export default function CaricaBusteElaborato({ mese, anno, buste, elaborati = [], onChanged }) {
   const [aperto, setAperto] = useState(false);
   const [files, setFiles] = useState([]);
   const [anteprima, setAnteprima] = useState(null);
@@ -33,10 +33,19 @@ export default function CaricaBusteElaborato({ mese, anno, buste, onChanged }) {
 
   const dipendentiDisponibili = dipendenti.filter(d => String(d.stato || '').trim().toLowerCase() !== 'in prova');
   const dipendentePerId = new Map(dipendentiDisponibili.map(d => [String(d.id), d]));
+  const nettoElaboratoPerId = new Map(elaborati.map(row => [String(row.idDipendente), Number(row.stipendioNetto)]));
+  const differenzaNetto = row => {
+    if (row.extractedNetto == null || String(row.extractedNetto).trim() === '') return 0;
+    const previsto = nettoElaboratoPerId.get(String(row.dipendenteId));
+    const caricato = Number(String(row.extractedNetto ?? '').replace(',', '.'));
+    if (!Number.isFinite(previsto) || !Number.isFinite(caricato)) return 0;
+    return Math.round(caricato * 100) - Math.round(previsto * 100);
+  };
   const bustePerDipendente = new Set(buste.map(b => String(b.dipendente_id)));
   const duplicati = anteprima?.filter(row => row.dipendenteId && bustePerDipendente.has(String(row.dipendenteId))) || [];
   const validi = anteprima?.length > 0 && !duplicati.length && new Set(anteprima.map(row => row.dipendenteId)).size === anteprima.length && anteprima.every(row =>
-    dipendentePerId.has(String(row.dipendenteId)) && row.extractedNetto !== '' && row.extractedNetto != null && Number.isFinite(Number(String(row.extractedNetto).replace(',', '.')))
+    dipendentePerId.has(String(row.dipendenteId)) && row.extractedNetto !== '' && row.extractedNetto != null && Number.isFinite(Number(String(row.extractedNetto).replace(',', '.'))) &&
+    (!differenzaNetto(row) || row.confermaDifferenza)
   );
 
   const analizza = async () => {
@@ -46,7 +55,7 @@ export default function CaricaBusteElaborato({ mese, anno, buste, onChanged }) {
       const form = new FormData();
       files.forEach(file => form.append('files', file));
       const result = await workflowRequest('buste-paga/upload', { method: 'POST', body: form });
-      setAnteprima(result.files.map(row => ({ ...row, updateCF: false })));
+      setAnteprima(result.files.map(row => ({ ...row, updateCF: false, confermaDifferenza: false })));
     } catch (err) { setError(err.message); }
     finally { setBusy(false); }
   };
@@ -63,7 +72,8 @@ export default function CaricaBusteElaborato({ mese, anno, buste, onChanged }) {
     finally { setBusy(false); }
   };
 
-  const updateRow = (index, field, value) => setAnteprima(rows => rows.map((row, i) => i === index ? { ...row, [field]: value } : row));
+  const updateRow = (index, field, value) => setAnteprima(rows => rows.map((row, i) => i === index
+    ? { ...row, [field]: value, ...(field === 'dipendenteId' || field === 'extractedNetto' ? { confermaDifferenza: false } : {}) } : row));
   const removeRow = index => setAnteprima(rows => rows.filter((_, i) => i !== index));
   const close = () => { if (!busy) { setAperto(false); setAnteprima(null); setFiles([]); setError(''); } };
 
@@ -92,13 +102,16 @@ export default function CaricaBusteElaborato({ mese, anno, buste, onChanged }) {
                 <td className="max-w-48 break-words px-3 py-2">{row.originalName}{row.warnings?.map((warning, i) => <p key={i} className="mt-1 text-xs text-amber-800">{warning}</p>)}{bustePerDipendente.has(String(row.dipendenteId)) && <p className="mt-1 text-xs font-semibold text-red-700">Busta già caricata: eliminala prima.</p>}</td>
                 <td className="px-3 py-2 font-mono text-xs">{row.extractedCF || '—'}</td>
                 <td className="px-3 py-2"><select aria-label={`Dipendente per ${row.originalName}`} value={row.dipendenteId || ''} onChange={event => updateRow(index, 'dipendenteId', event.target.value)} className="w-full rounded border border-slate-300 bg-white p-2"><option value="">Seleziona dipendente</option>{dipendentiDisponibili.map(d => <option key={d.id} value={d.id}>{nomeDipendente(d)} ({d.codiceFiscale || 'CF assente'})</option>)}</select></td>
-                <td className="px-3 py-2"><input aria-label={`Netto per ${row.originalName}`} type="number" step="0.01" value={row.extractedNetto ?? ''} onChange={event => updateRow(index, 'extractedNetto', event.target.value)} className="w-28 rounded border border-slate-300 p-2" /></td>
+                <td className="px-3 py-2"><input aria-label={`Netto per ${row.originalName}`} type="number" step="0.01" value={row.extractedNetto ?? ''} onChange={event => updateRow(index, 'extractedNetto', event.target.value)} className="w-28 rounded border border-slate-300 p-2" />
+                  {nettoElaboratoPerId.has(String(row.dipendenteId)) && <p className="mt-1 text-xs text-slate-600">Elaborato: {nettoElaboratoPerId.get(String(row.dipendenteId)).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</p>}
+                  {differenzaNetto(row) !== 0 && <label className="mt-2 block text-xs font-semibold text-amber-900">Differenza: {(differenzaNetto(row) / 100).toLocaleString('it-IT', { style: 'currency', currency: 'EUR', signDisplay: 'always' })}<span className="mt-1 flex items-center gap-1"><input type="checkbox" checked={Boolean(row.confermaDifferenza)} onChange={event => updateRow(index, 'confermaDifferenza', event.target.checked)} />Confermo il netto diverso</span></label>}
+                </td>
                 <td className="px-3 py-2">{cfOk ? <span className="text-emerald-700">CF OK</span> : row.extractedCF && dipendente ? <label className="flex items-center gap-1"><input type="checkbox" checked={row.updateCF} onChange={event => updateRow(index, 'updateCF', event.target.checked)} />Aggiorna DB</label> : '—'}</td>
                 <td className="px-3 py-2"><button type="button" onClick={() => removeRow(index)} className="font-semibold text-red-700 hover:underline">Rimuovi</button></td>
               </tr>;
             })}</tbody>
           </table></div>
-          {!validi && <p className="text-sm text-amber-800">Assegna un dipendente diverso e un netto valido a ogni PDF. Le buste già presenti vanno eliminate prima del nuovo caricamento.</p>}
+          {!validi && <p className="text-sm text-amber-800">Assegna un dipendente diverso e un netto valido a ogni PDF. Conferma ogni differenza rispetto all’elaborato. Le buste già presenti vanno eliminate prima del nuovo caricamento.</p>}
           <div className="flex justify-end gap-3"><button type="button" disabled={busy} onClick={() => { setAnteprima(null); setFiles([]); setError(''); }} className="rounded-lg bg-slate-100 px-4 py-2 hover:bg-slate-200">Annulla anteprima</button><button type="button" disabled={busy || !validi} onClick={conferma} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{busy ? 'Salvataggio...' : 'Conferma e salva tutto'}</button></div>
         </div>}
         {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-800">{error}</p>}

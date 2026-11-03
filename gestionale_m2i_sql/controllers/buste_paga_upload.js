@@ -6,7 +6,7 @@ const crypto = require('node:crypto');
 const { knex } = require('../db');
 const { createPayrollStore } = require('../payroll_store');
 const { resolvePayrollAttachment } = require('../payroll_attachment');
-const { extractNet, matchEmployee } = require('../payroll_extraction');
+const { extractNet, extractNetFromLayout, matchEmployee } = require('../payroll_extraction');
 
 const dataDir = process.env.DATA_DIR || path.join(__dirname, '..');
 const store = createPayrollStore(knex, dataDir);
@@ -27,11 +27,13 @@ async function preview(req, res) {
       totalPages += count;
       if (!count || totalPages > 200) throw new Error('Caricare al massimo 200 pagine per lotto');
       const texts = Array(count).fill(null);
+      const layoutAmounts = Array(count).fill(null);
       try {
         // Uint8Array dedicato: i Buffer Node possono avere un byteOffset nel pool.
         await pdfParse(new Uint8Array(bytes), { version: 'v2.0.550', pagerender: async page => {
           const content = await page.getTextContent({ normalizeWhitespace: true });
-          const items = content.items.map(item => ({ text: item.str, x: item.transform[4], y: item.transform[5] }));
+          const items = content.items.map(item => ({ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width }));
+          layoutAmounts[page.pageNumber - 1] = extractNetFromLayout(items, page.view[2] - page.view[0], page.view[3] - page.view[1]);
           items.sort((a,b) => Math.abs(b.y-a.y) > 5 ? b.y-a.y : a.x-b.x);
           const text = items.map(item => item.text).join(' ');
           texts[page.pageNumber - 1] = text;
@@ -56,7 +58,8 @@ async function preview(req, res) {
         pages.forEach(page => output.addPage(page));
         const token = store.stage(await output.save(), req.authUser.id);
         staged.push(token);
-        const amounts = [...new Set(group.texts.map(extractNet).filter(value => value !== null))];
+        const amounts = [...new Set(group.pages.map(index => extractNet(texts[index]) ?? layoutAmounts[index])
+          .filter(value => value !== null))];
         const warnings = [];
         if (!group.match.employee) warnings.push('Associazione manuale richiesta: CF assente, sconosciuto o ambiguo.');
         if (amounts.length !== 1) warnings.push('Netto non riconosciuto o discordante: controllare il PDF.');
