@@ -375,6 +375,10 @@ export default function ReportContabilita() {
           </AdjustableCard>)}
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
+            <p className="text-sm font-semibold text-indigo-900">Totale costo personale incluse BP, CC e F24</p>
+            <p className="mt-2 text-3xl font-bold text-indigo-950">{report.costoTotale == null ? '—' : euro(report.costoTotale)}</p>
+          </div>
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
             <p className="text-sm font-semibold text-sky-900">Totale imponibili dei clienti del mese</p>
             <p className="mt-2 text-3xl font-bold text-sky-950">{euro(report.imponibileFatturazioneMese)}</p>
@@ -392,10 +396,6 @@ export default function ReportContabilita() {
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-5">
             <p className="text-sm font-semibold text-violet-900">Totale imponibili dei clienti fissi senza ore</p>
             <p className="mt-2 text-3xl font-bold text-violet-950">{euro(report.imponibileClientiFissiSenzaOre)}</p>
-          </div>
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
-            <p className="text-sm font-semibold text-indigo-900">Totale costo personale incluse BP, CC e F24</p>
-            <p className="mt-2 text-3xl font-bold text-indigo-950">{report.costoTotale == null ? '—' : euro(report.costoTotale)}</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
             <p className="text-sm font-semibold text-emerald-900">Totale rimanenze</p>
