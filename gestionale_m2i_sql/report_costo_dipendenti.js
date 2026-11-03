@@ -141,9 +141,13 @@ function createEmployeeCostReport(knex, workflow) {
         .select('g.id', 'g.imponibile_cent')
         .sum('e.imponibile_cent as servizi_cent')
       : [];
+    const imponibileExtraMeseCent = extraGroups.reduce((sum, group) =>
+      sum + Number(group.imponibile_cent ?? group.servizi_cent ?? 0), 0);
+    const imponibileClientiFissiSenzaOreCent = billingClientRows
+      .filter(row => Number(row.oreLavorate || 0) === 0)
+      .reduce((sum, row) => sum + Math.round(Number(row.imponibile || 0) * 100), 0);
     const imponibileFatturazioneMeseCent = billingClientRows.reduce((sum, row) =>
-      sum + Math.round(Number(row.imponibile || 0) * 100), 0) +
-      extraGroups.reduce((sum, group) => sum + Number(group.imponibile_cent ?? group.servizi_cent ?? 0), 0);
+      sum + Math.round(Number(row.imponibile || 0) * 100), 0) + imponibileExtraMeseCent;
     const baseImponibileClientiCent = billingClientRows.filter(row => Number(row.oreLavorate || 0) > 0).reduce((sum, row) =>
       sum + Math.round(Number(row.imponibile || 0) * 100), 0);
     const clientAdjustmentMap = new Map(clientAdjustments.map(row => [`${row.cliente_id}:${row.voce}`, row]));
@@ -310,6 +314,8 @@ function createEmployeeCostReport(knex, workflow) {
       imponibileDettaglio: imponibileDettaglioCent / 100,
       imponibileFatturazioneMese: imponibileFatturazioneMeseCent / 100,
       imponibileClientiFissiConOre: imponibileClientiFissiConOreCent / 100,
+      imponibileExtraMese: imponibileExtraMeseCent / 100,
+      imponibileClientiFissiSenzaOre: imponibileClientiFissiSenzaOreCent / 100,
       rimanenzaTotale: rimanenzaTotaleCent == null ? null : rimanenzaTotaleCent / 100,
       clientiDettaglio,
       f24c: f24cCent == null ? null : Number(f24cCent) / 100,

@@ -385,6 +385,14 @@ export default function ReportContabilita() {
             employeeAdjustments={report.rettificheDipendenti || []}
             pairedAdjustments={report.rettificheOreAbbinate || []}
             onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+            <p className="text-sm font-semibold text-amber-900">Totale imponibili degli extra</p>
+            <p className="mt-2 text-3xl font-bold text-amber-950">{euro(report.imponibileExtraMese)}</p>
+          </div>
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-5">
+            <p className="text-sm font-semibold text-violet-900">Totale imponibili dei clienti fissi senza ore</p>
+            <p className="mt-2 text-3xl font-bold text-violet-950">{euro(report.imponibileClientiFissiSenzaOre)}</p>
+          </div>
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
             <p className="text-sm font-semibold text-indigo-900">Totale costo personale incluse BP, CC e F24</p>
             <p className="mt-2 text-3xl font-bold text-indigo-950">{report.costoTotale == null ? '—' : euro(report.costoTotale)}</p>

@@ -67,6 +67,8 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withoutF24.imponibileDettaglio, 3920);
   assert.equal(withoutF24.imponibileFatturazioneMese, 14369);
   assert.equal(withoutF24.imponibileClientiFissiConOre, 3920);
+  assert.equal(withoutF24.imponibileExtraMese, 450);
+  assert.equal(withoutF24.imponibileClientiFissiSenzaOre, 9999);
   assert.equal(withoutF24.rimanenzaTotale, null);
   assert.equal(withoutF24.dipendentiDettaglio[0].stipendio, 1300);
   assert.equal(withoutF24.dipendentiDettaglio[0].costoOrario, null);
@@ -105,6 +107,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(afterInvoiceAdjustment.imponibileDettaglio, 4020);
   assert.equal(afterInvoiceAdjustment.imponibileFatturazioneMese, 14469);
   assert.equal(afterInvoiceAdjustment.imponibileClientiFissiConOre, 4020);
+  assert.equal(afterInvoiceAdjustment.imponibileClientiFissiSenzaOre, 9999);
   assert.equal(afterInvoiceAdjustment.clientiEsclusiZeroOre, 1);
   invoiceAdjustedClients = null;
   const withF24c = await report.saveF24c({ mese: 9, anno: 2026, importo: '400,00' });
