@@ -81,7 +81,7 @@ function createEmployeeCostReport(knex, workflow) {
     const [rows, monthlyRows, clientRows, payrollRows, f24, adjustments, clientAdjustments, f24c, hoursByClient, employeeAdjustments, pairedHours] = await Promise.all([
       workflow.accountingRows('dipendente', period.mese, period.anno),
       workflow.monthlyEmployeeRows(period.mese, period.anno),
-      workflow.lockedRows('cliente', period.mese, period.anno),
+      workflow.accountingRows('cliente', period.mese, period.anno),
       knex('buste_paga as b').join('dipendenti as d', 'b.dipendente_id', 'd.id')
         .select('b.dipendente_id', 'b.importo_netto')
         .where({ 'b.mese': String(period.mese), 'b.anno': String(period.anno) }),
@@ -131,10 +131,11 @@ function createEmployeeCostReport(knex, workflow) {
     const illnessCostCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.illnessCostCent, 0);
     const employeeHoursDeltaCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.reportHoursCent - row.baseHoursCent, 0);
     const employeeNetDeltaCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.reportNetCent - row.baseNetCent, 0);
-    const baseImponibileClientiCent = clientRows.filter(row => Number(row.oreLavorate || 0) > 0).reduce((sum, row) =>
+    const billingClientRows = clientRows.filter(row => !row.rigaExtra);
+    const baseImponibileClientiCent = billingClientRows.filter(row => Number(row.oreLavorate || 0) > 0).reduce((sum, row) =>
       sum + Math.round(Number(row.imponibile || 0) * 100), 0);
     const clientAdjustmentMap = new Map(clientAdjustments.map(row => [`${row.cliente_id}:${row.voce}`, row]));
-    const adjustedClientRows = clientRows.map(row => {
+    const adjustedClientRows = billingClientRows.map(row => {
       const id = String(row.idCliente);
       const baseOreCent = Math.round(Number(row.oreLavorate || 0) * 100);
       const baseImponibileCent = Math.round(Number(row.imponibile || 0) * 100);
@@ -262,7 +263,7 @@ function createEmployeeCostReport(knex, workflow) {
       costoOrario: costoOrarioCent == null ? null : costoOrarioCent / 100,
       imponibileClienti: imponibileClientiCent / 100,
       clientiConOre: clientiConOre.length,
-      clientiEsclusiZeroOre: clientRows.length - clientiConOre.length,
+      clientiEsclusiZeroOre: billingClientRows.length - clientiConOre.length,
       rettificheClienti: clientAdjustments.filter(item => adjustedClientsById.has(String(item.cliente_id))).map(item => {
         const client = adjustedClientsById.get(String(item.cliente_id));
         const baseCent = item.voce === 'ore' ? client?.baseOreCent : client?.baseImponibileCent;

@@ -39,13 +39,14 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     { idCliente: 'C2', ragioneSociale: 'Cliente Rosso', oreLavorate: 50, imponibile: 920 },
     { idCliente: 'C3', ragioneSociale: 'Cliente Zero', oreLavorate: 0, imponibile: 9999 }
   ];
+  let invoiceAdjustedClients = null;
   const workflow = {
     period: (_, mese, anno) => {
       const m = Number(mese), y = Number(anno);
       if (!Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(y)) throw new Error('Periodo non valido.');
       return { mese: m, anno: y };
     },
-    accountingRows: async () => rows,
+    accountingRows: async tipo => tipo === 'cliente' ? (invoiceAdjustedClients || clientRows) : rows,
     monthlyEmployeeRows: async () => monthlyRows,
     lockedRows: async () => clientRows
   };
@@ -86,6 +87,13 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(saved.clientiDettaglio[1].rimanenza, 170);
   assert.equal(saved.imponibileDettaglio, 3920);
   assert.equal(saved.rimanenzaTotale, 1370);
+  invoiceAdjustedClients = clientRows.map(row => row.idCliente === 'C1'
+    ? { ...row, imponibile: 3100 } : row);
+  invoiceAdjustedClients.push({ idCliente: 'C4', rigaExtra: true, oreLavorate: 0, imponibile: 500 });
+  const afterInvoiceAdjustment = await report.get(9, 2026);
+  assert.equal(afterInvoiceAdjustment.imponibileDettaglio, 4020);
+  assert.equal(afterInvoiceAdjustment.clientiEsclusiZeroOre, 1);
+  invoiceAdjustedClients = null;
   const withF24c = await report.saveF24c({ mese: 9, anno: 2026, importo: '400,00' });
   assert.equal(withF24c.f24c, 400);
   assert.deepEqual(withF24c.dipendentiDettaglio.map(row => [row.ore, row.stipendio, row.costoOrario, row.valoreClienti, row.resa]), [

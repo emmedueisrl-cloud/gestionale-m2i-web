@@ -404,6 +404,7 @@ export default function ReportContabilita() {
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
             <p className="text-sm font-semibold text-sky-900">Totale imponibili dei clienti in tabella</p>
             <p className="mt-2 text-3xl font-bold text-sky-950">{euro(report.imponibileDettaglio)}</p>
+            <p className="mt-2 text-xs text-sky-900">Importi aggiornati in Fatturazione per i clienti mostrati sotto. Servizi extra e clienti esclusi dal calcolo orario non sono inclusi.</p>
           </div>
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
             <p className="text-sm font-semibold text-indigo-900">Totale costo personale incluse BP, CC e F24</p>

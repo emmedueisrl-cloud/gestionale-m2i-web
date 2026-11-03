@@ -365,6 +365,7 @@ export default function ContabilitaElaborati({ tipo }) {
   };
   const visiblePayroll = buste.filter(busta => !searchTerm || `${busta.cognome || ''} ${busta.nome || ''}`.toLocaleLowerCase('it-IT').includes(searchTerm));
   const totaleGruppo = gruppo => gruppo.righe.reduce((sum, row) => sum + (Number(row.importoTotale) || 0), 0);
+  const imponibileGruppo = gruppo => gruppo.righe.reduce((sum, row) => sum + Math.round((Number(row.imponibile) || 0) * 100), 0) / 100;
   const riepilogoPaghe = buste.reduce((totali, busta) => {
     const gruppo = busta.pagato_ufficio_at ? totali.pagati : totali.daPagare;
     gruppo.count += 1;
@@ -399,6 +400,7 @@ export default function ContabilitaElaborati({ tipo }) {
         <button type="button" aria-pressed={sezioneAttiva === 1} onClick={() => selectSection(1)} className={`min-h-[100px] min-w-[176px] rounded-xl border border-emerald-300 bg-emerald-100 px-4 py-3 text-left transition-colors hover:bg-emerald-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 ${sezioneAttiva === 1 ? 'ring-2 ring-emerald-600 ring-offset-2' : ''}`}>
           <div className="text-[14px] font-bold uppercase text-emerald-900">{gruppi[1].etichetta}</div>
           <div className="text-[22px] font-bold text-slate-900">{euro(totaleGruppo(gruppi[1]))}</div>
+          <div className="text-[12px] font-semibold text-emerald-950">Imponibile: {euro(imponibileGruppo(gruppi[1]))}</div>
           <div className="text-[14px] font-semibold text-emerald-900">{gruppi[1].righe.length} {gruppi[1].contatore}</div>
         </button>
       </div></> : <div aria-label="Sezioni stipendi" className="flex min-w-0 flex-wrap justify-start gap-3">
