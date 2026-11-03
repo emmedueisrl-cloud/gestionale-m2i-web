@@ -112,6 +112,8 @@ export default function ReportContabilita() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingF24c, setSavingF24c] = useState(false);
+  const [accessoryOpen, setAccessoryOpen] = useState(false);
+  const [accessoryBusy, setAccessoryBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [sort, setSort] = useState({ key: 'cliente', direction: 'asc' });
@@ -147,6 +149,7 @@ export default function ReportContabilita() {
     setLoading(true); setReport(null); setError(''); setMessage('');
     setAdjustmentField(null);
     setEditingF24(false);
+    setAccessoryOpen(false);
     setClientCell(null);
     setEmployeeCell(null);
     setPairedCell(null);
@@ -183,6 +186,36 @@ export default function ReportContabilita() {
       setMessage('F24C salvato nel Report per il mese selezionato.');
     } catch (cause) { setError(cause.message); }
     finally { setSavingF24c(false); }
+  };
+
+  const uploadAccessoryXml = async event => {
+    const input = event.currentTarget;
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    setAccessoryBusy(true); setError(''); setMessage('');
+    try {
+      const form = new FormData();
+      files.forEach(file => form.append('files', file));
+      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/costi-accessori`, {
+        method: 'POST', body: form
+      });
+      setReport(data);
+      setMessage(`${files.length} ${files.length === 1 ? 'fattura XML caricata' : 'fatture XML caricate'} nei costi accessori.`);
+    } catch (cause) { setError(cause.message); }
+    finally { input.value = ''; setAccessoryBusy(false); }
+  };
+
+  const removeAccessoryInvoice = async invoice => {
+    if (!window.confirm(`Rimuovere la fattura ${invoice.number} di ${invoice.supplier} dai costi accessori?`)) return;
+    setAccessoryBusy(true); setError(''); setMessage('');
+    try {
+      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/costi-accessori/${invoice.id}`, {
+        method: 'DELETE'
+      });
+      setReport(data);
+      setMessage('Fattura rimossa dai costi accessori.');
+    } catch (cause) { setError(cause.message); }
+    finally { setAccessoryBusy(false); }
   };
 
   const openAdjustment = field => {
@@ -395,6 +428,11 @@ export default function ReportContabilita() {
           <SummaryCard label="Totale imponibili degli extra" value={euro(report.imponibileExtraMese)} />
           <SummaryCard label="Totale imponibili dei clienti fissi senza ore"
             value={euro(report.imponibileClientiFissiSenzaOre)} />
+          <div className="flex min-h-[132px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="min-h-[40px] text-sm font-semibold leading-5 text-slate-600">Costi accessori del mese</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{euro(report.costiAccessoriMese)}</p>
+            <button type="button" onClick={() => setAccessoryOpen(true)} className="mt-2 self-start text-sm font-semibold text-indigo-700 underline hover:text-indigo-900">Carica e gestisci XML</button>
+          </div>
         </div>
       </section>
 
@@ -631,6 +669,32 @@ export default function ReportContabilita() {
             {clientCellAdjustment && <button type="button" disabled={deletingAdjustmentId === `client:${clientCell.clienteId}:${clientCell.voce}`} onClick={() => deleteAdjustment(clientCellAdjustment)} className="rounded-lg bg-red-50 px-4 py-2 font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50">Elimina rettifica</button>}
           </div>
         </form>
+      </div>
+    </div>}
+    {report && accessoryOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div role="dialog" aria-modal="true" aria-labelledby="report-accessory-title" className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="report-accessory-title" className="text-xl font-bold">Costi accessori · {mesi[mese - 1]} {anno}</h2>
+          <button type="button" disabled={accessoryBusy} onClick={() => setAccessoryOpen(false)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold hover:bg-slate-200 disabled:opacity-50">Chiudi</button>
+        </div>
+        <p className="mt-2 text-sm text-slate-600">Il totale somma gli imponibili dei riepiloghi IVA delle fatture XML caricate in questo mese.</p>
+        <label className="mt-5 block text-sm font-semibold text-slate-700">Carica fatture XML
+          <input type="file" accept=".xml,application/xml,text/xml" multiple disabled={accessoryBusy} onChange={uploadAccessoryXml} className="mt-2 block w-full rounded-lg border border-slate-300 p-2 text-sm disabled:opacity-50" />
+        </label>
+        {accessoryBusy && <p role="status" className="mt-3 text-sm text-slate-600">Aggiornamento costi accessori...</p>}
+        {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+        <div className="mt-5 border-t border-slate-200 pt-4">
+          <p className="font-semibold">Totale: {euro(report.costiAccessoriMese)}</p>
+          {!(report.fattureCostiAccessori || []).length && <p className="mt-3 text-sm text-slate-600">Nessuna fattura XML caricata per questo mese.</p>}
+          <ul className="mt-3 space-y-2">
+            {(report.fattureCostiAccessori || []).map(invoice => <li key={invoice.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+              <div><p className="font-semibold">{invoice.supplier} · {invoice.number}</p><p className="text-slate-600">{invoice.date} · {invoice.file}</p></div>
+              <div className="flex items-center gap-3"><span className="font-semibold tabular-nums">{euro(invoice.taxable)}</span>
+                <button type="button" disabled={accessoryBusy} onClick={() => removeAccessoryInvoice(invoice)} className="font-semibold text-red-700 underline hover:text-red-900 disabled:opacity-50">Rimuovi</button>
+              </div>
+            </li>)}
+          </ul>
+        </div>
       </div>
     </div>}
     {report && editingF24 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

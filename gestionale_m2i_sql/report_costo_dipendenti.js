@@ -2,9 +2,11 @@ const adjustmentFields = new Set(['totaleNetti', 'totaleCc', 'f24', 'oreTotali',
 const clientAdjustmentFields = new Set(['ore', 'imponibile']);
 const employeeAdjustmentFields = new Set(['ore', 'netto']);
 const { randomUUID } = require('node:crypto');
+const { createReportAccessoryCosts } = require('./report_costi_accessori');
 const workCauses = new Set(['ordinario', 'straordinario', 'extra']);
 
 function createEmployeeCostReport(knex, workflow) {
+  const accessoryCosts = createReportAccessoryCosts(knex);
   async function initialize() {
     if (!await knex.schema.hasTable('report_f24_dipendenti')) {
       await knex.schema.createTable('report_f24_dipendenti', table => {
@@ -74,11 +76,12 @@ function createEmployeeCostReport(knex, workflow) {
         table.index(['mese', 'anno', 'gruppo_id']);
       });
     }
+    await accessoryCosts.initialize();
   }
 
   async function get(mese, anno) {
     const period = workflow.period('dipendente', mese, anno);
-    const [rows, monthlyRows, clientRows, payrollRows, f24, adjustments, clientAdjustments, f24c, hoursByClient, employeeAdjustments, pairedHours] = await Promise.all([
+    const [rows, monthlyRows, clientRows, payrollRows, f24, adjustments, clientAdjustments, f24c, hoursByClient, employeeAdjustments, pairedHours, accessory] = await Promise.all([
       workflow.accountingRows('dipendente', period.mese, period.anno),
       workflow.monthlyEmployeeRows(period.mese, period.anno),
       workflow.accountingRows('cliente', period.mese, period.anno),
@@ -93,7 +96,8 @@ function createEmployeeCostReport(knex, workflow) {
       knex('registro_ore').select('dipendente_id', 'cliente_id', 'ore_totali', 'causale_assenza')
         .where({ mese: period.mese, anno: period.anno }),
       knex('report_rettifiche_dipendenti').where({ mese: period.mese, anno: period.anno }),
-      knex('report_ore_abbinate').where({ mese: period.mese, anno: period.anno }).orderBy('id')
+      knex('report_ore_abbinate').where({ mese: period.mese, anno: period.anno }).orderBy('id'),
+      accessoryCosts.list(period.mese, period.anno)
     ]);
     const baseNettiCent = payrollRows.reduce((sum, row) => sum + Math.round(Number(row.importo_netto) * 100), 0);
     const baseCcCent = rows.reduce((sum, row) => sum + Math.round(Number(row.cc || 0) * 100), 0);
@@ -342,6 +346,8 @@ function createEmployeeCostReport(knex, workflow) {
       imponibileFatturazioneMese: imponibileFatturazioneMeseCent / 100,
       imponibileClientiFissiConOre: imponibileClientiFissiConOreCent / 100,
       imponibileExtraMese: imponibileExtraMeseCent / 100,
+      costiAccessoriMese: accessory.total,
+      fattureCostiAccessori: accessory.invoices,
       oreExtraElaborato: oreExtraCent / 100,
       compensoFissoExtra: compensoFissoExtraCent / 100,
       costoPersonaleExtra: costoPersonaleExtraCent == null ? null : costoPersonaleExtraCent / 100,
@@ -561,7 +567,19 @@ function createEmployeeCostReport(knex, workflow) {
     return get(period.mese, period.anno);
   }
 
-  return { initialize, get, saveF24, saveF24c, addAdjustment, deleteAdjustment,
+  async function importAccessoryXml({ mese, anno, files }) {
+    const period = workflow.period('dipendente', mese, anno);
+    await accessoryCosts.importXml(period.mese, period.anno, files);
+    return get(period.mese, period.anno);
+  }
+
+  async function removeAccessoryInvoice({ mese, anno, id }) {
+    const period = workflow.period('dipendente', mese, anno);
+    await accessoryCosts.remove(period.mese, period.anno, id);
+    return get(period.mese, period.anno);
+  }
+
+  return { initialize, get, importAccessoryXml, removeAccessoryInvoice, saveF24, saveF24c, addAdjustment, deleteAdjustment,
     saveClientAdjustment, deleteClientAdjustment, saveEmployeeAdjustment, deleteEmployeeAdjustment,
     savePairedHours, deletePairedHours, updatePairedHoursNote };
 }
