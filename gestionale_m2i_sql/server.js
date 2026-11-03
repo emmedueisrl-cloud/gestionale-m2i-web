@@ -415,7 +415,7 @@ app.get(`/api/contabilita/${tipo}/${anno}/${mese}/mancanti`, handleWorkflow(req 
 app.get('/api/contabilita/report/costo-dipendenti/:anno/:mese', handleWorkflow(req =>
   employeeCostReport.get(req.params.mese, req.params.anno)));
 const accessoryXmlUpload = multer({ storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024, files: 50 } });
+  limits: { fileSize: 20 * 1024 * 1024, files: 50 } });
 app.post('/api/contabilita/report/costo-dipendenti/:anno/:mese/costi-accessori',
   accessoryXmlUpload.array('files', 50), handleWorkflow(req =>
     employeeCostReport.importAccessoryXml({ mese: req.params.mese, anno: req.params.anno, files: req.files })));

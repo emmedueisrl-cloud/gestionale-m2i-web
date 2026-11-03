@@ -1,4 +1,5 @@
 const { createHash } = require('node:crypto');
+const JSZip = require('jszip');
 const xml2js = require('xml2js');
 
 const asArray = value => value == null ? [] : Array.isArray(value) ? value : [value];
@@ -7,6 +8,29 @@ const cents = value => {
   if (!/^-?\d+(?:\.\d{1,2})?$/.test(raw)) throw new Error('Imponibile XML non valido.');
   return Math.round(Number(raw) * 100);
 };
+
+async function expandUploads(files) {
+  const expanded = [];
+  for (const file of files) {
+    if (/\.xml$/i.test(file.originalname || '')) {
+      expanded.push(file);
+    } else if (/\.zip$/i.test(file.originalname || '')) {
+      const archive = await JSZip.loadAsync(file.buffer, { checkCRC32: true })
+        .catch(() => { throw new Error(`ZIP non leggibile: ${file.originalname}.`); });
+      const entries = Object.values(archive.files).filter(entry => !entry.dir && /\.xml$/i.test(entry.name));
+      if (!entries.length) throw new Error(`Lo ZIP ${file.originalname} non contiene fatture XML.`);
+      if (expanded.length + entries.length > 100) throw new Error('Carica al massimo 100 fatture XML per volta.');
+      for (const entry of entries) {
+        if (entry._data?.uncompressedSize > 10 * 1024 * 1024) throw new Error('Un XML nello ZIP supera 10 MB.');
+        const buffer = await entry.async('nodebuffer');
+        if (buffer.length > 10 * 1024 * 1024) throw new Error('Un XML nello ZIP supera 10 MB.');
+        expanded.push({ originalname: entry.name.split('/').pop(), buffer });
+      }
+    } else throw new Error('Carica solo file XML o ZIP di fatture XML.');
+  }
+  if (expanded.length > 100) throw new Error('Carica al massimo 100 fatture XML per volta.');
+  return expanded;
+}
 
 async function parseAccessoryInvoice(file) {
   if (!file?.buffer || !/\.xml$/i.test(file.originalname || '')) throw new Error('Carica solo fatture in formato XML.');
@@ -79,7 +103,7 @@ function createReportAccessoryCosts(knex) {
 
   async function importXml(mese, anno, files) {
     if (!Array.isArray(files) || !files.length) throw new Error('Seleziona almeno una fattura XML.');
-    const documents = await Promise.all(files.map(parseAccessoryInvoice));
+    const documents = await Promise.all((await expandUploads(files)).map(parseAccessoryInvoice));
     if (new Set(documents.map(item => item.documentKey)).size !== documents.length) {
       throw new Error('Hai selezionato due volte la stessa fattura.');
     }

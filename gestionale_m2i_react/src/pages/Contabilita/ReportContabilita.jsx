@@ -199,8 +199,9 @@ export default function ReportContabilita() {
       const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/costi-accessori`, {
         method: 'POST', body: form
       });
+      const imported = (data.fattureCostiAccessori || []).length - (report.fattureCostiAccessori || []).length;
       setReport(data);
-      setMessage(`${files.length} ${files.length === 1 ? 'fattura XML caricata' : 'fatture XML caricate'} nei costi accessori.`);
+      setMessage(`${imported} ${imported === 1 ? 'fattura XML caricata' : 'fatture XML caricate'} nei costi accessori.`);
     } catch (cause) { setError(cause.message); }
     finally { input.value = ''; setAccessoryBusy(false); }
   };
@@ -431,7 +432,7 @@ export default function ReportContabilita() {
           <div className="flex min-h-[132px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="min-h-[40px] text-sm font-semibold leading-5 text-slate-600">Costi accessori del mese</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{euro(report.costiAccessoriMese)}</p>
-            <button type="button" onClick={() => setAccessoryOpen(true)} className="mt-2 self-start text-sm font-semibold text-indigo-700 underline hover:text-indigo-900">Carica e gestisci XML</button>
+            <button type="button" onClick={() => setAccessoryOpen(true)} className="mt-2 self-start text-sm font-semibold text-indigo-700 underline hover:text-indigo-900">Carica XML o ZIP</button>
           </div>
         </div>
       </section>
@@ -677,9 +678,9 @@ export default function ReportContabilita() {
           <h2 id="report-accessory-title" className="text-xl font-bold">Costi accessori · {mesi[mese - 1]} {anno}</h2>
           <button type="button" disabled={accessoryBusy} onClick={() => setAccessoryOpen(false)} className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold hover:bg-slate-200 disabled:opacity-50">Chiudi</button>
         </div>
-        <p className="mt-2 text-sm text-slate-600">Il totale somma gli imponibili dei riepiloghi IVA delle fatture XML caricate in questo mese.</p>
-        <label className="mt-5 block text-sm font-semibold text-slate-700">Carica fatture XML
-          <input type="file" accept=".xml,application/xml,text/xml" multiple disabled={accessoryBusy} onChange={uploadAccessoryXml} className="mt-2 block w-full rounded-lg border border-slate-300 p-2 text-sm disabled:opacity-50" />
+        <p className="mt-2 text-sm text-slate-600">Il totale somma gli imponibili dei riepiloghi IVA delle fatture XML caricate in questo mese. Puoi scegliere più XML o uno ZIP che li contiene.</p>
+        <label className="mt-5 block text-sm font-semibold text-slate-700">Carica fatture XML o ZIP
+          <input type="file" accept=".xml,.zip,application/xml,text/xml,application/zip" multiple disabled={accessoryBusy} onChange={uploadAccessoryXml} className="mt-2 block w-full rounded-lg border border-slate-300 p-2 text-sm disabled:opacity-50" />
         </label>
         {accessoryBusy && <p role="status" className="mt-3 text-sm text-slate-600">Aggiornamento costi accessori...</p>}
         {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}

@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const knex = require('knex');
+const JSZip = require('jszip');
 const { createReportAccessoryCosts } = require('../report_costi_accessori');
 
 const invoice = (number, type, summaries) => ({
@@ -33,4 +34,9 @@ test('costi accessori: somma gli imponibili XML nel mese scelto, evita doppi e c
   assert.equal((await costs.list(10, 2026)).invoices.length, 2);
   await costs.remove(10, 2026, list.invoices[1].id);
   assert.equal((await costs.list(10, 2026)).total, 150.25);
+  const zip = new JSZip();
+  zip.file('XML/103.xml', invoice('103', 'TD01', ['10.00']).buffer);
+  zip.file('XML/104.xml', invoice('104', 'TD01', ['20.00']).buffer);
+  await costs.importXml(10, 2026, [{ originalname: 'fatture.zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) }]);
+  assert.equal((await costs.list(10, 2026)).total, 180.25);
 });
