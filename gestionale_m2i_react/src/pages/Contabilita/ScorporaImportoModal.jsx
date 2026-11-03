@@ -21,8 +21,8 @@ export default function ScorporaImportoModal({ row, onClose, onSave }) {
 
   const save = async event => {
     event.preventDefault();
-    if (righe.some(line => !line.descrizione.trim() || !/^\d{1,9}(?:[.,]\d{1,2})?$/.test(line.imponibile.trim()) || centesimi(line.imponibile) <= 0) || residuo <= 0) {
-      setError('Inserisci descrizione e imponibile positivo per ogni riga. La riga principale deve conservare un importo positivo.');
+    if (righe.some(line => !line.descrizione.trim() || !/^\d{1,9}(?:[.,]\d{1,2})?$/.test(line.imponibile.trim()) || centesimi(line.imponibile) <= 0) || residuo < 0) {
+      setError('Inserisci descrizione e imponibile positivo per ogni riga. La somma non può superare l’imponibile della fattura.');
       return;
     }
     setBusy(true); setError('');
@@ -34,7 +34,7 @@ export default function ScorporaImportoModal({ row, onClose, onSave }) {
   return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" role="presentation">
     <form onSubmit={save} role="dialog" aria-modal="true" aria-label={`Scorpora importo di ${row.ragioneSociale}`} className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 text-slate-900 shadow-2xl space-y-4">
       <div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">Scorpora importo</h2><p className="text-sm text-slate-600">{row.ragioneSociale} · imponibile fattura {euro(totale)}</p></div><button type="button" onClick={onClose} disabled={busy} className="rounded border border-slate-300 px-3 py-1">Chiudi</button></div>
-      <p className="rounded-lg bg-slate-100 p-3 text-sm">Riga principale: <strong>{row.descrizioneFattura}</strong> · imponibile residuo <strong className={residuo > 0 ? 'text-emerald-800' : 'text-red-800'}>{euro(residuo)}</strong></p>
+      <p className="rounded-lg bg-slate-100 p-3 text-sm">Riga principale: <strong>{row.descrizioneFattura}</strong> · imponibile residuo <strong className={residuo >= 0 ? 'text-emerald-800' : 'text-red-800'}>{euro(residuo)}</strong>{residuo === 0 && <span className="block text-slate-600">Con residuo zero, questa riga non comparirà nell’XML.</span>}</p>
       <p className="text-sm text-slate-600">Le righe cambiano solo l’XML della fattura. Il totale dell’elaborato mensile resta invariato.</p>
       {righe.map((line, index) => <div key={index} className="grid gap-2 rounded-lg border border-slate-300 p-3 sm:grid-cols-[1fr_150px_auto]">
         <label className="text-sm">Descrizione riga<input required maxLength="1000" value={line.descrizione} onChange={e => update(index, 'descrizione', e.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2" /></label>

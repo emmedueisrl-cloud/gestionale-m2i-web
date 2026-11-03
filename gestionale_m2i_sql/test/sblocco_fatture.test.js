@@ -77,9 +77,13 @@ test('scorpora l’imponibile di una riga blindata senza toccare le altre fattur
   assert.equal(result.residuo, 70);
   const row = (await workflow.accountingRows('cliente', 4, 2026)).find(item => item.idCliente === 'C_PENDING');
   assert.deepEqual(row.scorporiFattura, [{ descrizione: 'Seconda dicitura', imponibile: 30 }]);
+  const complete = await workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
+    righe: [{ descrizione: 'Prima dicitura', imponibile: '60' }, { descrizione: 'Seconda dicitura', imponibile: '40' }] });
+  assert.equal(complete.residuo, 0);
   await assert.rejects(() => workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING',
-    righe: [{ descrizione: 'Troppo', imponibile: '100' }] }), /riga principale/);
-  assert.equal((await knex('scorpori_fatture_mensili').where({ cliente_id: 'C_PENDING', mese: 4, anno: 2026 })).length, 1);
+    righe: [{ descrizione: 'Troppo', imponibile: '100,01' }] }), /non può superare/);
+  await assert.rejects(() => workflow.saveInvoiceAdjustment({ mese: 4, anno: 2026, clienteId: 'C_PENDING', importo: '-1' }), /righe scorporate/);
+  assert.equal((await knex('scorpori_fatture_mensili').where({ cliente_id: 'C_PENDING', mese: 4, anno: 2026 })).length, 2);
   await knex('fatture_inviate_elaborati').insert({ cliente_id: 'C_PENDING', mese: 4, anno: 2026,
     inviata_at: new Date().toISOString() });
   await assert.rejects(() => workflow.saveInvoiceSplit({ mese: 4, anno: 2026, clienteId: 'C_PENDING', righe: [] }), /già inviata/);

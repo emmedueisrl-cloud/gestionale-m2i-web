@@ -540,8 +540,8 @@ async function saveInvoiceSplit({ mese, anno, clienteId, righe }) {
     const adjustment = await trx('rettifiche_fatturazione_mensili').where(key).first();
     const totalCent = adjustment?.imponibile_cent ?? Math.round(Number(row.imponibile) * 100);
     const splitCent = parsed.reduce((sum, line) => sum + line.imponibile_cent, 0);
-    if (!Number.isSafeInteger(totalCent) || totalCent <= 0 || splitCent >= totalCent) {
-      throw new Error('La somma delle righe scorporate deve lasciare un imponibile positivo alla riga principale.');
+    if (!Number.isSafeInteger(totalCent) || totalCent <= 0 || splitCent > totalCent) {
+      throw new Error('La somma delle righe scorporate non può superare l’imponibile della fattura.');
     }
     await trx('scorpori_fatture_mensili').where(key).del();
     if (parsed.length) await trx('scorpori_fatture_mensili').insert(parsed.map(line => ({ ...key, ...line })));
@@ -582,8 +582,8 @@ async function saveInvoiceAdjustment({ mese, anno, clienteId, importo, userId })
       throw new Error('La rettifica deve lasciare un imponibile positivo.');
     }
     const splitTotal = await trx('scorpori_fatture_mensili').where(key).sum('imponibile_cent as totale').first();
-    if (Number(splitTotal?.totale || 0) >= imponibileCent) {
-      throw new Error('La rettifica deve lasciare un imponibile positivo alla riga principale della fattura.');
+    if (Number(splitTotal?.totale || 0) > imponibileCent) {
+      throw new Error('La rettifica non può ridurre l’imponibile sotto la somma delle righe scorporate.');
     }
     if (!deltaCent) {
       await trx('rettifiche_fatturazione_mensili').where(key).del();
