@@ -153,8 +153,10 @@ test('incassi mostra solo le fatture elaborate, anche senza importazione general
   assert.equal(result.fatture[0].dataFattura, '2026-09-29');
   assert.equal(result.fatture[1].dataFattura, '2026-10-01');
   assert.equal(result.riepilogo.daIncassare, 1086);
+  assert.equal(result.riepilogo.insoluto, todayInItaly() > '2026-11-30' ? 1086 : 936);
   assert.equal(result.fatture[0].gestibile, true);
   assert.equal(result.fatture[1].registrata, false);
+  assert.equal(result.fatture[1].scadenza, '2026-11-30');
   assert.equal(result.fatture[1].gestibile, true);
   const registrationId = result.fatture[0].id;
   const paymentDate = todayInItaly();
@@ -200,6 +202,7 @@ test('incassi mostra solo le fatture elaborate, anche senza importazione general
   let sentRow = (await service.list()).fatture.find(row => row.clienteId === 'SENT');
   assert.equal(sentRow.incassato, 50);
   assert.equal(sentRow.residuo, 100);
+  assert.equal((await service.list()).riepilogo.daIncassare, 1036);
   assert.equal(sentRow.storico.length, 1);
   await service.cancel({ receiptId: firstSentPayment.id, reason: 'Pagamento errato' });
   const secondSentPayment = await service.register({ fatturaId: sentId, data: paymentDate,
