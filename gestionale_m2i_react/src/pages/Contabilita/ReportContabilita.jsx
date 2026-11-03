@@ -397,19 +397,6 @@ export default function ReportContabilita() {
               </div>}
           </AdjustableCard>)}
         </div>
-        <AdjustableCard field="imponibileClienti" label={adjustmentLabels.imponibileClienti}
-          value={euro(report.imponibileClienti)} adjustments={report.rettifiche || []}
-          clientAdjustments={report.rettificheClienti || []}
-          employeeAdjustments={report.rettificheDipendenti || []}
-          pairedAdjustments={report.rettificheOreAbbinate || []}
-          onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
-      </section>
-
-      <section aria-label="Redditività per cliente" className="space-y-4 border-t border-slate-200 pt-6">
-        <div>
-          <h2 className="text-xl font-bold">Clienti con almeno un’ora lavorata o rettificati</h2>
-          <p className="mt-1 text-sm text-slate-600">La rimanenza è l’imponibile meno il costo orario dipendente moltiplicato per le ore del cliente. Il guadagno percentuale è la rimanenza divisa per l’imponibile. Le righe passano dal rosso all’arancione e poi al verde quando questa percentuale cresce.</p>
-        </div>
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
             <p className="text-sm font-semibold text-sky-900">Totale imponibili dei clienti in tabella</p>
@@ -425,6 +412,16 @@ export default function ReportContabilita() {
             <p className="mt-2 text-3xl font-bold text-emerald-950">{report.rimanenzaTotale == null ? '—' : euro(report.rimanenzaTotale)}</p>
           </div>
         </div>
+        <AdjustableCard field="imponibileClienti" label={adjustmentLabels.imponibileClienti}
+          value={euro(report.imponibileClienti)} adjustments={report.rettifiche || []}
+          clientAdjustments={report.rettificheClienti || []}
+          employeeAdjustments={report.rettificheDipendenti || []}
+          pairedAdjustments={report.rettificheOreAbbinate || []}
+          onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
+      </section>
+
+      <section aria-label="Redditività per cliente" className="space-y-4 border-t border-slate-200 pt-6">
+        <h2 className="text-xl font-bold">Dettaglio clienti</h2>
         <div className="overflow-x-auto rounded-xl border border-slate-300 shadow-sm">
           <table className="w-full min-w-[1350px] table-fixed border-collapse text-left text-sm">
             <colgroup>{[13, 8, 11, 11, 10, 12, 13, 11, 11].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}</colgroup>
