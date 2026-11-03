@@ -6,7 +6,7 @@ const { createEmployeeCostReport } = require('../report_costo_dipendenti');
 test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', async t => {
   const db = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
   t.after(() => db.destroy());
-  await db.schema.createTable('dipendenti', table => { table.text('id').primary(); });
+  await db.schema.createTable('dipendenti', table => { table.text('id').primary(); table.text('divisione'); });
   await db.schema.createTable('buste_paga', table => {
     table.text('id').primary(); table.text('dipendente_id'); table.text('mese'); table.text('anno');
     table.decimal('importo_netto', 14, 2);
@@ -34,7 +34,8 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     { servizio_id: 'E1', dipendente_id: 'D2', modalita: 'solo_nota', compenso_cent: 5000,
       giornate_json: JSON.stringify([{ data: '2026-09-10', ore: 3 }]) }
   ]);
-  await db('dipendenti').insert([{ id: 'D1' }, { id: 'D2' }, { id: 'D3' }]);
+  await db('dipendenti').insert([{ id: 'D1', divisione: 'Esterno' },
+    { id: 'D2', divisione: 'Esterno' }, { id: 'D3', divisione: 'Interno' }]);
   await db('buste_paga').insert([
     { id: 'B1', dipendente_id: 'D1', mese: '9', anno: '2026', importo_netto: 1200 },
     { id: 'B2', dipendente_id: 'D2', mese: '9', anno: '2026', importo_netto: 800 }
@@ -275,13 +276,13 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withExtraClients.rimanenzaTotale, 1270);
   await db('buste_paga').insert({ id: 'B3', dipendente_id: 'D3', mese: '9', anno: '2026', importo_netto: 1157 });
   const withUnmatchedPayroll = await report.get(9, 2026);
-  assert.equal(withUnmatchedPayroll.totaleNetti, 3157);
-  assert.equal(withUnmatchedPayroll.costoOrario, 20.79);
+  assert.equal(withUnmatchedPayroll.totaleNetti, 2000);
+  assert.equal(withUnmatchedPayroll.costoOrario, 15);
   monthlyRows = rows.map(row => ({ ...row, oreLavorate: row.oreLavorate + 10 }));
   const withMonthlyHours = await report.get(9, 2026);
   assert.equal(withMonthlyHours.oreTotali, 220);
   assert.equal(withMonthlyHours.totaleCc, 150);
-  assert.equal(withMonthlyHours.costoOrario, 18.9);
+  assert.equal(withMonthlyHours.costoOrario, 13.64);
   assert.equal(withMonthlyHours.tariffaMediaClienti, 18.95);
   monthlyRows = rows;
   assert.equal((await report.get(9, 2026)).f24, 850);
@@ -315,7 +316,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
 test('il Report ripartisce il costo della malattia in F24C senza duplicarlo', async t => {
   const db = knex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true });
   t.after(() => db.destroy());
-  await db.schema.createTable('dipendenti', table => { table.text('id').primary(); });
+  await db.schema.createTable('dipendenti', table => { table.text('id').primary(); table.text('divisione'); });
   await db.schema.createTable('buste_paga', table => {
     table.text('id').primary(); table.text('dipendente_id'); table.text('mese'); table.text('anno');
     table.decimal('importo_netto', 14, 2);

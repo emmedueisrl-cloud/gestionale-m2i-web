@@ -84,7 +84,8 @@ function createEmployeeCostReport(knex, workflow) {
       workflow.accountingRows('cliente', period.mese, period.anno),
       knex('buste_paga as b').join('dipendenti as d', 'b.dipendente_id', 'd.id')
         .select('b.dipendente_id', 'b.importo_netto')
-        .where({ 'b.mese': String(period.mese), 'b.anno': String(period.anno) }),
+        .where({ 'b.mese': String(period.mese), 'b.anno': String(period.anno) })
+        .whereRaw("LOWER(TRIM(COALESCE(d.divisione, 'Esterno'))) <> 'interno'"),
       knex('report_f24_dipendenti').where({ mese: period.mese, anno: period.anno }).first(),
       knex('report_rettifiche').where({ mese: period.mese, anno: period.anno }).orderBy('id'),
       knex('report_rettifiche_clienti').where({ mese: period.mese, anno: period.anno }),
