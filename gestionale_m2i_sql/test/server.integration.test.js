@@ -112,6 +112,11 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const cookie = login.headers.get('set-cookie')?.split(';')[0];
     assert.ok(cookie);
     assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200);
+    const separateXmlUrl = `${base}/api/contabilita/fatture/export-aruba/xml-singoli`;
+    assert.equal((await fetch(separateXmlUrl, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+    assert.equal((await fetch(separateXmlUrl, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: '{}' })).status, 400);
     const consultantNoteUrl = `${base}/api/contabilita/dipendenti/2026/4/D0001/nota-consulente`;
     assert.equal((await fetch(consultantNoteUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ testo: 'Verificare la busta' }) })).status, 401);
     const savedConsultantNote = await fetch(consultantNoteUrl, {

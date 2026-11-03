@@ -453,6 +453,16 @@ app.post('/api/contabilita/fatture/export-aruba/anteprima', handleWorkflow(async
   return { count: result.invoices.length, errors: result.errors, issuerAddress: result.issuerAddress,
     invoices: result.invoices.map(({ key, client, number }) => ({ key, client, number })) };
 }));
+app.post('/api/contabilita/fatture/export-aruba/xml-singoli', async (req, res) => {
+  try {
+    const result = await arubaExport.prepare(req.body || {});
+    res.setHeader('Cache-Control', 'no-store');
+    if (result.errors.length) return res.status(422).json({
+      error: 'Correggi le fatture segnalate prima di scaricare gli XML.', errors: result.errors
+    });
+    res.json({ files: result.invoices.map(({ filename, xml, number, client }) => ({ filename, xml, number, client })) });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
 app.post('/api/contabilita/fatture/export-aruba/scarica', async (req, res) => {
   try {
     const result = await arubaExport.download(req.body || {});
