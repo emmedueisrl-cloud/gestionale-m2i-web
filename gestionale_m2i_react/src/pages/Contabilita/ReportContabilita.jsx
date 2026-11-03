@@ -300,6 +300,8 @@ export default function ReportContabilita() {
   };
 
   const costoOrarioMostrato = report?.f24 == null ? report?.costoOrarioSenzaF24 : report.costoOrario;
+  const ricavoTotaleMese = report?.costoTotale == null ? null :
+    (Math.round(report.imponibileFatturazioneMese * 100) - Math.round(report.costoTotale * 100)) / 100;
   const sortedClients = useMemo(() => (report?.clientiDettaglio || [])
     .map(row => ({ ...row, percentualeGuadagno: percentageGain(row) })).sort((a, b) => {
     const first = a[sort.key], second = b[sort.key];
@@ -390,6 +392,15 @@ export default function ReportContabilita() {
           <SummaryCard label="Totale imponibili degli extra" value={euro(report.imponibileExtraMese)} />
           <SummaryCard label="Totale imponibili dei clienti fissi senza ore"
             value={euro(report.imponibileClientiFissiSenzaOre)} />
+        </div>
+      </section>
+
+      <section aria-label="Risultati del mese" className="space-y-3">
+        <h2 className="text-xl font-bold">Risultati del mese</h2>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+          <p className="text-sm font-semibold text-emerald-900">Ricavo totale del mese</p>
+          <p className="mt-2 text-3xl font-bold text-emerald-950">{ricavoTotaleMese == null ? '—' : euro(ricavoTotaleMese)}</p>
+          {ricavoTotaleMese == null && <p className="mt-2 text-sm text-emerald-900">Inserisci l’F24 per completare il costo del personale.</p>}
         </div>
       </section>
 
