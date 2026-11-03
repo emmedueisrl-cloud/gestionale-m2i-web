@@ -201,11 +201,9 @@ export default function IncassiInsoluti() {
   return <div className="space-y-7 bg-white pb-12 text-slate-900">
     <header className="flex flex-wrap items-center justify-between gap-4"><div><div className="flex items-center gap-3"><h1 className="text-[29px] font-bold">Incassi e Insoluti</h1><button type="button" onClick={() => setChartOpen(true)} aria-label="Apri grafico fatturato e incassato" title="Visualizza grafico" className="rounded-lg border border-indigo-200 bg-indigo-50 p-2 text-indigo-700 hover:bg-indigo-100"><ChartNoAxesCombined className="h-5 w-5" /></button></div><p className="text-sm text-slate-600">Fatture emesse, incassi registrati e importi ancora aperti.</p></div>
       <button type="button" disabled={busy} onClick={() => { setBusy(true); void load().finally(() => setBusy(false)); }} className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-4 py-2 font-semibold hover:bg-slate-200 disabled:opacity-50"><RefreshCw className="h-4 w-4" />Aggiorna</button></header>
-    <section aria-label="Riepilogo generale" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="Fatturato totale" amount={data.riepilogo?.fatturato} detail={`${invoices.length} fatture`} style="border-indigo-300 bg-indigo-50 text-indigo-900" />
-      <Metric label="Incassato" amount={data.riepilogo?.incassato} style="border-emerald-300 bg-emerald-50 text-emerald-900" />
+    <section aria-label="Riepilogo generale" className="grid gap-3 sm:grid-cols-2">
       <Metric label="Da incassare" amount={data.riepilogo?.daIncassare} detail={`${allOpen.length} fatture aperte`} style="border-amber-300 bg-amber-50 text-amber-900" />
-      <Metric label="Di cui insoluti" amount={data.riepilogo?.insoluto} style="border-red-300 bg-red-50 text-red-900" />
+      <Metric label="Di cui insoluti" amount={data.riepilogo?.insoluto} detail="Parte del da incassare già scaduta o segnata insoluta" style="border-red-300 bg-red-50 text-red-900" />
     </section>
     {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">{message}</p>}
     {loading && <p role="status" className="rounded-lg bg-slate-100 p-3 text-sm text-slate-700">Caricamento fatture e incassi...</p>}
