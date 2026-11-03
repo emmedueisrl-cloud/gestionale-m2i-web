@@ -7,6 +7,7 @@ import ModernModal from '../../components/ui/ModernModal';
 import FileUploader from '../../components/ui/FileUploader';
 import OperatoreSelect from '../../components/clienti/OperatoreSelect';
 import AvvisoPartitaIva from '../../components/clienti/AvvisoPartitaIva';
+import { codiceFiscaleClienteValido } from '../../utils/codiceFiscaleCliente';
 import DatiFatturazioneCliente from '../../components/clienti/DatiFatturazioneCliente';
 import { campiFatturazioneCliente } from '../../components/clienti/campiFatturazioneCliente';
 import { presetFatturazionePrivato } from '../../components/clienti/presetFatturazionePrivato';
@@ -199,14 +200,19 @@ export default function NuovoCliente() {
       document.getElementById('ragioneSociale')?.focus({ preventScroll: true });
       return;
     }
-    if (!isBozza && dati.tipoCliente !== 'PRIVATO' && !dati.partitaIva.trim()) {
-      setModalState({ isOpen: true, type: 'warning', message: 'Il campo Partita IVA è obbligatorio per un salvataggio definitivo.' });
-      document.getElementById('partitaIva')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      document.getElementById('partitaIva')?.focus({ preventScroll: true });
+    const cfValido = codiceFiscaleClienteValido(dati.codiceFiscale);
+    if (!isBozza && dati.codiceFiscale.trim() && !cfValido) {
+      setModalState({ isOpen: true, type: 'warning', message: 'Il codice fiscale deve avere 11 cifre o 16 caratteri alfanumerici.' });
+      document.getElementById('codiceFiscale')?.focus();
       return;
     }
-    if (!isBozza && dati.tipoCliente === 'PRIVATO' && !/^[A-Z0-9]{16}$/i.test(dati.codiceFiscale.trim())) {
-      setModalState({ isOpen: true, type: 'warning', message: 'Per un privato inserisci un codice fiscale di 16 caratteri.' });
+    if (!isBozza && dati.tipoCliente === 'PRIVATO' && !cfValido) {
+      setModalState({ isOpen: true, type: 'warning', message: 'Per un privato inserisci un codice fiscale di 11 cifre o 16 caratteri.' });
+      document.getElementById('codiceFiscale')?.focus();
+      return;
+    }
+    if (!isBozza && !dati.partitaIva.trim() && !cfValido) {
+      setModalState({ isOpen: true, type: 'warning', message: 'Inserisci la Partita IVA oppure un codice fiscale di 11 cifre o 16 caratteri.' });
       document.getElementById('codiceFiscale')?.focus();
       return;
     }
@@ -342,7 +348,7 @@ export default function NuovoCliente() {
             <div className="md:col-span-2 max-w-sm">
               <label htmlFor="tipoCliente" className="block text-sm font-medium text-slate-200 mb-1">Tipo cliente *</label>
               <select id="tipoCliente" name="tipoCliente" value={dati.tipoCliente} onChange={e => setDati(prev => ({ ...prev, tipoCliente: e.target.value, partitaIva: e.target.value === 'PRIVATO' ? '' : prev.partitaIva, fatturazione_id_paese_iva: e.target.value === 'PRIVATO' ? '' : prev.fatturazione_id_paese_iva, fatturazione_paese: e.target.value === 'PRIVATO' ? (prev.fatturazione_paese || 'IT') : prev.fatturazione_paese }))} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg">
-                <option value="PARTITA_IVA">Partita IVA</option>
+                <option value="PARTITA_IVA">Azienda / ente (P.IVA facoltativa)</option>
                 <option value="PRIVATO">Privato (solo codice fiscale)</option>
               </select>
             </div>
@@ -369,14 +375,14 @@ export default function NuovoCliente() {
             </div>
             <div>
               {dati.tipoCliente !== 'PRIVATO' && <>
-                <label className="block text-sm font-medium text-slate-200 mb-1">Partita IVA *</label>
+                <label className="block text-sm font-medium text-slate-200 mb-1">Partita IVA (facoltativa con CF)</label>
                 <input id="partitaIva" type="text" name="partitaIva" value={dati.partitaIva} onChange={handleChange} className="w-full p-2.5 bg-slate-900/50 border border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" aria-describedby={dati.partitaIva.trim().length > 11 ? 'avvisoPartitaIva' : undefined} />
                 <AvvisoPartitaIva valore={dati.partitaIva} />
               </>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-200 mb-1 flex items-center justify-between">
-                <span>Codice Fiscale{dati.tipoCliente === 'PRIVATO' ? ' *' : ''}</span>
+                <span>Codice Fiscale{dati.tipoCliente === 'PRIVATO' || !dati.partitaIva.trim() ? ' *' : ''} (11 cifre o 16 caratteri)</span>
                 {dati.tipoCliente !== 'PRIVATO' && <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400 font-normal hover:text-indigo-400 transition-colors">
                   <input
                     type="checkbox"

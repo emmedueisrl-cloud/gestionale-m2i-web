@@ -149,10 +149,10 @@ export default function SchedaCliente() {
             </h1>
             {data.nome_attivita && <p className="mb-3 text-slate-300">Nome attività: {data.nome_attivita}</p>}
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 text-sm font-medium text-slate-300">
-              {data.tipo_cliente === 'PRIVATO' ? <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">Privato</span> :
+              {data.tipo_cliente === 'PRIVATO' ? <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">Privato</span> : data.partita_iva ?
                 <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">
                   <FileText className="w-4 h-4 text-slate-400" /> PI: {data.partita_iva}
-                </span>}
+                </span> : <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">Solo CF</span>}
               {data.codice_fiscale && (
                 <span className="flex items-center gap-1.5 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700">
                   <FileText className="w-4 h-4 text-slate-400" /> CF: {data.codice_fiscale}

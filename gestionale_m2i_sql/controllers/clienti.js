@@ -28,13 +28,19 @@ function identitaCliente(dati) {
   const partitaIva = String(getVal(dati, 'partitaIva') || '').trim();
   const codiceFiscale = String(getVal(dati, 'codiceFiscale') || '').trim().toUpperCase();
   const bozza = getVal(dati, 'isBozza') === true;
+  const cfValido = /^(?:\d{11}|[A-Z0-9]{16})$/.test(codiceFiscale);
+  if (!bozza && codiceFiscale && !cfValido) {
+    throw new Error('Il codice fiscale deve avere 11 cifre o 16 caratteri alfanumerici.');
+  }
   if (tipo === 'PRIVATO') {
-    if (!bozza && !/^[A-Z0-9]{16}$/.test(codiceFiscale)) {
-      throw new Error('Per un privato inserisci un codice fiscale di 16 caratteri.');
+    if (!bozza && !cfValido) {
+      throw new Error('Per un privato inserisci un codice fiscale di 11 cifre o 16 caratteri.');
     }
     return { tipo_cliente: tipo, partita_iva: null, codice_fiscale: codiceFiscale || null };
   }
-  if (!bozza && !partitaIva) throw new Error('La Partita IVA è obbligatoria (a meno di non salvare in Bozza).');
+  if (!bozza && !partitaIva && !cfValido) {
+    throw new Error('Inserisci la Partita IVA oppure un codice fiscale di 11 cifre o 16 caratteri.');
+  }
   return { tipo_cliente: tipo, partita_iva: partitaIva || null, codice_fiscale: codiceFiscale || null };
 }
 

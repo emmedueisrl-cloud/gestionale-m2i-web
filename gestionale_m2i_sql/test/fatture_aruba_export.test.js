@@ -54,6 +54,27 @@ test('fattura un privato con solo codice fiscale e destinatario 0000000', async 
   assert.equal(doc.FatturaElettronica.FatturaElettronicaBody.DatiBeniServizi.DatiRiepilogo.Imposta, '22.00');
 });
 
+test('fattura un ente con solo codice fiscale numerico senza partita IVA', async () => {
+  const cfOnly = { ...client, tipo_cliente: 'PARTITA_IVA', partita_iva: null,
+    codice_fiscale: '96117270585', fatturazione_id_paese_iva: '', codice_sdi: '', pec: '' };
+  const db = table => {
+    if (table === 'm2i_azienda_dati') return { where: () => ({ first: async () => company }) };
+    if (table === 'clienti') return { whereIn: async () => [cfOnly] };
+    if (['fatture_aruba_elaborati', 'fatture'].includes(table)) return { whereIn: () => ({ select: async () => [] }) };
+    throw new Error(table);
+  };
+  const service = createArubaExport(db, { period: () => {}, accountingRows: async () => [row] },
+    { groups: async () => [] });
+  const result = await service.prepare({ mese: 10, anno: 2026, keys: ['cliente:c1'],
+    data: '2026-10-13', primoNumero: 'FPR 618/26' });
+  assert.deepEqual(result.errors, []);
+  const doc = await parse(result.invoices[0].xml);
+  const header = doc.FatturaElettronica.FatturaElettronicaHeader;
+  assert.equal(header.CessionarioCommittente.DatiAnagrafici.CodiceFiscale, cfOnly.codice_fiscale);
+  assert.equal(header.CessionarioCommittente.DatiAnagrafici.IdFiscaleIVA, undefined);
+  assert.equal(header.DatiTrasmissione.CodiceDestinatario, '0000000');
+});
+
 test('anteprima Aruba accetta un privato senza SdI e PEC con ritenuta', async () => {
   const privato = { ...client, tipo_cliente: 'PRIVATO', partita_iva: null,
     codice_fiscale: 'RSSMRA80A01H501U', fatturazione_id_paese_iva: '', codice_sdi: '', pec: '',

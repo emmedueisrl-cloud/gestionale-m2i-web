@@ -111,7 +111,7 @@ export default function ClientiPage() {
   const columns = [
     { header: 'ID', accessor: 'id' },
     { header: 'Ragione Sociale', accessor: 'ragione_sociale' },
-    { header: 'Tipo', accessor: 'tipo_cliente', render: row => row.tipo_cliente === 'PRIVATO' ? 'Privato' : 'Partita IVA' },
+    { header: 'Tipo', accessor: 'tipo_cliente', render: row => row.tipo_cliente === 'PRIVATO' ? 'Privato' : row.partita_iva ? 'Partita IVA' : 'Solo CF' },
     { header: 'Partita IVA', accessor: 'partita_iva' },
     { header: 'Codice fiscale', accessor: 'codice_fiscale' },
     { 

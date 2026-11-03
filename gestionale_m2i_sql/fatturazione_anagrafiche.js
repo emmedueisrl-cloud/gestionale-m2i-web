@@ -243,13 +243,16 @@ function readinessCompany(row) {
 function readinessClient(row) {
   const issues = [];
   const privato = row.tipo_cliente === 'PRIVATO';
-  if (privato && !/^[A-Z0-9]{16}$/i.test(val(row.codice_fiscale))) issues.push('Codice fiscale privato');
-  if (!privato && !validId(row.partita_iva) && !validId(row.codice_fiscale)) issues.push('Partita IVA o codice fiscale');
+  const cf = val(row.codice_fiscale).toUpperCase();
+  const cfValido = /^(?:\d{11}|[A-Z0-9]{16})$/.test(cf);
+  if (cf && !cfValido) issues.push('Codice fiscale valido (11 cifre o 16 caratteri)');
+  if (privato && !cfValido) issues.push('Codice fiscale privato');
+  if (!privato && !validId(row.partita_iva) && !cfValido) issues.push('Partita IVA o codice fiscale');
   if (!privato && validId(row.partita_iva) && !val(row.fatturazione_id_paese_iva)) issues.push('Paese partita IVA');
   for (const [key, label] of Object.entries({ ragione_sociale: 'Ragione sociale', indirizzo_sede: 'Indirizzo', cap: 'CAP', citta: 'Comune', fatturazione_paese: 'Paese' })) {
     if (!val(row[key])) issues.push(label);
   }
-  if (!privato && !/^([A-Z0-9]{7})$/i.test(val(row.codice_sdi)) && !val(row.pec).includes('@')) issues.push('Codice SdI (7 caratteri) o PEC');
+  if (!privato && validId(row.partita_iva) && !/^([A-Z0-9]{7})$/i.test(val(row.codice_sdi)) && !val(row.pec).includes('@')) issues.push('Codice SdI (7 caratteri) o PEC');
   if (row.tipo_tassazione === 'REVERSE CHARGE' && !val(row.fatturazione_natura)) issues.push('Natura reverse charge');
   if (row.tipo_tassazione === "DICHIARAZIONE D'INTENTO") {
     if (val(row.fatturazione_natura) !== 'N3.5') issues.push('Natura dichiarazione d’intento N3.5');

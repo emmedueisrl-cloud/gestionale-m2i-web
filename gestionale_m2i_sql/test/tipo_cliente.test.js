@@ -30,9 +30,10 @@ test('migra lo schema esistente senza cambiare i clienti con partita IVA', async
     await assert.rejects(() => knex('clienti').insert({ id: 'C4', ragione_sociale: 'Duplicato', partita_iva: '12345678901' }), /UNIQUE/);
     assert.deepEqual(await knex.raw('PRAGMA foreign_key_check'), []);
 
+    let prossimoId = 4;
     const dbPath = require.resolve('../db');
     require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
-      knex, getVal: (data, key) => data?.[key], generaIDIncrementale: async () => 'C4'
+      knex, getVal: (data, key) => data?.[key], generaIDIncrementale: async () => `C${prossimoId++}`
     } };
     const clienti = require('../controllers/clienti');
     await assert.rejects(() => clienti.salvaCliente({ ragioneSociale: 'Privato senza CF', tipoCliente: 'PRIVATO' }), /codice fiscale/);
@@ -40,6 +41,15 @@ test('migra lo schema esistente senza cambiare i clienti con partita IVA', async
       codiceFiscale: 'RSSMRA80A01H501U', dataInizioAttivita: '2026-10-01' });
     assert.deepEqual(await knex('clienti').where({ id: 'C4' }).first('tipo_cliente', 'partita_iva', 'codice_fiscale'),
       { tipo_cliente: 'PRIVATO', partita_iva: null, codice_fiscale: 'RSSMRA80A01H501U' });
+    await clienti.salvaCliente({ ragioneSociale: 'Ente con solo CF', tipoCliente: 'PARTITA_IVA',
+      codiceFiscale: '96117270585', dataInizioAttivita: '2026-10-01' });
+    assert.deepEqual(await knex('clienti').where({ id: 'C5' }).first('tipo_cliente', 'partita_iva', 'codice_fiscale'),
+      { tipo_cliente: 'PARTITA_IVA', partita_iva: null, codice_fiscale: '96117270585' });
+    await assert.rejects(() => clienti.aggiornaDatiCliente({ id: 'C5', ragioneSociale: 'Ente con solo CF',
+      tipoCliente: 'PARTITA_IVA', codiceFiscale: '123' }), /11 cifre o 16 caratteri/);
+    await clienti.aggiornaDatiCliente({ id: 'C5', ragioneSociale: 'Ente con solo CF',
+      tipoCliente: 'PARTITA_IVA', codiceFiscale: '06117270585' });
+    assert.equal((await knex('clienti').where({ id: 'C5' }).first('codice_fiscale')).codice_fiscale, '06117270585');
     await clienti.aggiornaDatiCliente({ id: 'C1', ragioneSociale: 'Azienda', tipoCliente: 'PRIVATO',
       codiceFiscale: 'VRDLCU80A01H501A' });
     assert.deepEqual(await knex('clienti').where({ id: 'C1' }).first('tipo_cliente', 'partita_iva', 'codice_fiscale'),
