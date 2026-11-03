@@ -15,6 +15,14 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
     table.integer('mese'); table.integer('anno'); table.text('dipendente_id'); table.text('cliente_id');
     table.decimal('ore_totali', 10, 2); table.text('causale_assenza');
   });
+  await db.schema.createTable('gruppi_fatturazione_extra', table => {
+    table.text('id').primary(); table.integer('mese'); table.integer('anno'); table.integer('imponibile_cent');
+  });
+  await db.schema.createTable('servizi_extra', table => {
+    table.text('id').primary(); table.text('gruppo_id'); table.integer('imponibile_cent');
+  });
+  await db('gruppi_fatturazione_extra').insert({ id: 'G1', mese: 9, anno: 2026, imponibile_cent: 45000 });
+  await db('servizi_extra').insert({ id: 'E1', gruppo_id: 'G1', imponibile_cent: 45000 });
   await db('dipendenti').insert([{ id: 'D1' }, { id: 'D2' }, { id: 'D3' }]);
   await db('buste_paga').insert([
     { id: 'B1', dipendente_id: 'D1', mese: '9', anno: '2026', importo_netto: 1200 },
@@ -57,6 +65,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withoutF24.costoOrarioSenzaF24, 10.75);
   assert.equal(withoutF24.clientiDettaglio[0].costoDipendenti, null);
   assert.equal(withoutF24.imponibileDettaglio, 3920);
+  assert.equal(withoutF24.imponibileFatturazioneMese, 14369);
   assert.equal(withoutF24.rimanenzaTotale, null);
   assert.equal(withoutF24.dipendentiDettaglio[0].stipendio, 1300);
   assert.equal(withoutF24.dipendentiDettaglio[0].costoOrario, null);
@@ -93,6 +102,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   invoiceAdjustedClients.push({ idCliente: 'C4', rigaExtra: true, oreLavorate: 0, imponibile: 500 });
   const afterInvoiceAdjustment = await report.get(9, 2026);
   assert.equal(afterInvoiceAdjustment.imponibileDettaglio, 4020);
+  assert.equal(afterInvoiceAdjustment.imponibileFatturazioneMese, 14469);
   assert.equal(afterInvoiceAdjustment.clientiEsclusiZeroOre, 1);
   invoiceAdjustedClients = null;
   const withF24c = await report.saveF24c({ mese: 9, anno: 2026, importo: '400,00' });

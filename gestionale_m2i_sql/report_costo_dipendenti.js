@@ -132,6 +132,18 @@ function createEmployeeCostReport(knex, workflow) {
     const employeeHoursDeltaCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.reportHoursCent - row.baseHoursCent, 0);
     const employeeNetDeltaCent = adjustedEmployeeRows.reduce((sum, row) => sum + row.reportNetCent - row.baseNetCent, 0);
     const billingClientRows = clientRows.filter(row => !row.rigaExtra);
+    const extraGroups = await knex.schema.hasTable('gruppi_fatturazione_extra') &&
+      await knex.schema.hasTable('servizi_extra')
+      ? await knex('gruppi_fatturazione_extra as g')
+        .join('servizi_extra as e', 'e.gruppo_id', 'g.id')
+        .where({ 'g.mese': period.mese, 'g.anno': period.anno })
+        .groupBy('g.id', 'g.imponibile_cent')
+        .select('g.id', 'g.imponibile_cent')
+        .sum('e.imponibile_cent as servizi_cent')
+      : [];
+    const imponibileFatturazioneMeseCent = billingClientRows.reduce((sum, row) =>
+      sum + Math.round(Number(row.imponibile || 0) * 100), 0) +
+      extraGroups.reduce((sum, group) => sum + Number(group.imponibile_cent ?? group.servizi_cent ?? 0), 0);
     const baseImponibileClientiCent = billingClientRows.filter(row => Number(row.oreLavorate || 0) > 0).reduce((sum, row) =>
       sum + Math.round(Number(row.imponibile || 0) * 100), 0);
     const clientAdjustmentMap = new Map(clientAdjustments.map(row => [`${row.cliente_id}:${row.voce}`, row]));
@@ -292,6 +304,7 @@ function createEmployeeCostReport(knex, workflow) {
       tariffaMediaClienti: oreTotali > 0 ?
         Math.round(imponibileClientiCent / oreTotali) / 100 : null,
       imponibileDettaglio: imponibileDettaglioCent / 100,
+      imponibileFatturazioneMese: imponibileFatturazioneMeseCent / 100,
       rimanenzaTotale: rimanenzaTotaleCent == null ? null : rimanenzaTotaleCent / 100,
       clientiDettaglio,
       f24c: f24cCent == null ? null : Number(f24cCent) / 100,
