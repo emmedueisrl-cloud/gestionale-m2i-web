@@ -44,6 +44,7 @@ export default function PerUfficioPaghe({ buste, mese, anno, euro, onChanged, se
   };
 
   const markUnpaid = async busta => {
+    if (!window.confirm(`Correggere il pagamento dello stipendio di ${busta.cognome} ${busta.nome}? Tornerà tra quelli da pagare.`)) return;
     setBusyPaidId(busta.id); setPaidError(''); setPaidMessage('');
     try {
       await workflowRequest(`contabilita/ufficio-paghe/${encodeURIComponent(busta.id)}/pagato`, { method: 'DELETE' });
