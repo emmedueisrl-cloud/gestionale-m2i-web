@@ -20,7 +20,8 @@ const ISSUER_FIELDS = {
   fatturazione_indirizzo: 'Indirizzo fiscale', fatturazione_cap: 'CAP', fatturazione_citta: 'Comune',
   fatturazione_provincia: 'Provincia', fatturazione_paese: 'Paese',
   fatturazione_id_paese_iva: 'Paese partita IVA', fatturazione_regime: 'Regime fiscale',
-  fatturazione_iban: 'IBAN incasso', pec: 'PEC', fatturazione_ufficio_rea: 'Ufficio REA',
+  fatturazione_iban: 'IBAN incasso', fatturazione_banca: 'Banca per incassi',
+  pec: 'PEC', fatturazione_ufficio_rea: 'Ufficio REA',
   fatturazione_numero_rea: 'Numero REA', capitale_sociale: 'Capitale sociale',
   fatturazione_socio_unico: 'Socio unico', fatturazione_stato_liquidazione: 'Stato liquidazione'
 };
@@ -107,7 +108,8 @@ async function parseXml(buffer, filename) {
       : text(withholding, 'TipoRitenuta') ? 'TRAT. ACC.' : 'IVA';
     return {
       filename, numero: text(general, 'Numero'), data: text(general, 'Data'),
-      issuer: { ...issuer, fatturazione_iban: text(detail, 'IBAN') },
+      issuer: { ...issuer, fatturazione_iban: text(detail, 'IBAN'),
+        fatturazione_banca: text(detail, 'IstitutoFinanziario') },
       recipient: { ...recipient, tipo_tassazione: taxType,
         percentuale_tassazione: rates.length === 1 ? String(Number(rates[0])) : '',
         fatturazione_natura: kinds.join(', '),

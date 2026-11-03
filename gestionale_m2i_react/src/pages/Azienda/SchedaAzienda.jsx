@@ -38,7 +38,7 @@ export default function SchedaAzienda() {
     indirizzoRappresentante: '',
     fatturazione_indirizzo: '', fatturazione_cap: '', fatturazione_citta: '',
     fatturazione_provincia: '', fatturazione_paese: '', fatturazione_id_paese_iva: '', fatturazione_regime: '',
-    fatturazione_iban: '', fatturazione_ufficio_rea: '', fatturazione_numero_rea: '',
+    fatturazione_iban: '', fatturazione_banca: '', fatturazione_ufficio_rea: '', fatturazione_numero_rea: '',
     fatturazione_socio_unico: '', fatturazione_stato_liquidazione: ''
   });
   
@@ -72,7 +72,7 @@ export default function SchedaAzienda() {
           capitaleSociale: resDati.capitale_sociale || '',
           codiceAteco: resDati.codice_ateco || '',
           timbro_path: resDati.timbro_path || '',
-          ...Object.fromEntries(['fatturazione_indirizzo', 'fatturazione_cap', 'fatturazione_citta', 'fatturazione_provincia', 'fatturazione_paese', 'fatturazione_id_paese_iva', 'fatturazione_regime', 'fatturazione_iban', 'fatturazione_ufficio_rea', 'fatturazione_numero_rea', 'fatturazione_socio_unico', 'fatturazione_stato_liquidazione'].map(key => [key, resDati[key] || '']))
+          ...Object.fromEntries(['fatturazione_indirizzo', 'fatturazione_cap', 'fatturazione_citta', 'fatturazione_provincia', 'fatturazione_paese', 'fatturazione_id_paese_iva', 'fatturazione_regime', 'fatturazione_iban', 'fatturazione_banca', 'fatturazione_ufficio_rea', 'fatturazione_numero_rea', 'fatturazione_socio_unico', 'fatturazione_stato_liquidazione'].map(key => [key, resDati[key] || '']))
         });
       }
       const resDocs = await recuperaDocumentiAzienda();
@@ -287,11 +287,12 @@ export default function SchedaAzienda() {
                 ['fatturazione_citta', 'Comune'], ['fatturazione_provincia', 'Provincia'],
                 ['fatturazione_paese', 'Paese (es. IT)'], ['fatturazione_id_paese_iva', 'Paese partita IVA (es. IT)'],
                 ['fatturazione_regime', 'Regime fiscale (es. RF01)'],
-                ['fatturazione_iban', 'IBAN incasso'], ['fatturazione_ufficio_rea', 'Ufficio REA'],
+                ['fatturazione_iban', 'IBAN incasso'], ['fatturazione_banca', 'Banca per incassi'],
+                ['fatturazione_ufficio_rea', 'Ufficio REA'],
                 ['fatturazione_numero_rea', 'Numero REA'], ['fatturazione_socio_unico', 'Socio unico'],
                 ['fatturazione_stato_liquidazione', 'Stato liquidazione']
               ].map(([key, label]) => <label key={key} className="text-sm text-slate-300">{label}
-                <input name={key} value={dati[key] || ''} onChange={handleChange} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/50 p-2 text-slate-100" />
+                <input name={key} value={dati[key] || ''} onChange={handleChange} maxLength={key === 'fatturazione_banca' ? 80 : undefined} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/50 p-2 text-slate-100" />
               </label>)}
             </div>
           </div>

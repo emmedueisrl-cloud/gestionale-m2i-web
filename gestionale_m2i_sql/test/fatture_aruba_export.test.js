@@ -8,7 +8,8 @@ const company = {
   ragione_sociale: 'M2I SRL', partita_iva: '15989811003', codice_fiscale: '15989811003',
   fatturazione_id_paese_iva: 'IT', fatturazione_indirizzo: 'Via del Fontanile Anagnino 183',
   fatturazione_cap: '00118', fatturazione_citta: 'Roma', fatturazione_provincia: 'RM',
-  fatturazione_paese: 'IT', fatturazione_regime: 'RF01', fatturazione_iban: 'IT53F0306905058100000006375'
+  fatturazione_paese: 'IT', fatturazione_regime: 'RF01', fatturazione_iban: 'IT53F0306905058100000006375',
+  fatturazione_banca: 'Intesa Sanpaolo S.p.A.'
 };
 const client = {
   id: 'c1', ragione_sociale: 'Cliente Test', partita_iva: '12345678901', codice_fiscale: '12345678901',
@@ -41,6 +42,15 @@ test('genera un XML FPR12 con dati IVA e importi coerenti', async () => {
   assert.equal(root.FatturaElettronicaBody.DatiGenerali.DatiGeneraliDocumento.Numero, 'FPR 618/26');
   assert.equal(root.FatturaElettronicaBody.DatiBeniServizi.DatiRiepilogo.Imposta, '22.00');
   assert.equal(root.FatturaElettronicaBody.DatiPagamento.DettaglioPagamento.ImportoPagamento, '122.00');
+  assert.equal(root.FatturaElettronicaBody.DatiPagamento.DettaglioPagamento.IstitutoFinanziario, 'Intesa Sanpaolo S.p.A.');
+  assert.ok(xml.indexOf('<IstitutoFinanziario>') < xml.indexOf('<IBAN>'));
+});
+
+test('senza nome banca il bonifico conserva l’IBAN senza inventare l’istituto', async () => {
+  const document = await parse(buildInvoice({ ...base, company: { ...company, fatturazione_banca: '' } }));
+  const payment = document.FatturaElettronica.FatturaElettronicaBody.DatiPagamento.DettaglioPagamento;
+  assert.equal(payment.IstitutoFinanziario, undefined);
+  assert.equal(payment.IBAN, company.fatturazione_iban);
 });
 
 test('esporta due righe imponibili con descrizioni distinte e totale invariato', async () => {

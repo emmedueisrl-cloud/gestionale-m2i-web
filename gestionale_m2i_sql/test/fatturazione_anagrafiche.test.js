@@ -11,7 +11,7 @@ function xml({ taxCode = '90097800586', address = 'VIA NUOVA 3', civic = '', nam
       <CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>15989811003</IdCodice></IdFiscaleIVA><CodiceFiscale>15989811003</CodiceFiscale><Anagrafica><Denominazione>M2I SRL</Denominazione></Anagrafica><RegimeFiscale>RF01</RegimeFiscale></DatiAnagrafici><Sede><Indirizzo>VIA VECCHIA 9</Indirizzo><CAP>00118</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CedentePrestatore>
       <CessionarioCommittente><DatiAnagrafici><CodiceFiscale>${taxCode}</CodiceFiscale><Anagrafica><Denominazione>${name}</Denominazione></Anagrafica></DatiAnagrafici><Sede><Indirizzo>${address}</Indirizzo>${civic ? `<NumeroCivico>${civic}</NumeroCivico>` : ''}<CAP>00100</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede></CessionarioCommittente>
     </FatturaElettronicaHeader>
-    <FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>2026-09-30</Data><Numero>1</Numero></DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA><ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo></DatiBeniServizi><DatiPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento></DettaglioPagamento></DatiPagamento></FatturaElettronicaBody>
+    <FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>2026-09-30</Data><Numero>1</Numero></DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DatiRiepilogo><AliquotaIVA>22.00</AliquotaIVA><ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo></DatiBeniServizi><DatiPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento><IstitutoFinanziario>Intesa Sanpaolo S.p.A.</IstitutoFinanziario></DettaglioPagamento></DatiPagamento></FatturaElettronicaBody>
   </p:FatturaElettronica>`);
 }
 
@@ -46,6 +46,7 @@ test('legge XML con namespace e conserva l’indirizzo M2I diverso dallo storico
     const result = await importer.apply(db, invoices);
     assert.equal(result.clientsUpdated, 1);
     assert.equal((await db('m2i_azienda_dati').where({ id: 1 }).first()).fatturazione_indirizzo, 'VIA DEL FONTANILE ANAGNINO 183');
+    assert.equal((await db('m2i_azienda_dati').where({ id: 1 }).first()).fatturazione_banca, 'Intesa Sanpaolo S.p.A.');
     assert.equal((await db('clienti').where({ id: 'C1' }).first()).pec, 'cliente@pec.it');
     const readiness = await importer.status(db);
     assert.deepEqual(readiness.issuerIssues, []);

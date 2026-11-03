@@ -545,6 +545,7 @@ CREATE TABLE m2i_azienda_dati (
       fatturazione_id_paese_iva TEXT,
       fatturazione_regime TEXT,
       fatturazione_iban TEXT,
+      fatturazione_banca TEXT,
       fatturazione_ufficio_rea TEXT,
       fatturazione_numero_rea TEXT,
       fatturazione_socio_unico TEXT,

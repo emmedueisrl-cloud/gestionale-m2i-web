@@ -91,7 +91,11 @@ function buildInvoice({ company, client, row, lines, date, number, progressivo }
   if (value(client.fatturazione_modalita_pagamento)) {
     const payment = { ModalitaPagamento: value(client.fatturazione_modalita_pagamento),
       ImportoPagamento: money(gross - withholdingCents) };
-    if (value(company.fatturazione_iban) && payment.ModalitaPagamento === 'MP05') payment.IBAN = value(company.fatturazione_iban);
+    if (payment.ModalitaPagamento === 'MP05') {
+      if (value(company.fatturazione_banca).length > 80) throw new Error('Il nome della banca può contenere al massimo 80 caratteri.');
+      if (value(company.fatturazione_banca)) payment.IstitutoFinanziario = value(company.fatturazione_banca);
+      if (value(company.fatturazione_iban)) payment.IBAN = value(company.fatturazione_iban);
+    }
     body.DatiPagamento = { CondizioniPagamento: value(client.fatturazione_condizioni_pagamento) || 'TP02',
       DettaglioPagamento: payment };
   }
