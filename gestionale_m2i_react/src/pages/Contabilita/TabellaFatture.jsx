@@ -4,14 +4,12 @@ import { dataRegistrazione, giornoRegistrazione } from './dataRegistrazioneFattu
 
 const columns = [
   ['Cliente (ragione sociale)', '16%'],
-  ['Prezzo servizio', '9%'],
-  ['Rettifica +/-', '10%'],
   ['Imponibile', '9%'],
-  ['R. FIS.', '6%'],
+  ['Regime fiscale', '6%'],
   ['Tassa', '9%'],
   ['Totale\nfattura', '9%'],
   ['Descrizione', '12%'],
-  ['Note', '9%'],
+  ['Note', '28%'],
   ['Azioni', '11%']
 ];
 
@@ -82,18 +80,14 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                 <div className="font-semibold text-slate-900"><span className="text-[17px]">{paroleNome.slice(0, 3).join(' ')}</span>{paroleNome.length > 3 && <> <span>{paroleNome.slice(3).join(' ')}</span></>}</div>
                 </div>
               </td>
-              <td className={numberCell}>{euro(row.prezzoServizio ?? row.imponibile)}</td>
-              <td className={`${cell} text-sm`}>
-                {editingAdjustmentId === row.idCliente && !row.gruppoExtraId ? <div className="space-y-1">
+              <td className={numberCell}>
+                <div>{euro(row.imponibile)}</div>
+                {editingAdjustmentId === row.idCliente && !row.gruppoExtraId ? <div className="mt-1 space-y-1 whitespace-normal text-sm">
                   <input aria-label={`Rettifica fattura di ${row.ragioneSociale}`} type="text" inputMode="decimal" autoFocus value={draftAdjustment} onChange={event => setDraftAdjustment(event.target.value)} placeholder="-50,00 o 50,00" className="w-full rounded border border-indigo-400 bg-white p-1 text-center text-sm" />
                   {adjustmentError && <p role="alert" className="text-xs text-red-700">{adjustmentError}</p>}
                   <div className="flex justify-center gap-1"><button type="button" disabled={busy} onClick={async () => { try { await onSaveAdjustment(row, draftAdjustment); setEditingAdjustmentId(null); setAdjustmentError(''); } catch (error) { setAdjustmentError(error.message); } }} className="rounded bg-indigo-700 px-2 py-1 text-xs text-white disabled:opacity-50">Salva</button><button type="button" onClick={() => setEditingAdjustmentId(null)} className="rounded bg-slate-200 px-2 py-1 text-xs">Annulla</button></div>
-                </div> : <>
-                  <span className={Number(row.rettificaFatturazione) < 0 ? 'font-semibold text-red-800' : Number(row.rettificaFatturazione) > 0 ? 'font-semibold text-emerald-800' : ''}>{Number(row.rettificaFatturazione) > 0 ? '+' : ''}{euro(row.rettificaFatturazione || 0)}</span>
-                  {!elaborate && !row.gruppoExtraId && !row.rigaExtra && !registered && !row.fatturaInviataAt && <button type="button" onClick={() => { setEditingAdjustmentId(row.idCliente); setDraftAdjustment(String(row.rettificaFatturazione || 0).replace('.', ',')); setAdjustmentError(''); }} className="mt-1 block w-full text-xs font-semibold text-indigo-700 underline">Modifica</button>}
-                </>}
+                </div> : !elaborate && !row.gruppoExtraId && !row.rigaExtra && !registered && !row.fatturaInviataAt && <button type="button" onClick={() => { setEditingAdjustmentId(row.idCliente); setDraftAdjustment(String(row.rettificaFatturazione || 0).replace('.', ',')); setAdjustmentError(''); }} className="mt-1 block w-full whitespace-normal text-xs font-semibold text-indigo-700 underline">Rettifica imponibile</button>}
               </td>
-              <td className={numberCell}>{euro(row.imponibile)}</td>
               <td className={`${cell} whitespace-nowrap`} title={row.tipoTassazione || 'IVA'}>{regimeBreve(row.tipoTassazione)}</td>
               <td className={numberCell}>{euro(tassa)}{Number(row.importoRitenuta) > 0 && <span className="block text-xs text-rose-800">− {euro(row.importoRitenuta)} ritenuta</span>}</td>
               <td className={`${numberCell} font-semibold`}>{euro(totale)}</td>
