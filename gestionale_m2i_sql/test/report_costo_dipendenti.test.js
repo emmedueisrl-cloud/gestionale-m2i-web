@@ -66,6 +66,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withoutF24.clientiDettaglio[0].costoDipendenti, null);
   assert.equal(withoutF24.imponibileDettaglio, 3920);
   assert.equal(withoutF24.imponibileFatturazioneMese, 14369);
+  assert.equal(withoutF24.imponibileClientiFissiConOre, 3920);
   assert.equal(withoutF24.rimanenzaTotale, null);
   assert.equal(withoutF24.dipendentiDettaglio[0].stipendio, 1300);
   assert.equal(withoutF24.dipendentiDettaglio[0].costoOrario, null);
@@ -103,6 +104,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   const afterInvoiceAdjustment = await report.get(9, 2026);
   assert.equal(afterInvoiceAdjustment.imponibileDettaglio, 4020);
   assert.equal(afterInvoiceAdjustment.imponibileFatturazioneMese, 14469);
+  assert.equal(afterInvoiceAdjustment.imponibileClientiFissiConOre, 4020);
   assert.equal(afterInvoiceAdjustment.clientiEsclusiZeroOre, 1);
   invoiceAdjustedClients = null;
   const withF24c = await report.saveF24c({ mese: 9, anno: 2026, importo: '400,00' });
@@ -249,6 +251,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   assert.equal(withExtraClients.clientiDettaglio.some(row => row.id === 'C4'), false);
   assert.equal(withExtraClients.clientiDettaglio.find(row => row.id === 'C5').rimanenza, -100);
   assert.equal(withExtraClients.imponibileDettaglio, 4120);
+  assert.equal(withExtraClients.imponibileClientiFissiConOre, 4120);
   assert.equal(withExtraClients.rimanenzaTotale, 1270);
   await db('buste_paga').insert({ id: 'B3', dipendente_id: 'D3', mese: '9', anno: '2026', importo_netto: 1157 });
   const withUnmatchedPayroll = await report.get(9, 2026);

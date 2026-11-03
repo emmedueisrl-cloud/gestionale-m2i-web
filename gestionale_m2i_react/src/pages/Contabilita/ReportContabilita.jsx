@@ -11,7 +11,7 @@ const ore = value => Number(value || 0).toLocaleString('it-IT', { maximumFractio
 const shortClientName = value => String(value || '').trim().split(/\s+/).slice(0, 4).join(' ');
 const adjustmentLabels = {
   totaleNetti: 'Netti buste paga · Totale mese', totaleCc: 'Totale CC',
-  f24: 'F24', oreTotali: 'Ore totali', imponibileClienti: 'Imponibile clienti con ore'
+  f24: 'F24', oreTotali: 'Ore totali', imponibileClienti: 'Totale imponibili dei clienti fissi'
 };
 const columns = [
   { key: 'cliente', label: 'Cliente' },
@@ -374,11 +374,17 @@ export default function ReportContabilita() {
               </div>}
           </AdjustableCard>)}
         </div>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
             <p className="text-sm font-semibold text-sky-900">Totale imponibili dei clienti del mese</p>
             <p className="mt-2 text-3xl font-bold text-sky-950">{euro(report.imponibileFatturazioneMese)}</p>
           </div>
+          <AdjustableCard field="imponibileClienti" label={adjustmentLabels.imponibileClienti}
+            value={euro(report.imponibileClientiFissiConOre)} adjustments={report.rettifiche || []}
+            clientAdjustments={report.rettificheClienti || []}
+            employeeAdjustments={report.rettificheDipendenti || []}
+            pairedAdjustments={report.rettificheOreAbbinate || []}
+            onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
             <p className="text-sm font-semibold text-indigo-900">Totale costo personale incluse BP, CC e F24</p>
             <p className="mt-2 text-3xl font-bold text-indigo-950">{report.costoTotale == null ? '—' : euro(report.costoTotale)}</p>
@@ -388,12 +394,6 @@ export default function ReportContabilita() {
             <p className="mt-2 text-3xl font-bold text-emerald-950">{report.rimanenzaTotale == null ? '—' : euro(report.rimanenzaTotale)}</p>
           </div>
         </div>
-        <AdjustableCard field="imponibileClienti" label={adjustmentLabels.imponibileClienti}
-          value={euro(report.imponibileClienti)} adjustments={report.rettifiche || []}
-          clientAdjustments={report.rettificheClienti || []}
-          employeeAdjustments={report.rettificheDipendenti || []}
-          pairedAdjustments={report.rettificheOreAbbinate || []}
-          onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
       </section>
 
       <section aria-label="Calcolo costo orario dipendenti" className="space-y-4 border-t border-slate-200 pt-6">

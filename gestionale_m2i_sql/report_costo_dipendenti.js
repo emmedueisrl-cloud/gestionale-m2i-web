@@ -169,6 +169,10 @@ function createEmployeeCostReport(knex, workflow) {
     const oreTotali = (baseOreCent + adjustmentTotals.oreTotali + clientHoursDeltaCent + employeeHoursDeltaCent - pairedTotalCent) / 100;
     const imponibileClientiCent = clientiConOre.reduce((sum, row) =>
       sum + Math.round(Number(row.imponibile || 0) * 100), 0) + adjustmentTotals.imponibileClienti;
+    const imponibileClientiFissiConOreCent = adjustedClientRows
+      .filter(row => Number(row.oreLavorate || 0) >= 1)
+      .reduce((sum, row) => sum + Math.round(Number(row.imponibile || 0) * 100), 0) +
+      adjustmentTotals.imponibileClienti;
     const hasF24Adjustment = adjustments.some(adjustment => adjustment.voce === 'f24');
     const f24Cent = baseF24Cent == null && !hasF24Adjustment ? null : Number(baseF24Cent || 0) + adjustmentTotals.f24;
     const costoOrarioSenzaF24Cent = oreTotali <= 0 ? null : Math.round((nettiCent + ccCent) / oreTotali);
@@ -305,6 +309,7 @@ function createEmployeeCostReport(knex, workflow) {
         Math.round(imponibileClientiCent / oreTotali) / 100 : null,
       imponibileDettaglio: imponibileDettaglioCent / 100,
       imponibileFatturazioneMese: imponibileFatturazioneMeseCent / 100,
+      imponibileClientiFissiConOre: imponibileClientiFissiConOreCent / 100,
       rimanenzaTotale: rimanenzaTotaleCent == null ? null : rimanenzaTotaleCent / 100,
       clientiDettaglio,
       f24c: f24cCent == null ? null : Number(f24cCent) / 100,
