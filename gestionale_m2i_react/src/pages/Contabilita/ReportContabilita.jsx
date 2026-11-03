@@ -351,30 +351,7 @@ export default function ReportContabilita() {
     {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-emerald-800">{message}</p>}
     {loading && <p className="text-slate-600">Caricamento report...</p>}
     {report && <>
-      <section aria-label="Calcolo costo orario dipendenti" className="space-y-4">
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
-          <p className="text-sm font-semibold text-indigo-900">Costo medio orario dipendente</p>
-          <p className="mt-2 text-4xl font-bold text-indigo-950">{costoOrarioMostrato == null ? '—' : `${euro(costoOrarioMostrato)} / h`}</p>
-          <p className="mt-2 text-sm text-indigo-900">({euro(report.totaleNetti)} netti + {euro(report.totaleCc)} CC{report.f24 == null ? '' : ` + ${euro(report.f24)} F24`}) ÷ {ore(report.oreTotali)} ore</p>
-          {report.f24 == null && report.oreTotali > 0 && <p className="mt-1 text-sm font-semibold text-amber-800">Valore parziale: F24 da inserire.</p>}
-        </div>
-        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile dividere il costo.</p>}
-      </section>
-
-      <section aria-label="Calcolo tariffa media clienti" className="space-y-4 border-t border-slate-200 pt-6">
-        <div>
-          <h2 className="text-xl font-bold">Tariffa media clienti</h2>
-          <p className="mt-1 text-sm text-slate-600">Somma degli imponibili dei clienti con ore, divisa per le ore totali del mese, comprese le rettifiche del Report.</p>
-        </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
-          <p className="text-sm font-semibold text-emerald-900">Tariffa media clienti</p>
-          <p className="mt-2 text-4xl font-bold text-emerald-950">{report.tariffaMediaClienti == null ? '—' : `${euro(report.tariffaMediaClienti)} / h`}</p>
-          <p className="mt-2 text-sm text-emerald-900">{euro(report.imponibileClienti)} ÷ {ore(report.oreTotali)} ore · {report.clientiConOre} clienti inclusi · {report.clientiEsclusiZeroOre} clienti con zero ore esclusi</p>
-        </div>
-        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile calcolare la tariffa media.</p>}
-      </section>
-
-      <section aria-label="Valori del mese" className="space-y-4 border-t border-slate-200 pt-6">
+      <section aria-label="Valori del mese" className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[
             ['totaleNetti', euro(Math.round((Number(report.totaleNetti) + Number(report.totaleCc)) * 100) / 100), 'totaleCc'],
@@ -418,6 +395,29 @@ export default function ReportContabilita() {
           employeeAdjustments={report.rettificheDipendenti || []}
           pairedAdjustments={report.rettificheOreAbbinate || []}
           onEdit={openAdjustment} onDelete={deleteAdjustment} deletingId={deletingAdjustmentId} />
+      </section>
+
+      <section aria-label="Calcolo costo orario dipendenti" className="space-y-4 border-t border-slate-200 pt-6">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
+          <p className="text-sm font-semibold text-indigo-900">Costo medio orario dipendente</p>
+          <p className="mt-2 text-4xl font-bold text-indigo-950">{costoOrarioMostrato == null ? '—' : `${euro(costoOrarioMostrato)} / h`}</p>
+          <p className="mt-2 text-sm text-indigo-900">({euro(report.totaleNetti)} netti + {euro(report.totaleCc)} CC{report.f24 == null ? '' : ` + ${euro(report.f24)} F24`}) ÷ {ore(report.oreTotali)} ore</p>
+          {report.f24 == null && report.oreTotali > 0 && <p className="mt-1 text-sm font-semibold text-amber-800">Valore parziale: F24 da inserire.</p>}
+        </div>
+        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile dividere il costo.</p>}
+      </section>
+
+      <section aria-label="Calcolo tariffa media clienti" className="space-y-4 border-t border-slate-200 pt-6">
+        <div>
+          <h2 className="text-xl font-bold">Tariffa media clienti</h2>
+          <p className="mt-1 text-sm text-slate-600">Somma degli imponibili dei clienti con ore, divisa per le ore totali del mese, comprese le rettifiche del Report.</p>
+        </div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
+          <p className="text-sm font-semibold text-emerald-900">Tariffa media clienti</p>
+          <p className="mt-2 text-4xl font-bold text-emerald-950">{report.tariffaMediaClienti == null ? '—' : `${euro(report.tariffaMediaClienti)} / h`}</p>
+          <p className="mt-2 text-sm text-emerald-900">{euro(report.imponibileClienti)} ÷ {ore(report.oreTotali)} ore · {report.clientiConOre} clienti inclusi · {report.clientiEsclusiZeroOre} clienti con zero ore esclusi</p>
+        </div>
+        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile calcolare la tariffa media.</p>}
       </section>
 
       <section aria-label="Redditività per cliente" className="space-y-4 border-t border-slate-200 pt-6">
