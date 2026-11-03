@@ -88,17 +88,51 @@ function createReportAccessoryCosts(knex) {
         table.index(['anno', 'mese']);
       });
     }
+    if (!await knex.schema.hasTable('report_costi_accessori_manuali')) {
+      await knex.schema.createTable('report_costi_accessori_manuali', table => {
+        table.increments('id').primary();
+        table.integer('mese').notNullable();
+        table.integer('anno').notNullable();
+        table.text('descrizione').notNullable();
+        table.integer('importo_cent').notNullable();
+        table.text('creato_at').notNullable();
+        table.index(['anno', 'mese']);
+      });
+    }
   }
 
   async function list(mese, anno) {
-    const rows = await knex('report_costi_accessori').where({ mese: Number(mese), anno: Number(anno) })
-      .orderBy('data_fattura').orderBy('id');
+    const [rows, manualRows] = await Promise.all([
+      knex('report_costi_accessori').where({ mese: Number(mese), anno: Number(anno) })
+        .orderBy('data_fattura').orderBy('id'),
+      knex('report_costi_accessori_manuali').where({ mese: Number(mese), anno: Number(anno) }).orderBy('id')
+    ]);
     return {
-      total: rows.reduce((sum, row) => sum + Number(row.imponibile_cent), 0) / 100,
+      total: (rows.reduce((sum, row) => sum + Number(row.imponibile_cent), 0) +
+        manualRows.reduce((sum, row) => sum + Number(row.importo_cent), 0)) / 100,
       invoices: rows.map(row => ({ id: row.id, file: row.nome_file, supplier: row.fornitore,
         number: row.numero_fattura, date: row.data_fattura,
-        taxable: Number(row.imponibile_cent) / 100, uploadedAt: row.caricato_at }))
+        taxable: Number(row.imponibile_cent) / 100, uploadedAt: row.caricato_at })),
+      manualCosts: manualRows.map(row => ({ id: row.id, description: row.descrizione,
+        amount: Number(row.importo_cent) / 100, createdAt: row.creato_at }))
     };
+  }
+
+  async function addManual(mese, anno, description, amount) {
+    const name = String(description || '').trim();
+    const raw = String(amount ?? '').trim().replace(',', '.');
+    if (!name || name.length > 300) throw new Error('Inserisci una descrizione di massimo 300 caratteri.');
+    if (!/^\d{1,9}(?:\.\d{1,2})?$/.test(raw) || Number(raw) <= 0) {
+      throw new Error('Inserisci un costo accessorio positivo con massimo due decimali.');
+    }
+    await knex('report_costi_accessori_manuali').insert({ mese: Number(mese), anno: Number(anno),
+      descrizione: name, importo_cent: Math.round(Number(raw) * 100), creato_at: new Date().toISOString() });
+  }
+
+  async function removeManual(mese, anno, id) {
+    const removed = await knex('report_costi_accessori_manuali').where({ id: Number(id),
+      mese: Number(mese), anno: Number(anno) }).del();
+    if (!removed) throw new Error('Costo accessorio manuale non trovato in questo mese.');
   }
 
   async function importXml(mese, anno, files) {
@@ -127,7 +161,7 @@ function createReportAccessoryCosts(knex) {
     if (!removed) throw new Error('Fattura di costo accessorio non trovata in questo mese.');
   }
 
-  return { initialize, list, importXml, remove };
+  return { initialize, list, importXml, remove, addManual, removeManual };
 }
 
 module.exports = { createReportAccessoryCosts, parseAccessoryInvoice };

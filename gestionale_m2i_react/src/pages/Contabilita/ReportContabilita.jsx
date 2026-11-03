@@ -114,6 +114,8 @@ export default function ReportContabilita() {
   const [savingF24c, setSavingF24c] = useState(false);
   const [accessoryOpen, setAccessoryOpen] = useState(false);
   const [accessoryBusy, setAccessoryBusy] = useState(false);
+  const [accessoryDescription, setAccessoryDescription] = useState('');
+  const [accessoryAmount, setAccessoryAmount] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [sort, setSort] = useState({ key: 'cliente', direction: 'asc' });
@@ -215,6 +217,30 @@ export default function ReportContabilita() {
       });
       setReport(data);
       setMessage('Fattura rimossa dai costi accessori.');
+    } catch (cause) { setError(cause.message); }
+    finally { setAccessoryBusy(false); }
+  };
+
+  const addManualAccessoryCost = async event => {
+    event.preventDefault(); setAccessoryBusy(true); setError(''); setMessage('');
+    try {
+      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/costi-accessori-manuali`, {
+        method: 'POST', body: JSON.stringify({ descrizione: accessoryDescription, importo: accessoryAmount })
+      });
+      setReport(data); setAccessoryDescription(''); setAccessoryAmount('');
+      setMessage('Costo accessorio aggiunto al mese selezionato.');
+    } catch (cause) { setError(cause.message); }
+    finally { setAccessoryBusy(false); }
+  };
+
+  const removeManualAccessoryCost = async cost => {
+    if (!window.confirm(`Rimuovere il costo accessorio “${cost.description}”?`)) return;
+    setAccessoryBusy(true); setError(''); setMessage('');
+    try {
+      const data = await workflowRequest(`contabilita/report/costo-dipendenti/${anno}/${mese}/costi-accessori-manuali/${cost.id}`, {
+        method: 'DELETE'
+      });
+      setReport(data); setMessage('Costo accessorio rimosso.');
     } catch (cause) { setError(cause.message); }
     finally { setAccessoryBusy(false); }
   };
@@ -338,7 +364,8 @@ export default function ReportContabilita() {
     ? Math.round(report.totaleNetti * 100) + Math.round(report.totaleCc * 100)
     : Math.round(report.costoTotale * 100);
   const ricavoTotaleMese = report == null ? null :
-    (Math.round(report.imponibileFatturazioneMese * 100) - costoPersonaleMeseCent) / 100;
+    (Math.round(report.imponibileFatturazioneMese * 100) - costoPersonaleMeseCent -
+      Math.round(report.costiAccessoriMese * 100)) / 100;
   const sortedClients = useMemo(() => (report?.clientiDettaglio || [])
     .map(row => ({ ...row, percentualeGuadagno: percentageGain(row) })).sort((a, b) => {
     const first = a[sort.key], second = b[sort.key];
@@ -432,7 +459,7 @@ export default function ReportContabilita() {
           <div className="flex min-h-[132px] flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="min-h-[40px] text-sm font-semibold leading-5 text-slate-600">Costi accessori del mese</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{euro(report.costiAccessoriMese)}</p>
-            <button type="button" onClick={() => setAccessoryOpen(true)} className="mt-2 self-start text-sm font-semibold text-indigo-700 underline hover:text-indigo-900">Carica XML o ZIP</button>
+            <button type="button" onClick={() => setAccessoryOpen(true)} className="mt-2 self-start text-sm font-semibold text-indigo-700 underline hover:text-indigo-900">Carica XML/ZIP o aggiungi costo</button>
           </div>
         </div>
       </section>
@@ -443,38 +470,33 @@ export default function ReportContabilita() {
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
             <p className="text-sm font-semibold text-emerald-900">Ricavo totale del mese</p>
             <p className="mt-2 text-3xl font-bold text-emerald-950">{euro(ricavoTotaleMese)}</p>
-            <p className="mt-2 text-sm text-emerald-900">Imponibili {euro(report.imponibileFatturazioneMese)} − costo personale {euro(costoPersonaleMeseCent / 100)}</p>
+            <p className="mt-2 text-sm text-emerald-900">Imponibili {euro(report.imponibileFatturazioneMese)} − costo personale {euro(costoPersonaleMeseCent / 100)} − costi accessori {euro(report.costiAccessoriMese)}</p>
             {report.f24 == null && <p className="mt-1 text-sm text-emerald-900">F24 non inserito: considerato 0 € nel calcolo.</p>}
           </div>
           <div className="rounded-xl border border-sky-200 bg-sky-50 p-5">
             <p className="text-sm font-semibold text-sky-900">Di cui extra</p>
             <p className="mt-2 text-3xl font-bold text-sky-950">{report.ricavoExtra == null ? '—' : euro(report.ricavoExtra)}</p>
-            <p className="mt-2 text-sm text-sky-900">Imponibili extra {euro(report.imponibileExtraMese)} − costo personale extra {report.costoPersonaleExtra == null ? '—' : euro(report.costoPersonaleExtra)}</p>
+            <p className="mt-2 text-sm text-sky-900">Imponibili extra {euro(report.imponibileExtraMese)} − costo personale extra {report.costoPersonaleExtra == null ? '—' : euro(report.costoPersonaleExtra)} − quota costi accessori {euro(report.quotaCostiAccessoriExtra)}</p>
+          </div>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5">
+            <p className="text-sm font-semibold text-indigo-900">Costo medio orario dipendente · clienti fissi</p>
+            <p className="mt-2 text-3xl font-bold text-indigo-950">{costoOrarioMostrato == null ? '—' : `${euro(costoOrarioMostrato)} / h`}</p>
+            <p className="mt-2 text-sm text-indigo-900">(Costo personale {euro(costoPersonaleMeseCent / 100)} − costo ore extra {euro(report.costoOreExtra)}) ÷ {ore(report.oreClientiFissiConOre)} ore clienti fissi</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+            <p className="text-sm font-semibold text-amber-900">Costo medio orario costi accessori</p>
+            <p className="mt-2 text-3xl font-bold text-amber-950">{report.costoOrarioAccessori == null ? '—' : euroOrarioPreciso(report.costoOrarioAccessori)}</p>
+            <p className="mt-2 text-sm text-amber-900">{euro(report.costiAccessoriMese)} ÷ {ore(report.oreTotali)} ore totali</p>
           </div>
         </div>
       </section>
 
-      <section aria-label="Calcolo costo orario dipendenti" className="space-y-4 border-t border-slate-200 pt-6">
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
-          <p className="text-sm font-semibold text-indigo-900">Costo medio orario dipendente</p>
-          <p className="mt-2 text-4xl font-bold text-indigo-950">{costoOrarioMostrato == null ? '—' : `${euro(costoOrarioMostrato)} / h`}</p>
-          <p className="mt-2 text-sm text-indigo-900">({euro(report.totaleNetti)} netti + {euro(report.totaleCc)} CC{report.f24 == null ? '' : ` + ${euro(report.f24)} F24`}) ÷ {ore(report.oreTotali)} ore</p>
-          {report.f24 == null && report.oreTotali > 0 && <p className="mt-1 text-sm font-semibold text-amber-800">Valore parziale: F24 da inserire.</p>}
-        </div>
-        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile dividere il costo.</p>}
-      </section>
-
       <section aria-label="Calcolo tariffa media clienti" className="space-y-4 border-t border-slate-200 pt-6">
-        <div>
-          <h2 className="text-xl font-bold">Tariffa media clienti</h2>
-          <p className="mt-1 text-sm text-slate-600">Somma degli imponibili dei clienti con ore, divisa per le ore totali del mese, comprese le rettifiche del Report.</p>
-        </div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
-          <p className="text-sm font-semibold text-emerald-900">Tariffa media clienti</p>
+          <p className="text-sm font-semibold text-emerald-900">Tariffa media clienti fissi con almeno un’ora lavorata</p>
           <p className="mt-2 text-4xl font-bold text-emerald-950">{report.tariffaMediaClienti == null ? '—' : `${euro(report.tariffaMediaClienti)} / h`}</p>
-          <p className="mt-2 text-sm text-emerald-900">{euro(report.imponibileClienti)} ÷ {ore(report.oreTotali)} ore · {report.clientiConOre} clienti inclusi · {report.clientiEsclusiZeroOre} clienti con zero ore esclusi</p>
+          <p className="mt-2 text-sm text-emerald-900">{euro(report.imponibileClientiFissiConOre)} ÷ {ore(report.oreClientiFissiConOre)} ore dei clienti fissi</p>
         </div>
-        {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile calcolare la tariffa media.</p>}
       </section>
 
       <section aria-label="Redditività per cliente" className="space-y-4 border-t border-slate-200 pt-6">
@@ -682,6 +704,18 @@ export default function ReportContabilita() {
         <label className="mt-5 block text-sm font-semibold text-slate-700">Carica fatture XML o ZIP
           <input type="file" accept=".xml,.zip,application/xml,text/xml,application/zip" multiple disabled={accessoryBusy} onChange={uploadAccessoryXml} className="mt-2 block w-full rounded-lg border border-slate-300 p-2 text-sm disabled:opacity-50" />
         </label>
+        <form onSubmit={addManualAccessoryCost} className="mt-5 space-y-3 border-t border-slate-200 pt-4">
+          <p className="text-sm font-semibold text-slate-700">Aggiungi un costo senza XML</p>
+          <div className="flex flex-wrap gap-3">
+            <label className="min-w-52 flex-1 text-sm text-slate-700">Descrizione
+              <input type="text" maxLength={300} value={accessoryDescription} onChange={event => setAccessoryDescription(event.target.value)} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
+            <label className="w-40 text-sm text-slate-700">Importo (€)
+              <input type="text" inputMode="decimal" value={accessoryAmount} onChange={event => setAccessoryAmount(event.target.value)} placeholder="Es. 1005,00" className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
+          </div>
+          <button type="submit" disabled={accessoryBusy || !accessoryDescription.trim() || !accessoryAmount.trim()} className="rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">Aggiungi costo</button>
+        </form>
         {accessoryBusy && <p role="status" className="mt-3 text-sm text-slate-600">Aggiornamento costi accessori...</p>}
         {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         <div className="mt-5 border-t border-slate-200 pt-4">
@@ -692,6 +726,15 @@ export default function ReportContabilita() {
               <div><p className="font-semibold">{invoice.supplier} · {invoice.number}</p><p className="text-slate-600">{invoice.date} · {invoice.file}</p></div>
               <div className="flex items-center gap-3"><span className="font-semibold tabular-nums">{euro(invoice.taxable)}</span>
                 <button type="button" disabled={accessoryBusy} onClick={() => removeAccessoryInvoice(invoice)} className="font-semibold text-red-700 underline hover:text-red-900 disabled:opacity-50">Rimuovi</button>
+              </div>
+            </li>)}
+          </ul>
+          {!!(report.costiAccessoriManuali || []).length && <p className="mt-5 font-semibold">Costi aggiunti senza XML</p>}
+          <ul className="mt-3 space-y-2">
+            {(report.costiAccessoriManuali || []).map(cost => <li key={cost.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+              <span className="font-semibold">{cost.description}</span>
+              <div className="flex items-center gap-3"><span className="font-semibold tabular-nums">{euro(cost.amount)}</span>
+                <button type="button" disabled={accessoryBusy} onClick={() => removeManualAccessoryCost(cost)} className="font-semibold text-red-700 underline hover:text-red-900 disabled:opacity-50">Rimuovi</button>
               </div>
             </li>)}
           </ul>

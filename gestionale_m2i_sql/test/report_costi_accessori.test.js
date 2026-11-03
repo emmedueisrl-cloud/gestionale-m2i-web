@@ -39,4 +39,9 @@ test('costi accessori: somma gli imponibili XML nel mese scelto, evita doppi e c
   zip.file('XML/104.xml', invoice('104', 'TD01', ['20.00']).buffer);
   await costs.importXml(10, 2026, [{ originalname: 'fatture.zip', buffer: await zip.generateAsync({ type: 'nodebuffer' }) }]);
   assert.equal((await costs.list(10, 2026)).total, 180.25);
+  await costs.addManual(10, 2026, 'Materiale non fatturato', '1005,00');
+  const withManual = await costs.list(10, 2026);
+  assert.equal(withManual.total, 1185.25);
+  await costs.removeManual(10, 2026, withManual.manualCosts[0].id);
+  assert.equal((await costs.list(10, 2026)).total, 180.25);
 });

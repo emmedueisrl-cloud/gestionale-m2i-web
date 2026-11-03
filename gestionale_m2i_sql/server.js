@@ -421,6 +421,11 @@ app.post('/api/contabilita/report/costo-dipendenti/:anno/:mese/costi-accessori',
     employeeCostReport.importAccessoryXml({ mese: req.params.mese, anno: req.params.anno, files: req.files })));
 app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/costi-accessori/:id', handleWorkflow(req =>
   employeeCostReport.removeAccessoryInvoice({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
+app.post('/api/contabilita/report/costo-dipendenti/:anno/:mese/costi-accessori-manuali', handleWorkflow(req =>
+  employeeCostReport.addManualAccessoryCost({ mese: req.params.mese, anno: req.params.anno,
+    description: req.body?.descrizione, amount: req.body?.importo })));
+app.delete('/api/contabilita/report/costo-dipendenti/:anno/:mese/costi-accessori-manuali/:id', handleWorkflow(req =>
+  employeeCostReport.removeManualAccessoryCost({ mese: req.params.mese, anno: req.params.anno, id: req.params.id })));
 app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/f24', handleWorkflow(req =>
   employeeCostReport.saveF24({ mese: req.params.mese, anno: req.params.anno, importo: req.body?.importo })));
 app.put('/api/contabilita/report/costo-dipendenti/:anno/:mese/f24c', handleWorkflow(req =>

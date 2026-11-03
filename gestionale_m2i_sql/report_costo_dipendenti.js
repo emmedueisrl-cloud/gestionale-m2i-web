@@ -108,7 +108,13 @@ function createEmployeeCostReport(knex, workflow) {
       payrollByEmployee.set(id, (payrollByEmployee.get(id) || 0) + Math.round(Number(row.importo_netto || 0) * 100));
     }
     const illnessHoursByEmployee = new Map();
+    const extraHoursByClient = new Map();
     for (const row of hoursByClient) {
+      if (String(row.causale_assenza || '').trim().toLowerCase() === 'extra' && row.cliente_id != null) {
+        const clientId = String(row.cliente_id);
+        extraHoursByClient.set(clientId, (extraHoursByClient.get(clientId) || 0) +
+          Math.round(Number(row.ore_totali || 0) * 100));
+      }
       if (!String(row.causale_assenza || '').toLowerCase().includes('malatt')) continue;
       const id = String(row.dipendente_id);
       illnessHoursByEmployee.set(id, (illnessHoursByEmployee.get(id) || 0) + Math.round(Number(row.ore_totali || 0) * 100));
@@ -176,6 +182,10 @@ function createEmployeeCostReport(knex, workflow) {
         oreLavorate: ((oreAdjustment ? Number(oreAdjustment.valore_cent) : baseOreCent) + (pairedClientDeltas.get(id) || 0)) / 100,
         imponibile: (imponibileAdjustment ? Number(imponibileAdjustment.valore_cent) : baseImponibileCent) / 100 };
     });
+    const oreFisseClienteCent = row => Math.max(0,
+      Math.round(Number(row.oreLavorate || 0) * 100) - (extraHoursByClient.get(String(row.idCliente)) || 0));
+    const clientiFissiConOre = adjustedClientRows.filter(row => oreFisseClienteCent(row) >= 100);
+    const oreClientiFissiConOreCent = clientiFissiConOre.reduce((sum, row) => sum + oreFisseClienteCent(row), 0);
     const adjustedClientsById = new Map(adjustedClientRows.map(row => [String(row.idCliente), row]));
     const clientiConOre = adjustedClientRows.filter(row => Number(row.oreLavorate || 0) > 0);
     const clientHoursDeltaCent = adjustedClientRows.reduce((sum, row) =>
@@ -188,19 +198,40 @@ function createEmployeeCostReport(knex, workflow) {
     const oreTotali = (baseOreCent + adjustmentTotals.oreTotali + clientHoursDeltaCent + employeeHoursDeltaCent - pairedTotalCent) / 100;
     const imponibileClientiCent = clientiConOre.reduce((sum, row) =>
       sum + Math.round(Number(row.imponibile || 0) * 100), 0) + adjustmentTotals.imponibileClienti;
-    const imponibileClientiFissiConOreCent = adjustedClientRows
-      .filter(row => Number(row.oreLavorate || 0) >= 1)
+    const imponibileClientiFissiConOreCent = clientiFissiConOre
       .reduce((sum, row) => sum + Math.round(Number(row.imponibile || 0) * 100), 0) +
       adjustmentTotals.imponibileClienti;
     const hasF24Adjustment = adjustments.some(adjustment => adjustment.voce === 'f24');
     const f24Cent = baseF24Cent == null && !hasF24Adjustment ? null : Number(baseF24Cent || 0) + adjustmentTotals.f24;
-    const costoOrarioSenzaF24Cent = oreTotali <= 0 ? null : Math.round((nettiCent + ccCent) / oreTotali);
+    const ccByEmployee = new Map(rows.map(row => [String(row.idDipendente), Math.round(Number(row.cc || 0) * 100)]));
+    const quotaF24OrariaCent = oreTotali > 0 ? Math.round((f24Cent || 0) / oreTotali) : null;
+    const dipendentiPerExtra = new Map(adjustedEmployeeRows.map(row => [String(row.idDipendente), row]));
+    let costoOreExtraSenzaF24Cent = 0;
+    let costoOreExtraF24Cent = 0;
+    let costoOreExtraDisponibile = true;
+    for (const lavoro of lavoriExtra.filter(item => item.modalita === 'elaborato')) {
+      const oreLavoro = JSON.parse(lavoro.giornate_json).reduce((sum, giorno) => sum + Number(giorno.ore || 0), 0);
+      const dipendente = dipendentiPerExtra.get(String(lavoro.dipendente_id));
+      if (!dipendente || dipendente.productiveHoursCent <= 0 || quotaF24OrariaCent == null) {
+        costoOreExtraDisponibile = false;
+        continue;
+      }
+      const stipendioCent = dipendente.reportNetCent + (ccByEmployee.get(String(lavoro.dipendente_id)) || 0) - dipendente.illnessCostCent;
+      const costoOrarioDipendenteCent = Math.round(stipendioCent / (dipendente.productiveHoursCent / 100));
+      costoOreExtraSenzaF24Cent += Math.round(oreLavoro * costoOrarioDipendenteCent);
+      costoOreExtraF24Cent += Math.round(oreLavoro * quotaF24OrariaCent);
+    }
+    const costoOreExtraCent = costoOreExtraSenzaF24Cent + costoOreExtraF24Cent;
+    const costoPersonaleExtraCent = costoOreExtraDisponibile ? costoOreExtraCent + compensoFissoExtraCent : null;
+    const oreClientiFissi = oreClientiFissiConOreCent / 100;
+    const costoOrarioSenzaF24Cent = !costoOreExtraDisponibile || oreClientiFissi <= 0 ? null :
+      Math.round((nettiCent + ccCent - costoOreExtraSenzaF24Cent) / oreClientiFissi);
     const costoCent = f24Cent == null ? null : nettiCent + ccCent + f24Cent;
-    const costoOrarioCent = costoCent == null || oreTotali <= 0 ? null :
-      Math.round(costoCent / oreTotali);
-    const clientiDettaglio = adjustedClientRows.filter(row => Number(row.oreLavorate || 0) >= 1 ||
+    const costoOrarioCent = costoCent == null || !costoOreExtraDisponibile || oreClientiFissi <= 0 ? null :
+      Math.round((costoCent - costoOreExtraCent) / oreClientiFissi);
+    const clientiDettaglio = adjustedClientRows.filter(row => oreFisseClienteCent(row) >= 100 ||
       (row.baseOreCent >= 100 && clientAdjustmentMap.has(`${row.idCliente}:ore`))).map(row => {
-      const oreCliente = Math.round(Number(row.oreLavorate) * 100) / 100;
+      const oreCliente = oreFisseClienteCent(row) / 100;
       const imponibileCent = Math.round(Number(row.imponibile || 0) * 100);
       const tariffaCent = oreCliente > 0 ? Math.round(imponibileCent / oreCliente) : null;
       const costoDipendentiCent = costoOrarioCent == null ? null : Math.round(oreCliente * costoOrarioCent);
@@ -221,10 +252,11 @@ function createEmployeeCostReport(knex, workflow) {
     const f24cCent = f24c?.importo_cent ?? null;
     const f24cWithIllnessCent = f24cCent == null ? null : Number(f24cCent) + illnessCostCent;
     const employeeAllocationHours = Math.max(0, oreTotali - illnessHoursCent / 100);
-    const ccByEmployee = new Map(rows.map(row => [String(row.idDipendente), Math.round(Number(row.cc || 0) * 100)]));
-    const clientTariffs = new Map(adjustedClientRows.filter(row => Number(row.oreLavorate || 0) > 0)
-      .map(row => [String(row.idCliente), Math.round(Math.round(Number(row.imponibile || 0) * 100) / Number(row.oreLavorate))]));
+    const clientTariffs = new Map(adjustedClientRows.filter(row => oreFisseClienteCent(row) > 0)
+      .map(row => [String(row.idCliente), Math.round(Math.round(Number(row.imponibile || 0) * 100) /
+        (oreFisseClienteCent(row) / 100))]));
     const employeeClientHours = new Map();
+    const employeeClientFixedHours = new Map();
     for (const row of hoursByClient) {
       if (!String(row.cliente_id || '').trim() || !String(row.dipendente_id || '').trim()) continue;
       const cause = String(row.causale_assenza || 'Ordinario').trim().toLowerCase();
@@ -233,12 +265,19 @@ function createEmployeeCostReport(knex, workflow) {
       if (!employeeClientHours.has(employeeId)) employeeClientHours.set(employeeId, new Map());
       const hours = employeeClientHours.get(employeeId);
       hours.set(clientId, (hours.get(clientId) || 0) + Number(row.ore_totali || 0));
+      if (cause !== 'extra') {
+        if (!employeeClientFixedHours.has(employeeId)) employeeClientFixedHours.set(employeeId, new Map());
+        const fixedHours = employeeClientFixedHours.get(employeeId);
+        fixedHours.set(clientId, (fixedHours.get(clientId) || 0) + Number(row.ore_totali || 0));
+      }
     }
     for (const item of pairedHours) {
       const employeeId = String(item.dipendente_id), clientId = String(item.cliente_id);
-      if (!employeeClientHours.has(employeeId)) employeeClientHours.set(employeeId, new Map());
-      const hours = employeeClientHours.get(employeeId);
-      hours.set(clientId, (hours.get(clientId) || 0) + Number(item.delta_cent) / 100);
+      for (const allocations of [employeeClientHours, employeeClientFixedHours]) {
+        if (!allocations.has(employeeId)) allocations.set(employeeId, new Map());
+        const hours = allocations.get(employeeId);
+        hours.set(clientId, (hours.get(clientId) || 0) + Number(item.delta_cent) / 100);
+      }
     }
     const dipendentiDettaglio = adjustedEmployeeRows.filter(row => row.productiveHoursCent > 0).map(row => {
       const id = String(row.idDipendente);
@@ -246,7 +285,7 @@ function createEmployeeCostReport(knex, workflow) {
       const nettoCent = row.reportNetCent;
       const ccDipendenteCent = ccByEmployee.get(id) || 0;
       const stipendioCent = nettoCent + ccDipendenteCent - row.illnessCostCent;
-      const clientHours = employeeClientHours.get(id) || new Map();
+      const clientHours = employeeClientFixedHours.get(id) || new Map();
       let valoreClientiCent = 0, oreClienti = 0;
       const clientiSenzaTariffa = [];
       const dettaglioClientiResa = [];
@@ -282,22 +321,9 @@ function createEmployeeCostReport(knex, workflow) {
         costoDipendente: costoDipendenteCent == null ? null : costoDipendenteCent / 100,
         resa: resaCent == null ? null : resaCent / 100, clientiSenzaTariffa };
     });
-    const quotaF24OrariaCent = oreTotali > 0 ? Math.round((f24Cent || 0) / oreTotali) : null;
-    const dipendentiPerExtra = new Map(adjustedEmployeeRows.map(row => [String(row.idDipendente), row]));
-    let costoOreExtraCent = 0;
-    let costoOreExtraDisponibile = true;
-    for (const lavoro of lavoriExtra.filter(item => item.modalita === 'elaborato')) {
-      const oreLavoro = JSON.parse(lavoro.giornate_json).reduce((sum, giorno) => sum + Number(giorno.ore || 0), 0);
-      const dipendente = dipendentiPerExtra.get(String(lavoro.dipendente_id));
-      if (!dipendente || dipendente.productiveHoursCent <= 0 || quotaF24OrariaCent == null) {
-        costoOreExtraDisponibile = false;
-        continue;
-      }
-      const stipendioCent = dipendente.reportNetCent + (ccByEmployee.get(String(lavoro.dipendente_id)) || 0) - dipendente.illnessCostCent;
-      const costoOrarioDipendenteCent = Math.round(stipendioCent / (dipendente.productiveHoursCent / 100));
-      costoOreExtraCent += Math.round(oreLavoro * (costoOrarioDipendenteCent + quotaF24OrariaCent));
-    }
-    const costoPersonaleExtraCent = costoOreExtraDisponibile ? costoOreExtraCent + compensoFissoExtraCent : null;
+    const costiAccessoriCent = Math.round(accessory.total * 100);
+    const quotaCostiAccessoriExtraCent = oreTotali > 0
+      ? Math.round(costiAccessoriCent * oreExtraCent / Math.round(oreTotali * 100)) : 0;
     return {
       mese: period.mese, anno: period.anno, dipendenti: monthlyRows.length,
       buste: payrollRows.length,
@@ -314,6 +340,9 @@ function createEmployeeCostReport(knex, workflow) {
       costoTotale: costoCent == null ? null : costoCent / 100,
       costoOrario: costoOrarioCent == null ? null : costoOrarioCent / 100,
       costoOrarioSenzaF24: costoOrarioSenzaF24Cent == null ? null : costoOrarioSenzaF24Cent / 100,
+      costoOreExtra: costoOreExtraCent / 100,
+      costoPersonaleClientiFissi: costoOreExtraDisponibile ?
+        (nettiCent + ccCent + (f24Cent || 0) - costoOreExtraCent) / 100 : null,
       imponibileClienti: imponibileClientiCent / 100,
       clientiConOre: clientiConOre.length,
       clientiEsclusiZeroOre: billingClientRows.length - clientiConOre.length,
@@ -340,18 +369,24 @@ function createEmployeeCostReport(knex, workflow) {
         abbinamenti: pairedHours.filter(row => row.gruppo_id === item.gruppo_id).map(row => ({
           dipendenteId: String(row.dipendente_id), clienteId: String(row.cliente_id), differenza: Number(row.delta_cent) / 100 }))
       })),
-      tariffaMediaClienti: oreTotali > 0 ?
-        Math.round(imponibileClientiCent / oreTotali) / 100 : null,
+      tariffaMediaClienti: oreClientiFissiConOreCent > 0 ?
+        Math.round(imponibileClientiFissiConOreCent / (oreClientiFissiConOreCent / 100)) / 100 : null,
+      oreClientiFissiConOre: oreClientiFissiConOreCent / 100,
       imponibileDettaglio: imponibileDettaglioCent / 100,
       imponibileFatturazioneMese: imponibileFatturazioneMeseCent / 100,
       imponibileClientiFissiConOre: imponibileClientiFissiConOreCent / 100,
+      oreClientiFissiConOre: oreClientiFissi,
       imponibileExtraMese: imponibileExtraMeseCent / 100,
       costiAccessoriMese: accessory.total,
       fattureCostiAccessori: accessory.invoices,
+      costiAccessoriManuali: accessory.manualCosts,
+      costoOrarioAccessori: oreTotali > 0 ? accessory.total / oreTotali : null,
+      quotaCostiAccessoriExtra: quotaCostiAccessoriExtraCent / 100,
       oreExtraElaborato: oreExtraCent / 100,
       compensoFissoExtra: compensoFissoExtraCent / 100,
       costoPersonaleExtra: costoPersonaleExtraCent == null ? null : costoPersonaleExtraCent / 100,
-      ricavoExtra: costoPersonaleExtraCent == null ? null : (imponibileExtraMeseCent - costoPersonaleExtraCent) / 100,
+      ricavoExtra: costoPersonaleExtraCent == null ? null :
+        (imponibileExtraMeseCent - costoPersonaleExtraCent - quotaCostiAccessoriExtraCent) / 100,
       imponibileClientiFissiSenzaOre: imponibileClientiFissiSenzaOreCent / 100,
       rimanenzaTotale: rimanenzaTotaleCent == null ? null : rimanenzaTotaleCent / 100,
       clientiDettaglio,
@@ -579,7 +614,20 @@ function createEmployeeCostReport(knex, workflow) {
     return get(period.mese, period.anno);
   }
 
-  return { initialize, get, importAccessoryXml, removeAccessoryInvoice, saveF24, saveF24c, addAdjustment, deleteAdjustment,
+  async function addManualAccessoryCost({ mese, anno, description, amount }) {
+    const period = workflow.period('dipendente', mese, anno);
+    await accessoryCosts.addManual(period.mese, period.anno, description, amount);
+    return get(period.mese, period.anno);
+  }
+
+  async function removeManualAccessoryCost({ mese, anno, id }) {
+    const period = workflow.period('dipendente', mese, anno);
+    await accessoryCosts.removeManual(period.mese, period.anno, id);
+    return get(period.mese, period.anno);
+  }
+
+  return { initialize, get, importAccessoryXml, removeAccessoryInvoice,
+    addManualAccessoryCost, removeManualAccessoryCost, saveF24, saveF24c, addAdjustment, deleteAdjustment,
     saveClientAdjustment, deleteClientAdjustment, saveEmployeeAdjustment, deleteEmployeeAdjustment,
     savePairedHours, deletePairedHours, updatePairedHoursNote };
 }
