@@ -1576,11 +1576,16 @@ app.use((req, res, next) => {
   }
 });
 
+let initializationStep = 'migrazione agenda';
 Promise.resolve().then(async () => {
   await agendaMigration;
+  initializationStep = 'tipo cliente';
   await ensureTipoCliente(knex);
+  initializationStep = 'autenticazione';
   await auth.initialize();
+  initializationStep = 'agenda pubblica';
   await publicAgenda.initialize();
+  initializationStep = 'appuntamenti e notifiche';
   await appuntamentiPreventivi.ensureTable();
   await marketingNotifications.ensureTables();
   await publicAppointmentNotifications.ensureTable();
@@ -1588,20 +1593,24 @@ Promise.resolve().then(async () => {
   await publicAppuntamenti.initialize();
   await preventiviCtrl.ensurePreventiviIds();
   await preventiviProforme.ensureTable();
+  initializationStep = 'allegati ed elaborati';
   await ensureAttachmentColumns(knex);
   await ensureElaboratiNoteStoriche(knex);
   await fatturazioneAnagrafiche.ensureColumns(knex);
   await descrizioniFatture.initialize(knex);
   await workflowElaborati.initialize();
+  initializationStep = 'servizi extra e costi dipendenti';
   await serviziExtra.initialize();
   await employeeCostReport.initialize();
+  initializationStep = 'incassi e insoluti';
   await incassiInsoluti.initialize();
+  initializationStep = 'indici';
   await ensureIndexes(knex);
   app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
     console.log(`Gestionale M2I attivo sulla porta ${PORT}`);
   });
 }).catch(error => {
-  console.error('Avvio bloccato: inizializzazione database non riuscita.', error.message);
+  console.error(`Avvio bloccato durante ${initializationStep}: inizializzazione database non riuscita.`, error.stack || error.message);
   process.exitCode = 1;
 });
 

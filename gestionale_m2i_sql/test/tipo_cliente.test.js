@@ -56,3 +56,37 @@ test('migra lo schema esistente senza cambiare i clienti con partita IVA', async
       { tipo_cliente: 'PRIVATO', partita_iva: null, codice_fiscale: 'VRDLCU80A01H501A' });
   } finally { await knex.destroy(); }
 });
+
+test('rende facoltativa la partita IVA anche con chiavi esterne storiche orfane', async () => {
+  const knex = makeKnex({ client: 'sqlite3', connection: { filename: ':memory:' }, useNullAsDefault: true,
+    pool: { min: 1, max: 1, afterCreate: (connection, done) => connection.run('PRAGMA foreign_keys = ON', done) } });
+  try {
+    await knex.schema.createTable('clienti', table => {
+      table.text('id').primary();
+      table.text('ragione_sociale').notNullable();
+      table.text('partita_iva').unique().notNullable();
+    });
+    await knex.schema.createTable('storico', table => {
+      table.integer('id').primary();
+      table.text('cliente_id').references('id').inTable('clienti');
+    });
+    await knex('clienti').insert({ id: 'C1', ragione_sociale: 'Azienda', partita_iva: '12345678901' });
+    const connection = await knex.client.acquireConnection();
+    try {
+      await new Promise((resolve, reject) => connection.exec(
+        "PRAGMA foreign_keys = OFF; INSERT INTO storico (id, cliente_id) VALUES (1, 'C_MANCANTE'); PRAGMA foreign_keys = ON;",
+        error => error ? reject(error) : resolve()
+      ));
+    } finally { await knex.client.releaseConnection(connection); }
+    assert.equal((await knex.raw('PRAGMA foreign_key_check')).length, 1);
+
+    await ensureTipoCliente(knex);
+    await ensureTipoCliente(knex);
+
+    assert.equal((await knex.raw('PRAGMA foreign_key_check')).length, 1);
+    assert.deepEqual(await knex('clienti').where({ id: 'C1' }).first('partita_iva', 'tipo_cliente'),
+      { partita_iva: '12345678901', tipo_cliente: 'PARTITA_IVA' });
+    await knex('clienti').insert({ id: 'C2', ragione_sociale: 'Privato', partita_iva: null, tipo_cliente: 'PRIVATO' });
+    await assert.rejects(() => knex('storico').insert({ id: 2, cliente_id: 'C_ASSENTE' }), /FOREIGN KEY/);
+  } finally { await knex.destroy(); }
+});
