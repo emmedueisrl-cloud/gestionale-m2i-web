@@ -258,7 +258,8 @@ export default function ContabilitaElaborati({ tipo }) {
         ...gruppiExtra.filter(group => group.inviataAt || group.fatturaRegistrazioneId).map(group => rigaFatturazioneExtra(group, rows))], vuoto: 'Nessuna fattura elaborata per questo mese.' }
   ] : [];
   const searchTerm = search.trim().toLocaleLowerCase('it-IT');
-  const matchesClient = row => !searchTerm || [row.ragioneSociale, row.nomeServizioExtra, row.descrizioneFattura, ...(row.fatture || []).map(fattura => fattura.numero)]
+  const matchesClient = row => !searchTerm || [row.ragioneSociale, row.nomeServizioExtra, row.descrizioneFattura,
+    ...(row.scorporiFattura || []).map(line => line.descrizione), ...(row.fatture || []).map(fattura => fattura.numero)]
     .some(value => String(value || '').toLocaleLowerCase('it-IT').includes(searchTerm));
   const matchesEmployee = row => !searchTerm || String(row.cognomeNome || '').toLocaleLowerCase('it-IT').includes(searchTerm);
   const visibleGroup = tipo === 'cliente' ? {

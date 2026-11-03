@@ -61,6 +61,13 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
               ? `${dataRegistrazione(registrationDays[0])}${registrationDays.length > 1 ? ` +${registrationDays.length - 1}` : ''}`
               : 'Data non disponibile';
             const hasDifference = registered && Math.abs(differenceCents(row)) > 20;
+            const scorpori = row.scorporiFattura || [];
+            const residuoCent = Math.round((Number(row.imponibile) || 0) * 100) - scorpori.reduce(
+              (sum, line) => sum + Math.round((Number(line.imponibile) || 0) * 100), 0);
+            const righeFattura = scorpori.length ? [
+              ...(residuoCent > 0 ? [{ descrizione: row.descrizioneFattura, imponibile: residuoCent / 100 }] : []),
+              ...scorpori
+            ] : null;
             const cell = 'border-r border-r-slate-200 border-b-2 border-b-slate-400 px-2 py-2 align-middle last:border-r-0';
             const numberCell = `${cell} whitespace-nowrap text-[18px]`;
             const rowColor = elaborate
@@ -86,7 +93,12 @@ export default function TabellaFatture({ titolo, elaborate, righe, vuoto, base, 
                   <textarea aria-label={`Descrizione fattura di ${row.ragioneSociale}`} autoFocus maxLength={500} rows={3} value={draftDescription} onChange={event => setDraftDescription(event.target.value)} className="w-full rounded border border-indigo-400 bg-white p-1 text-sm" />
                   {descriptionError && <p role="alert" className="text-xs text-red-700">{descriptionError}</p>}
                   <div className="flex gap-1"><button type="button" disabled={busy || !draftDescription.trim()} onClick={async () => { try { await onSaveDescription(row, draftDescription); setEditingId(null); setDescriptionError(''); } catch (error) { setDescriptionError(error.message); } }} className="rounded bg-indigo-700 px-2 py-1 text-xs text-white disabled:opacity-50">Salva</button><button type="button" onClick={() => setEditingId(null)} className="rounded bg-slate-200 px-2 py-1 text-xs">Annulla</button></div>
-                </div> : <><span className="whitespace-pre-wrap">{row.descrizioneFattura || '—'}</span>{!elaborate && !row.fatturaInviataAt && !registered && row.gruppoExtraTipo !== 'mensile' && <button type="button" onClick={() => { setEditingId(row.gruppoExtraId || row.idCliente); setDraftDescription(row.descrizioneFattura || ''); setDescriptionError(''); }} className="mt-1 block text-xs font-semibold text-indigo-700 underline">Modifica</button>}</>}
+                </div> : <>
+                  {righeFattura ? <div className="max-h-32 space-y-1 overflow-y-auto">
+                    {righeFattura.map((line, lineIndex) => <div key={lineIndex} className="whitespace-pre-wrap"><span className="font-semibold">{euro(line.imponibile)}</span> · {line.descrizione}</div>)}
+                  </div> : <span className="whitespace-pre-wrap">{row.descrizioneFattura || '—'}</span>}
+                  {!elaborate && !row.fatturaInviataAt && !registered && row.gruppoExtraTipo !== 'mensile' && (!righeFattura || residuoCent > 0) && <button type="button" onClick={() => { setEditingId(row.gruppoExtraId || row.idCliente); setDraftDescription(row.descrizioneFattura || ''); setDescriptionError(''); }} className="mt-1 block text-xs font-semibold text-indigo-700 underline">{righeFattura ? 'Modifica riga principale' : 'Modifica'}</button>}
+                </>}
               </td>
               <td className={`${cell} break-words px-3 text-left text-[18px] text-slate-800`}>
                 <div className="max-h-28 space-y-1 overflow-y-auto whitespace-pre-wrap">
