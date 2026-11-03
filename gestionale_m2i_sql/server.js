@@ -29,6 +29,8 @@ const { createServiziExtra } = require('./servizi_extra');
 const serviziExtra = createServiziExtra(knex);
 const { createArubaZipService } = require('./fatture_aruba_zip');
 const arubaZip = createArubaZipService(knex, workflowElaborati);
+const { createInvoiceUploadCleanup } = require('./fatture_caricamenti_cleanup');
+const invoiceUploadCleanup = createInvoiceUploadCleanup(knex, process.env.DATA_DIR);
 const consulenteEmail = require('./consulente_email');
 const { createInvoiceEmailService } = require('./fatture_email');
 const invoiceEmail = createInvoiceEmailService(knex);
@@ -466,6 +468,10 @@ app.put('/api/contabilita/fatture/rettifica', handleWorkflow(req =>
   workflowElaborati.saveInvoiceAdjustment({ ...req.body, userId: req.authUser.id })));
 app.put('/api/contabilita/fatture/scorpori', handleWorkflow(req =>
   workflowElaborati.saveInvoiceSplit(req.body || {})));
+app.get('/api/contabilita/fatture/caricamenti/:anno/:mese', handleWorkflow(req =>
+  invoiceUploadCleanup.list(req.params)));
+app.post('/api/contabilita/fatture/caricamenti/ripulisci', handleWorkflow(req =>
+  invoiceUploadCleanup.remove({ ...req.body, userId: req.authUser.id })));
 const invoiceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
 app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWorkflow(req =>
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));

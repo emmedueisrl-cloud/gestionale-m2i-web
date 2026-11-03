@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { contabilitaPeriod, workflowRequest } from '../../api/workflowElaborati';
 import TabellaFatture from './TabellaFatture';
 import ScorporaImportoModal from './ScorporaImportoModal';
+import RipulisciCaricamentiFattura from './RipulisciCaricamentiFattura';
 import TabellaPagamenti from './TabellaPagamenti';
 import CaricaBusteElaborato from './CaricaBusteElaborato';
 import PerUfficioPaghe from './PerUfficioPaghe';
@@ -39,6 +40,7 @@ export default function ContabilitaElaborati({ tipo }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null);
   const [selectedSplit, setSelectedSplit] = useState(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [selectedConsultant, setSelectedConsultant] = useState(null);
   const [selectedCc, setSelectedCc] = useState(null);
@@ -387,6 +389,7 @@ export default function ContabilitaElaborati({ tipo }) {
     {error && <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-red-800">{error}</div>}
     {message?.section === sezioneAttiva && message.period === `${anno}-${mese}` && message.tipo === tipo && <div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-800">{message.text}</div>}
     <div className="flex flex-wrap items-center gap-3"><input type="search" aria-label={tipo === 'cliente' ? 'Cerca cliente o numero fattura' : 'Cerca dipendente'} placeholder={tipo === 'cliente' ? 'Cerca cliente o fattura' : 'Cerca dipendente'} value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 placeholder:text-slate-500 focus:border-indigo-600 focus:outline-none sm:w-80" />{tipo === 'cliente' && <><ImportaFattureArubaZip mese={mese} anno={anno} onChanged={async () => { setSezioneAttiva(1); await load(); }} /><GestioneFattureExtra mese={mese} anno={anno} gruppi={tuttiGruppiExtra} onChanged={load} /></>}</div>
+    {tipo === 'cliente' && sezioneAttiva === 1 && <div className="flex justify-end"><button type="button" onClick={() => setCleanupOpen(true)} className="rounded bg-red-700 px-4 py-2 font-semibold text-white hover:bg-red-800">Ripulisci caricamenti fattura</button></div>}
     {tipo === 'cliente' && sezioneAttiva === 0 && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
       <button type="button" disabled={!visibleExportKeys.length || busy} onClick={() => setSelectedExportKeys(previous => [...new Set([...previous, ...visibleExportKeys])])} className="rounded bg-white px-3 py-2 font-semibold text-indigo-800 shadow-sm disabled:opacity-50">Seleziona tutti {searchTerm ? 'i risultati' : ''}</button>
       <button type="button" disabled={!selectedCurrentKeys.length || busy} onClick={() => setSelectedExportKeys([])} className="rounded bg-white px-3 py-2 font-semibold text-slate-700 shadow-sm disabled:opacity-50">Deseleziona tutti</button>
@@ -397,6 +400,7 @@ export default function ContabilitaElaborati({ tipo }) {
       sezioneAttiva === 0 ? <TabellaPagamenti righe={visibleEmployees} vuoto={searchTerm ? 'Nessun dipendente corrisponde alla ricerca.' : 'Nessun dipendente blindato per questo mese.'} euro={euro} onNotaConsulente={row => { setSelectedConsultant(row); setConsultantNote(row.notaConsulente || ''); setConsultantError(''); }} onEliminaBusta={deletePayroll} onModificaCc={row => { setSelectedCc({ idDipendente: row.idDipendente, cognomeNome: row.cognomeNome, mese, anno }); setCcValue(row.cc == null ? '' : String(row.cc).replace('.', ',')); setCcError(''); }} busy={busy} /> :
         sezioneAttiva === 1 ? <PerConsulente key={`${anno}-${mese}`} righe={visibleEmployees} mese={mese} anno={anno} searchActive={Boolean(searchTerm)} /> : <PerUfficioPaghe key={`${anno}-${mese}`} buste={visiblePayroll} mese={mese} anno={anno} euro={euro} onChanged={load} searchActive={Boolean(searchTerm)} />}
     {selectedSplit && <ScorporaImportoModal row={selectedSplit} onClose={() => setSelectedSplit(null)} onSave={saveSplit} />}
+    {cleanupOpen && tipo === 'cliente' && <RipulisciCaricamentiFattura mese={mese} anno={anno} onClose={() => setCleanupOpen(false)} onChanged={async count => { await load(); showMessage(`${count} ${count === 1 ? 'caricamento fattura rimosso' : 'caricamenti fattura rimossi'}.`); }} />}
     {exportOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <form onSubmit={previewExport} className="max-h-[90vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-xl bg-white p-5 text-slate-900 shadow-xl">
         <h2 className="text-xl font-bold">XML per Aruba · {selectedCurrentKeys.length} fatture</h2>
