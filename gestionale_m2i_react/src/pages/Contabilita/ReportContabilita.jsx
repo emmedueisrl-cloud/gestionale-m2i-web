@@ -11,7 +11,7 @@ const ore = value => Number(value || 0).toLocaleString('it-IT', { maximumFractio
 const shortClientName = value => String(value || '').trim().split(/\s+/).slice(0, 4).join(' ');
 const adjustmentLabels = {
   totaleNetti: 'Netti buste paga · Totale mese', totaleCc: 'Totale CC',
-  f24: 'F24', oreTotali: 'Ore totali', imponibileClienti: 'Totale imponibili dei clienti fissi'
+  f24: 'F24', oreTotali: 'Ore totali', imponibileClienti: 'Totale imponibili dei clienti fissi con almeno un’ora'
 };
 const columns = [
   { key: 'cliente', label: 'Cliente' },
