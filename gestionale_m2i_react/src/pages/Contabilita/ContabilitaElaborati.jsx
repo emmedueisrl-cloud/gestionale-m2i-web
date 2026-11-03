@@ -376,8 +376,8 @@ export default function ContabilitaElaborati({ tipo }) {
       {tipo === 'cliente' ? <>
       {toolbar}
       <div aria-label="Sezione fatture" className="col-span-full flex flex-wrap items-stretch gap-5">
-        <div aria-label={`Clienti non ancora blindati: ${mancanti}`} className="min-h-[100px] min-w-[176px] rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 shadow-sm">
-          <div className="text-[13px] font-bold uppercase text-amber-900">Clienti mancanti</div>
+        <div aria-label={`Clienti in preparazione: ${mancanti}`} className="min-h-[100px] min-w-[176px] rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 shadow-sm">
+          <div className="text-[13px] font-bold uppercase text-amber-900">Clienti in preparazione</div>
           <div className="text-[22px] font-bold text-slate-900">{mancanti}</div>
         </div>
         <button type="button" aria-pressed={sezioneAttiva === 0} onClick={() => selectSection(0)} className={`min-h-[100px] min-w-[176px] rounded-xl border border-sky-300 bg-sky-100 px-4 py-3 text-left transition-colors hover:bg-sky-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700 ${sezioneAttiva === 0 ? 'ring-2 ring-sky-600 ring-offset-2' : ''}`}>
