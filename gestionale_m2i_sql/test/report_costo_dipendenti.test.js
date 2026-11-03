@@ -54,6 +54,7 @@ test('report costo orario: somma netti, CC e F24 salvato e divide per le ore', a
   await report.initialize();
   const withoutF24 = await report.get(9, 2026);
   assert.equal(withoutF24.costoOrario, null);
+  assert.equal(withoutF24.costoOrarioSenzaF24, 10.75);
   assert.equal(withoutF24.clientiDettaglio[0].costoDipendenti, null);
   assert.equal(withoutF24.imponibileDettaglio, 3920);
   assert.equal(withoutF24.rimanenzaTotale, null);

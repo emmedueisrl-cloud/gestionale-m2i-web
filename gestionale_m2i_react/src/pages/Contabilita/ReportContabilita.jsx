@@ -280,6 +280,7 @@ export default function ReportContabilita() {
   };
 
   const f24Modificato = report?.valoriBase?.f24 != null && f24Input.replace(',', '.') !== String(report.valoriBase.f24);
+  const costoOrarioMostrato = report?.f24 == null ? report?.costoOrarioSenzaF24 : report.costoOrario;
   const sortedClients = useMemo(() => (report?.clientiDettaglio || [])
     .map(row => ({ ...row, percentualeGuadagno: percentageGain(row) })).sort((a, b) => {
     const first = a[sort.key], second = b[sort.key];
@@ -370,8 +371,9 @@ export default function ReportContabilita() {
         </div>
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-6">
           <p className="text-sm font-semibold text-indigo-900">Costo medio orario dipendente</p>
-          <p className="mt-2 text-4xl font-bold text-indigo-950">{report.costoOrario == null ? '—' : `${euro(report.costoOrario)} / h`}</p>
-          <p className="mt-2 text-sm text-indigo-900">({euro(report.totaleNetti)} netti + {euro(report.totaleCc)} CC + {report.f24 == null ? 'F24 da inserire' : euro(report.f24)}) ÷ {ore(report.oreTotali)} ore</p>
+          <p className="mt-2 text-4xl font-bold text-indigo-950">{costoOrarioMostrato == null ? '—' : `${euro(costoOrarioMostrato)} / h`}</p>
+          <p className="mt-2 text-sm text-indigo-900">({euro(report.totaleNetti)} netti + {euro(report.totaleCc)} CC{report.f24 == null ? '' : ` + ${euro(report.f24)} F24`}) ÷ {ore(report.oreTotali)} ore</p>
+          {report.f24 == null && report.oreTotali > 0 && <p className="mt-1 text-sm font-semibold text-amber-800">Valore parziale: F24 da inserire.</p>}
         </div>
         {report.oreTotali <= 0 && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Non ci sono ore totali nel mese: non è possibile dividere il costo.</p>}
       </section>
