@@ -55,7 +55,7 @@ function tableData(tipo, section, rows, buste, mese, anno, extraGroups = []) {
     rows: rows.filter(row => row.notaConsulente?.trim()).map(row => [row.cognomeNome || '', row.notaConsulente])
   };
   if (index === 2) return {
-    period, section: 'Per ufficio paghe', columns: ['Dipendente', 'Netto busta paga', 'Note ufficio paghe', 'Stato'], widths: [38, 24, 65, 20],
+    period, section: 'Per ufficio paghe', columns: ['Dipendente', 'Netto busta paga', 'Note ufficio paghe', 'Stato'], widths: [32, 14, 42, 13],
     rows: [...buste].sort((a, b) => Number(Boolean(a.pagato_ufficio_at)) - Number(Boolean(b.pagato_ufficio_at)) ||
       `${a.cognome} ${a.nome}`.localeCompare(`${b.cognome} ${b.nome}`, 'it')).map(busta => ({
       cells: [`${busta.cognome || ''} ${busta.nome || ''}`.trim(), euro(busta.importo_netto),
@@ -89,7 +89,8 @@ async function toPdf(table) {
     normal: path.join(fontDir, 'Roboto-Regular.ttf'), bold: path.join(fontDir, 'Roboto-Medium.ttf'),
     italics: path.join(fontDir, 'Roboto-Italic.ttf'), bolditalics: path.join(fontDir, 'Roboto-MediumItalic.ttf')
   } });
-  const wide = table.columns.length > 3;
+  const payroll = table.section === 'Per ufficio paghe';
+  const wide = table.columns.length > 3 && !payroll;
   const body = [table.columns.map(value => ({ text: value, bold: true }))];
   table.rows.forEach(row => {
     const cells = [...(row.cells || row)];
@@ -115,7 +116,7 @@ async function toPdf(table) {
         },
           hLineColor: () => '#cbd5e1', vLineColor: () => '#cbd5e1', paddingLeft: () => 5, paddingRight: () => 5,
           paddingTop: () => 6, paddingBottom: () => 6 } }
-    ], defaultStyle: { font: 'Roboto', fontSize: wide ? 8 : 10, color: '#0f172a' }
+    ], defaultStyle: { font: 'Roboto', fontSize: payroll ? 11 : wide ? 8 : 10, color: '#0f172a' }
   };
   // pdfmake accepts star widths; percentages based on Excel widths are normalized here.
   const total = table.widths.reduce((sum, width) => sum + width, 0);
@@ -162,7 +163,7 @@ async function toXlsx(table) {
   });
   if (!table.rows.length) sheet.addRow(['Nessun dato per questa sezione.']);
   sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: table.columns.length } };
-  sheet.pageSetup = { orientation: table.columns.length > 3 ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1 };
+  sheet.pageSetup = { orientation: table.columns.length > 3 && table.section !== 'Per ufficio paghe' ? 'landscape' : 'portrait', fitToPage: true, fitToWidth: 1 };
   return workbook.xlsx.writeBuffer();
 }
 
