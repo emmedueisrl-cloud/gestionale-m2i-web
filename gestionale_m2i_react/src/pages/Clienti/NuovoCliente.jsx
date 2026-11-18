@@ -189,7 +189,7 @@ export default function NuovoCliente() {
     setAltriDocumenti(prev => [...prev, { id: Date.now(), file: null, nome: '' }]);
   };
 
-  const handleSalva = async (isBozza = false) => {
+  const handleSalva = async (isBozza = false, openContract = false) => {
     if (!dati.dataInizioAttivita) {
       setModalState({ isOpen: true, type: 'warning', message: 'Inserisci la data di inizio attività.' });
       return;
@@ -266,6 +266,11 @@ export default function NuovoCliente() {
           await uploadFileCliente(idNuovoCliente, doc.file, doc.nome || 'Documento_Generico', dati.ragioneSociale, '');
           filesUploaded++;
         }
+      }
+
+      if (openContract) {
+        navigate(`/admin/clienti/contratto/${encodeURIComponent(idNuovoCliente)}`);
+        return;
       }
 
       setModalState({ 
@@ -684,6 +689,14 @@ export default function NuovoCliente() {
         </section>
 
         <div className="flex justify-end pt-4 border-t border-slate-800 gap-4">
+          <button
+            type="button"
+            onClick={() => handleSalva(false, true)}
+            disabled={isSaving}
+            className="flex items-center gap-2 rounded-xl bg-slate-700 px-6 py-3 font-bold text-white hover:bg-slate-600 disabled:opacity-50"
+          >
+            <FileText className="h-5 w-5" /> Salva e crea contratto
+          </button>
           <button 
             onClick={() => handleSalva(false)}
             disabled={isSaving}

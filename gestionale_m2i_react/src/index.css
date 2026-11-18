@@ -84,6 +84,14 @@ input, textarea {
 }
 
 @media print {
+  @page {
+    margin: 6mm;
+    @bottom-right {
+      content: counter(page) "/" counter(pages);
+      font: 10px Arial, sans-serif;
+      color: #334155;
+    }
+  }
   /* Nascondi tutto il layout di base (sidebar, header, ecc.) */
   body * {
     visibility: hidden;

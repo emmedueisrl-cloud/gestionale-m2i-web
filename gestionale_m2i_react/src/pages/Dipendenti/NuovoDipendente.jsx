@@ -6,6 +6,7 @@ import ModernModal from '../../components/ui/ModernModal';
 import ProgrammaFissoModal from '../../components/ui/ProgrammaFissoModal';
 import ModuloAssunzioneForm from '../../components/moduli/ModuloAssunzioneForm';
 import PrintableContrattoAssunzione from '../../components/moduli/PrintableContrattoAssunzione';
+import { stampaContrattoAssunzione } from '../../utils/printContrattoAssunzione';
 
 import { salvaDipendente, uploadFile } from '../../api/dipendenti';
 
@@ -244,7 +245,7 @@ export default function NuovoDipendente() {
           setIsAssunzioneFormOpen(false);
           setAssunzionePrintData({ formData, aziendaData, dipendenteData: submittedDipendente });
           setTimeout(() => {
-            window.print();
+            stampaContrattoAssunzione(formData);
           }, 500);
         }}
       />

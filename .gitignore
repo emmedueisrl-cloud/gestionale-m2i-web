@@ -26,6 +26,7 @@ DATI_LOCALI/
 /gestionale_m2i_react/*.cjs
 /gestionale_m2i_react/*.xlsx
 /gestionale_m2i_react/*.csv
+/gestionale_m2i_react/tmp/
 /gestionale_m2i_react/src/assets/react.svg
 /gestionale_m2i_react/src/assets/vite.svg
 /gestionale_m2i_react/src/assets/hero.png
@@ -80,6 +81,10 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/public_appuntamenti.js
 !/gestionale_m2i_sql/preventivi_proforme.js
 !/gestionale_m2i_sql/incassi_insoluti.js
+!/gestionale_m2i_sql/solleciti_fatture.js
+!/gestionale_m2i_sql/unilav.js
+!/gestionale_m2i_sql/visura_camerale.js
+!/gestionale_m2i_sql/ocr/
 !/gestionale_m2i_sql/servizi_extra.js
 !/gestionale_m2i_sql/consulente_email.js
 !/gestionale_m2i_sql/tabella_contabilita_export.js

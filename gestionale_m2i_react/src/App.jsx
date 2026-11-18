@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AppShell from './components/AppShell';
 import ComingSoonPage from './components/ComingSoonPage';
 const DashboardPage = lazy(() => import('./pages/Dashboard/DashboardPage'));
+const AzioniVeloci = lazy(() => import('./pages/AzioniVeloci/AzioniVeloci'));
 const DipendentiPage = lazy(() => import('./pages/Dipendenti/DipendentiPage'));
 const SchedaDipendente = lazy(() => import('./pages/Dipendenti/SchedaDipendente'));
 const NuovoDipendente = lazy(() => import('./pages/Dipendenti/NuovoDipendente'));
@@ -30,6 +31,7 @@ const MagazzinoPage = lazy(() => import('./pages/Magazzino/MagazzinoPage'));
 const SchedaCliente = lazy(() => import('./pages/Clienti/SchedaCliente'));
 const NuovoCliente = lazy(() => import('./pages/Clienti/NuovoCliente'));
 const ModificaCliente = lazy(() => import('./pages/Clienti/ModificaCliente'));
+const ContrattoAppaltoCliente = lazy(() => import('./pages/Clienti/ContrattoAppaltoCliente'));
 const ScontiMaggiorazioniClienti = lazy(() => import('./pages/Clienti/ScontiMaggiorazioniClienti'));
 const ServiziExtra = lazy(() => import('./pages/Clienti/ServiziExtra'));
 const Pagamenti = lazy(() => import('./pages/Commerciale/Pagamenti'));
@@ -86,6 +88,7 @@ function App() {
       }>
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="azioni-veloci" element={<AzioniVeloci />} />
         
         {/* Gestione Dipendenti */}
         <Route path="dipendenti/lista" element={<DipendentiPage />} />
@@ -112,6 +115,7 @@ function App() {
         <Route path="clienti/scheda/:id" element={<SchedaCliente />} />
         <Route path="clienti/nuovo" element={<NuovoCliente />} />
         <Route path="clienti/modifica" element={<ModificaCliente />} />
+        <Route path="clienti/contratto/:id" element={<ContrattoAppaltoCliente />} />
         <Route path="clienti/regolazioni" element={<ScontiMaggiorazioniClienti />} />
         <Route path="clienti/servizi-extra" element={<ServiziExtra />} />
         <Route path="fatture" element={<Navigate to="/contabilita/incassi-insoluti" replace />} />

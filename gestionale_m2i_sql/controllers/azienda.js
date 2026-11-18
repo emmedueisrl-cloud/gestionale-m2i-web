@@ -24,6 +24,9 @@ module.exports = {
       capitale_sociale: dati.capitaleSociale,
       codice_ateco: dati.codiceAteco
     };
+    for (const [key, column] of [['posizioneInps', 'posizione_inps'], ['posizioneInail', 'posizione_inail'], ['numeroPolizzaRct', 'numero_polizza_rct']]) {
+      if (Object.prototype.hasOwnProperty.call(dati, key)) updateData[column] = String(dati[key] ?? '').trim();
+    }
     for (const field of Object.keys(ISSUER_FIELDS)) {
       if (field.startsWith('fatturazione_') && Object.prototype.hasOwnProperty.call(dati, field)) {
         updateData[field] = String(dati[field] ?? '').trim();
@@ -33,8 +36,16 @@ module.exports = {
     if (dati.timbro_path) {
       updateData.timbro_path = dati.timbro_path;
     }
+    if (Object.prototype.hasOwnProperty.call(dati, 'logo_path')) {
+      updateData.logo_path = dati.logo_path || null;
+    }
 
-    await knex('m2i_azienda_dati').where('id', 1).update(updateData);
+    const values = Object.fromEntries(Object.entries(updateData).filter(([, value]) => value !== undefined));
+    if (await knex('m2i_azienda_dati').where('id', 1).first()) {
+      await knex('m2i_azienda_dati').where('id', 1).update(values);
+    } else {
+      await knex('m2i_azienda_dati').insert({ id: 1, ...values });
+    }
     
     await knex('log_attivita').insert({
       categoria: "Azienda",

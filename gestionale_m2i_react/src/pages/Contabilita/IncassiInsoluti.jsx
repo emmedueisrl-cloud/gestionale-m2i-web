@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDown, ArrowUp, ArrowUpDown, ChartNoAxesCombined, ChevronLeft, ChevronRight, History, RefreshCw, X } from 'lucide-react';
 import { workflowRequest } from '../../api/workflowElaborati';
+import SollecitoFatture from './SollecitoFatture';
 
 const months = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
@@ -48,7 +49,7 @@ function Metric({ label, amount, detail, style, onClick }) {
   </Component>;
 }
 
-function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCancel, showPeriod = false }) {
+function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCancel, onRemind, showPeriod = false }) {
   const [sortKey, setSortKey] = useState(null);
   const [sortDirection, setSortDirection] = useState('asc');
   const columns = showPeriod ? [{ key: 'periodo', label: 'Elaborato', value: invoice => invoice.periodo }, ...invoiceSortColumns] : invoiceSortColumns;
@@ -84,6 +85,7 @@ function InvoiceTable({ rows, empty, today, expandedId, onExpand, onPay, onCance
               {invoice.residuo > 0 && invoice.gestibile && !invoice.incongruenza && <>
                 <button type="button" onClick={() => onPay(invoice, true)} className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-800">Segna come incassata</button>
                 <button type="button" onClick={() => onPay(invoice, false)} className="rounded-lg bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-900 hover:bg-indigo-200">Registra acconto</button>
+                {invoice.registrata && invoice.tipoDocumento !== 'TD04' && <button type="button" onClick={() => onRemind(invoice)} className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-200">Invia sollecito</button>}
               </>}
               {invoice.gestibile ? <button type="button" onClick={() => onExpand(invoice.id)} aria-expanded={expandedId === invoice.id} className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold hover:bg-slate-200"><History className="h-3.5 w-3.5" />Storico</button> : <span className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900" title={invoice.sincronizzazioneDaVerificare ? 'Gli incassi della fattura elaborata devono essere riconciliati con quelli della fattura importata.' : 'La fattura inviata deve ancora essere registrata.'}>{invoice.sincronizzazioneDaVerificare ? 'Verifica incassi' : 'In attesa registrazione'}</span>}
             </div></td>
@@ -117,6 +119,7 @@ export default function IncassiInsoluti() {
   const [expandedId, setExpandedId] = useState(null);
   const [payment, setPayment] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [reminderId, setReminderId] = useState(null);
   const [amount, setAmount] = useState('');
   const [paymentDate, setPaymentDate] = useState(italyDate);
   const [note, setNote] = useState('');
@@ -207,6 +210,7 @@ export default function IncassiInsoluti() {
     finally { setBusy(false); }
   };
   const tableActions = { today: data.oggi || italyDate(), expandedId, onExpand: id => setExpandedId(current => current === id ? null : id), onPay: openPayment,
+    onRemind: invoice => { setReminderId(invoice.id); setError(''); setMessage(''); },
     onCancel: (invoice, receipt) => { setCancelTarget({ invoice, receipt }); setCancelReason(''); setError(''); } };
   const openView = target => { setSearch(''); setExpandedId(null); setSearchParams({ vista: target }); };
   const closeView = () => { setSearch(''); setExpandedId(null); setSearchParams({}); };
@@ -240,6 +244,7 @@ export default function IncassiInsoluti() {
       <div className="h-[360px] w-full overflow-x-auto"><div className="h-full min-w-[700px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={chart} margin={{ top: 8, right: 12, left: 12, bottom: 8 }}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} /><XAxis dataKey="mese" tick={{ fill: '#475569', fontSize: 11 }} interval={0} /><YAxis tickFormatter={value => `${Math.round(value / 1000)}k`} tick={{ fill: '#475569', fontSize: 11 }} /><Tooltip formatter={(value, name) => [euro(value), name]} /><Legend /><Bar name="Fatturato" dataKey="fatturato" fill="#4f46e5" radius={[4, 4, 0, 0]} /><Bar name="Incassato" dataKey="incassato" fill="#059669" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div>
       {legacy.length > 0 && <p className="mt-3 text-xs text-slate-600">Gli incassi precedenti al nuovo registro sono totali cumulativi: se datati sono attribuiti all’ultima data disponibile, senza dettaglio delle rate.{legacy.some(receipt => !receipt.data) && ' I totali storici senza data non compaiono nel grafico.'}</p>}
     </div></div>}
+    {reminderId && <SollecitoFatture invoiceId={reminderId} onClose={() => setReminderId(null)} onSent={status => { setReminderId(null); setMessage(status); }} />}
     {payment && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"><form onSubmit={submitPayment} className="w-full max-w-lg space-y-4 rounded-xl bg-white p-6 shadow-xl"><div className="flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Registra incasso</h2><p className="text-sm text-slate-600">{payment.cliente} · {payment.registrata ? `Fattura ${payment.numero}` : 'Fattura inviata da registrare'}</p></div><button type="button" disabled={busy} onClick={() => setPayment(null)} aria-label="Chiudi"><X className="h-5 w-5" /></button></div><p className="rounded-lg bg-amber-50 p-3 font-semibold text-amber-900">Residuo: {euro(payment.residuo)}</p><label className="block text-sm font-semibold">Data incasso<input required type="date" max={italyDate()} value={paymentDate} onChange={event => setPaymentDate(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label><label className="block text-sm font-semibold">Importo incassato (€)<input required type="number" min="0.01" max={payment.residuo} step="0.01" value={amount} onChange={event => setAmount(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label><label className="block text-sm font-semibold">Nota facoltativa<textarea value={note} onChange={event => setNote(event.target.value)} maxLength={2000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setPayment(null)} className="rounded-lg bg-slate-100 px-4 py-2">Annulla</button><button type="submit" disabled={busy} className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white disabled:opacity-50">{busy ? 'Registrazione...' : 'Conferma incasso'}</button></div></form></div>}
     {cancelTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"><form onSubmit={submitCancel} className="w-full max-w-md space-y-4 rounded-xl bg-white p-6 shadow-xl"><h2 className="text-xl font-bold">Annulla incasso</h2><p className="text-sm text-slate-700">{cancelTarget.invoice.registrata ? `Fattura ${cancelTarget.invoice.numero}` : `Fattura inviata a ${cancelTarget.invoice.cliente}`} · {euro(cancelTarget.receipt.importo)} del {dateIt(cancelTarget.receipt.data)}. L’operazione rimarrà nello storico e il residuo sarà aggiornato.</p><label className="block text-sm font-semibold">Motivo dell’annullamento<textarea required minLength={3} maxLength={1000} rows={3} value={cancelReason} onChange={event => setCancelReason(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-base" /></label>{error && <p role="alert" className="text-sm text-red-700">{error}</p>}<div className="flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setCancelTarget(null)} className="rounded-lg bg-slate-100 px-4 py-2">Torna indietro</button><button type="submit" disabled={busy} className="rounded-lg bg-red-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Conferma annullamento</button></div></form></div>}
   </div>;

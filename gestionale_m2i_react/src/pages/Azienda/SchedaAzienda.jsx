@@ -15,6 +15,7 @@ import {
   uploadDocumentoAzienda 
 } from '../../api/azienda';
 import ModernModal from '../../components/ui/ModernModal';
+import { companyStampUrl } from '../../utils/companyStampUrl';
 
 export default function SchedaAzienda() {
   const [loading, setLoading] = useState(true);
@@ -33,7 +34,11 @@ export default function SchedaAzienda() {
     amministratoreUnico: '',
     capitaleSociale: '',
     codiceAteco: '',
+    posizioneInps: '',
+    posizioneInail: '',
+    numeroPolizzaRct: '2021/03/2430364',
     timbro_path: '',
+    logo_path: '',
     legaleRappresentante: '',
     indirizzoRappresentante: '',
     fatturazione_indirizzo: '', fatturazione_cap: '', fatturazione_citta: '',
@@ -71,7 +76,11 @@ export default function SchedaAzienda() {
           amministratoreUnico: resDati.amministratore_unico || '',
           capitaleSociale: resDati.capitale_sociale || '',
           codiceAteco: resDati.codice_ateco || '',
+          posizioneInps: resDati.posizione_inps || '',
+          posizioneInail: resDati.posizione_inail || '',
+          numeroPolizzaRct: resDati.numero_polizza_rct || '2021/03/2430364',
           timbro_path: resDati.timbro_path || '',
+          logo_path: resDati.logo_path || '',
           ...Object.fromEntries(['fatturazione_indirizzo', 'fatturazione_cap', 'fatturazione_citta', 'fatturazione_provincia', 'fatturazione_paese', 'fatturazione_id_paese_iva', 'fatturazione_regime', 'fatturazione_iban', 'fatturazione_banca', 'fatturazione_ufficio_rea', 'fatturazione_numero_rea', 'fatturazione_socio_unico', 'fatturazione_stato_liquidazione'].map(key => [key, resDati[key] || '']))
         });
       }
@@ -122,6 +131,24 @@ export default function SchedaAzienda() {
         content: 'Errore caricamento timbro',
         primaryAction: { label: 'Chiudi', onClick: () => setAlertModal({ isOpen: false }) }
       });
+    }
+  };
+
+  const handleUploadLogo = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    if (!/\.(png|jpe?g|webp)$/i.test(file.name) || file.size > 10 * 1024 * 1024) {
+      setMessaggio({ tipo: 'error', testo: 'Carica un logo PNG, JPG o WebP fino a 10 MB.' });
+      return;
+    }
+    try {
+      const result = await uploadDocumentoAzienda(file, 'Logo Aziendale', false);
+      await salvaDatiAzienda({ ...dati, logo_path: result.path });
+      setDati(current => ({ ...current, logo_path: result.path }));
+      setMessaggio({ tipo: 'success', testo: 'Logo aziendale aggiornato.' });
+    } catch {
+      setMessaggio({ tipo: 'error', testo: 'Impossibile caricare il logo aziendale.' });
     }
   };
 
@@ -264,6 +291,21 @@ export default function SchedaAzienda() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Posizione INPS</label>
+                <input type="text" name="posizioneInps" value={dati.posizioneInps} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200 font-mono" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Posizione INAIL</label>
+                <input type="text" name="posizioneInail" value={dati.posizioneInail} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200 font-mono" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Numero polizza RCT</label>
+                <input type="text" name="numeroPolizzaRct" value={dati.numeroPolizzaRct} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200 font-mono" />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">PEC</label>
                 <input type="email" name="pec" value={dati.pec} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200" />
               </div>
@@ -300,6 +342,24 @@ export default function SchedaAzienda() {
 
         {/* Sidebar Destra: Timbro e Documenti */}
         <div className="space-y-8">
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-sm">
+            <div className="bg-slate-900/50 px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ImageIcon className="w-5 h-5 text-indigo-400" />
+                <h2 className="font-bold text-slate-100 uppercase tracking-wide">Logo aziendale</h2>
+              </div>
+              <label className="cursor-pointer bg-slate-700 hover:bg-slate-600 p-2 rounded-lg transition-colors" title="Carica o sostituisci il logo">
+                <Upload className="w-4 h-4 text-slate-300" />
+                <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={handleUploadLogo} aria-label="Carica logo aziendale" />
+              </label>
+            </div>
+            <div className="p-6 flex flex-col items-center justify-center min-h-[180px] bg-slate-900/30">
+              {companyStampUrl(dati.logo_path) ?
+                <img src={companyStampUrl(dati.logo_path)} alt="Logo aziendale M2I" className="max-h-40 max-w-full object-contain rounded-lg bg-white p-3" /> :
+                <p className="text-sm text-slate-400">Nessun logo caricato</p>}
+              <p className="mt-3 text-xs text-slate-400">PNG, JPG o WebP · massimo 10 MB</p>
+            </div>
+          </div>
           
           {/* Timbro Aziendale */}
           <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-sm">

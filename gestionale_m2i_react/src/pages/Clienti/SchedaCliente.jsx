@@ -7,6 +7,7 @@ import ModernModal from '../../components/ui/ModernModal';
 import AttrezzatureCliente from '../../components/clienti/AttrezzatureCliente';
 import PreventiviCliente from '../../components/clienti/PreventiviCliente';
 import { campiFatturazione } from '../../components/clienti/campiFatturazioneCliente';
+import DatiContrattoAppaltoCliente from '../../components/appalto/DatiContrattoAppaltoCliente';
 
 const formattaData = valore => /^\d{4}-\d{2}-\d{2}$/.test(valore || '')
   ? valore.split('-').reverse().join('/') : valore || '-';
@@ -174,6 +175,9 @@ export default function SchedaCliente() {
         <CampoScheda etichetta="Data inizio attività" valore={formattaData(data.data_inizio_attivita)} />
         <CampoScheda etichetta="Codice cliente" valore={data.id} />
       </div>
+
+      <DatiContrattoAppaltoCliente clienteId={id} dati={data.contrattoAppalto}
+        onSaved={saved => setData(current => ({ ...current, contrattoAppalto: saved }))} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-5 flex items-center gap-4">

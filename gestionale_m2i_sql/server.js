@@ -8,6 +8,22 @@ const multer = require('multer');
 const { ownerFolder, finalizeUpload } = require('./upload_paths');
 const excelGenerator = require('./excel_generator');
 const { knex, agendaMigration } = require('./db');
+async function ensureCampiAzienda() {
+  // I valori erano già stampati nel modello M2I: trasferiscili una sola volta nell'anagrafica.
+  for (const [column, previousValue] of [['posizione_inps', '707349806210'], ['posizione_inail', '9603947533']]) {
+    if (!await knex.schema.hasColumn('m2i_azienda_dati', column)) {
+      await knex.schema.alterTable('m2i_azienda_dati', table => table.text(column));
+      await knex('m2i_azienda_dati').whereNull(column).update({ [column]: previousValue });
+    }
+  }
+  if (!await knex.schema.hasColumn('m2i_azienda_dati', 'logo_path')) {
+    await knex.schema.alterTable('m2i_azienda_dati', table => table.text('logo_path'));
+  }
+  if (!await knex.schema.hasColumn('m2i_azienda_dati', 'numero_polizza_rct')) {
+    await knex.schema.alterTable('m2i_azienda_dati', table => table.text('numero_polizza_rct'));
+    await knex('m2i_azienda_dati').whereNull('numero_polizza_rct').update({ numero_polizza_rct: '2021/03/2430364' });
+  }
+}
 const { ensureTipoCliente } = require('./tipo_cliente');
 const { createAuth } = require('./auth');
 const { createPublicAgenda, validMonday } = require('./public_agenda');
@@ -23,7 +39,12 @@ const workflowElaborati = require('./workflow_elaborati');
 const { createEmployeeCostReport } = require('./report_costo_dipendenti');
 const employeeCostReport = createEmployeeCostReport(knex, workflowElaborati);
 const { createReceiptsService } = require('./incassi_insoluti');
+const { createReminderService } = require('./solleciti_fatture');
 const incassiInsoluti = createReceiptsService(knex);
+const sollecitiFatture = createReminderService(knex, incassiInsoluti);
+const { createUnilavService } = require('./unilav');
+const { createVisuraService } = require('./visura_camerale');
+const visuraCamerale = createVisuraService(knex);
 const descrizioniFatture = require('./descrizioni_fatture');
 const { createServiziExtra } = require('./servizi_extra');
 const serviziExtra = createServiziExtra(knex);
@@ -83,6 +104,7 @@ app.use((req, res, next) => {
 const reactDistPath = path.join(__dirname, '../gestionale_m2i_react/dist');
 app.use(express.static(reactDistPath));
 const baseUploadPath = process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'uploads') : path.join(__dirname, 'uploads');
+const unilav = createUnilavService(knex, process.env.DATA_DIR || __dirname);
 const auth = createAuth(knex);
 const publicAgenda = createPublicAgenda(knex);
 const publicAppuntamenti = createPublicAppuntamenti(knex);
@@ -230,6 +252,30 @@ const requireAdmin = (req, res, next) => {
   if (req.authUser?.role !== 'admin') return res.status(403).json({ error: 'Permesso amministratore richiesto.' });
   next();
 };
+const uploadUnilav = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 5 },
+  fileFilter: (_req, file, cb) => cb(null, path.extname(file.originalname || '').toLowerCase() === '.pdf')
+}).single('file');
+app.post('/api/azioni-veloci/unilav/anteprima', requireAdmin, uploadUnilav,
+  handleWorkflow(req => unilav.preview(req.file?.buffer), 'Anteprima UNILAV'));
+app.post('/api/azioni-veloci/visura/anteprima', requireAdmin, uploadUnilav,
+  handleWorkflow(req => visuraCamerale.preview(req.file?.buffer), 'Anteprima visura camerale'));
+app.post('/api/azioni-veloci/unilav/conferma', requireAdmin, uploadUnilav,
+  handleWorkflow(req => unilav.confirm(req.file?.buffer, JSON.parse(req.body?.options || '{}'), req.authUser.id), 'Conferma UNILAV'));
+app.get('/api/azioni-veloci/unilav/bozze', requireAdmin,
+  handleWorkflow(() => unilav.listDrafts(), 'Elenco bozze UNILAV'));
+app.post('/api/azioni-veloci/unilav/bozze', requireAdmin, uploadUnilav,
+  handleWorkflow(req => unilav.saveDraft(req.file?.buffer, req.file?.originalname,
+    JSON.parse(req.body?.values || '{}'), req.authUser.id), 'Salva bozza UNILAV'));
+app.get('/api/azioni-veloci/unilav/bozze/:id', requireAdmin,
+  handleWorkflow(req => unilav.getDraft(req.params.id), 'Apri bozza UNILAV'));
+app.put('/api/azioni-veloci/unilav/bozze/:id', requireAdmin,
+  handleWorkflow(req => unilav.updateDraft(req.params.id, req.body), 'Aggiorna bozza UNILAV'));
+app.delete('/api/azioni-veloci/unilav/bozze/:id', requireAdmin,
+  handleWorkflow(req => unilav.deleteDraft(req.params.id), 'Elimina bozza UNILAV'));
+app.post('/api/azioni-veloci/unilav/bozze/:id/conferma', requireAdmin,
+  handleWorkflow(req => unilav.confirmDraft(req.params.id, req.body, req.authUser.id), 'Conferma bozza UNILAV'));
 
 const uploadAnagrafiche = multer({
   storage: multer.memoryStorage(),
@@ -306,9 +352,14 @@ app.get('/api/contabilita/fatture', handleWorkflow(async () => {
   return registrationStatuses(knex, rows);
 }));
 app.get('/api/contabilita/incassi-insoluti', handleWorkflow(() => incassiInsoluti.list()));
+app.get('/api/contabilita/incassi-insoluti/:id/sollecito', handleWorkflow(req => sollecitiFatture.preview(req.params.id), 'Anteprima sollecito'));
+app.post('/api/contabilita/incassi-insoluti/solleciti/invia', handleWorkflow(req => sollecitiFatture.send(req.body), 'Invio sollecito'));
 app.post('/api/contabilita/incassi-insoluti/:id/incassi', handleWorkflow(req =>
   incassiInsoluti.register({ fatturaId: req.params.id, data: req.body?.data, importo: req.body?.importo,
     nota: req.body?.nota, idempotencyKey: req.body?.idempotencyKey, userId: req.authUser.id })));
+app.post('/api/contabilita/incassi-insoluti/incassi-batch', handleWorkflow(req =>
+  incassiInsoluti.registerBatch({ data: req.body?.data, totale: req.body?.totale, incassi: req.body?.incassi, nota: req.body?.nota,
+    idempotencyKey: req.body?.idempotencyKey, userId: req.authUser.id })));
 app.post('/api/contabilita/incassi-insoluti/incassi/:id/annulla', handleWorkflow(req =>
   incassiInsoluti.cancel({ receiptId: req.params.id, reason: req.body?.motivo, userId: req.authUser.id })));
 app.put('/api/contabilita/incassi-insoluti/:id/scadenza', handleWorkflow(req =>
@@ -1607,8 +1658,12 @@ Promise.resolve().then(async () => {
   await preventiviProforme.ensureTable();
   initializationStep = 'allegati ed elaborati';
   await ensureAttachmentColumns(knex);
+  await ensureCampiAzienda();
   await ensureElaboratiNoteStoriche(knex);
   await fatturazioneAnagrafiche.ensureColumns(knex);
+  if (!await knex.schema.hasColumn('clienti', 'contratto_appalto_dati')) {
+    await knex.schema.alterTable('clienti', table => table.text('contratto_appalto_dati'));
+  }
   await descrizioniFatture.initialize(knex);
   await workflowElaborati.initialize();
   initializationStep = 'servizi extra e costi dipendenti';
@@ -1616,6 +1671,8 @@ Promise.resolve().then(async () => {
   await employeeCostReport.initialize();
   initializationStep = 'incassi e insoluti';
   await incassiInsoluti.initialize();
+  initializationStep = 'UNILAV';
+  await unilav.initialize();
   initializationStep = 'indici';
   await ensureIndexes(knex);
   app.listen(PORT, process.env.HOST || '0.0.0.0', () => {

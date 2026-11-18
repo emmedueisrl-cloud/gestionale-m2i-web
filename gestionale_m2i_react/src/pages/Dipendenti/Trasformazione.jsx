@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import ModernModal from '../../components/ui/ModernModal';
 import { recuperaElencoDipendenti, recuperaDatiCompletiDipendente, trasformaIndeterminato, uploadFile } from '../../api/dipendenti';
 import FileUploader from '../../components/ui/FileUploader';
+import LetteraTrasformazioneForm from '../../components/moduli/LetteraTrasformazioneForm';
 
 export default function Trasformazione() {
   const [dipendentiList, setDipendentiList] = useState([]);
@@ -20,6 +21,9 @@ export default function Trasformazione() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
   const [error, setError] = useState('');
+  const [showLetter, setShowLetter] = useState(false);
+  const [letterDraft, setLetterDraft] = useState(null);
+  const [completed, setCompleted] = useState(false);
 
   // 1. Carica la lista dei dipendenti all'avvio
   useEffect(() => {
@@ -56,6 +60,8 @@ export default function Trasformazione() {
     setDataTrasformazione('');
     setFileContratto(null);
     setFileUnilav(null);
+    setLetterDraft(null);
+    setCompleted(false);
     setError('');
     
     if (!id) {
@@ -67,6 +73,7 @@ export default function Trasformazione() {
     try {
       const data = await recuperaDatiCompletiDipendente(id);
       setDipendenteData(data);
+      if (data.data_trasformazione_indeterminato) setDataTrasformazione(String(data.data_trasformazione_indeterminato).slice(0, 10));
     } catch (error) {
       setModal({
         isOpen: true,
@@ -82,14 +89,7 @@ export default function Trasformazione() {
   };
 
   const closeModal = () => {
-    setModal({ ...modal, isOpen: false });
-    if (modal.type === 'success') {
-      setSelectedId('');
-      setDipendenteData(null);
-      setDataTrasformazione('');
-      setFileContratto(null);
-      setFileUnilav(null);
-    }
+    setModal(current => ({ ...current, isOpen: false }));
   };
 
   const handleSubmit = async (e) => {
@@ -119,6 +119,7 @@ export default function Trasformazione() {
         await uploadFile(selectedId, fileUnilav, 'Unilav', dipendenteData.nome, dipendenteData.cognome);
         filesUploaded++;
       }
+      setCompleted(true);
       
       setModal({
         isOpen: true,
@@ -129,6 +130,10 @@ export default function Trasformazione() {
         primaryAction: {
           label: 'Chiudi',
           onClick: closeModal
+        },
+        secondaryAction: {
+          label: 'Prepara la lettera di trasformazione',
+          onClick: () => { setModal(current => ({ ...current, isOpen: false })); setShowLetter(true); }
         }
       });
     } catch (error) {
@@ -188,6 +193,19 @@ export default function Trasformazione() {
           <p className="font-semibold">Recupero dati in corso...</p>
         </div>
       )}
+
+      {dipendenteData && !isLoadingData && dataTrasformazione && <div className="mb-8 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-5 text-slate-100">
+        <h2 className="text-lg font-bold">Lettera di trasformazione</h2>
+        <p className="mt-2 text-sm text-slate-300">Controlla e completa i dati, poi stampa la lettera con logo, timbro e firma M2I.</p>
+        <button type="button" onClick={() => setShowLetter(true)} className="mt-4 rounded-lg bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-500">Prepara la lettera</button>
+      </div>}
+
+      {showLetter && dipendenteData && <div className="fixed inset-0 z-[10000] overflow-y-auto bg-slate-950/85 p-3 md:p-8" role="dialog" aria-modal="true" aria-label="Lettera di trasformazione">
+        <div className="mx-auto max-w-6xl rounded-xl border border-slate-700 bg-slate-800 p-5 shadow-2xl md:p-8">
+          <LetteraTrasformazioneForm employee={dipendenteData} transformationDate={dataTrasformazione}
+            savedValues={letterDraft} onClose={values => { setLetterDraft(values); setShowLetter(false); }} />
+        </div>
+      </div>}
 
       {/* Form Trasformazione */}
       {dipendenteData && !isLoadingData && (
@@ -265,7 +283,7 @@ export default function Trasformazione() {
             )}
 
             {/* Inserimento Trasformazione */}
-            {getTipoContratto(dipendenteData) !== 'Indeterminato' && (
+            {getTipoContratto(dipendenteData) !== 'Indeterminato' && !completed && (
               <form onSubmit={handleSubmit} className="border-t border-slate-700 pt-6">
                 <div className="max-w-md">
                   <label className="block text-sm font-bold text-slate-50 mb-2">Data Decorrenza Trasformazione <span className="text-red-500">*</span></label>
@@ -276,6 +294,7 @@ export default function Trasformazione() {
                     value={dataTrasformazione}
                     onChange={(e) => {
                       setDataTrasformazione(e.target.value);
+                      setLetterDraft(null);
                       setError('');
                     }}
                     className={`w-full p-3 rounded-xl border text-base focus:outline-none focus:ring-2 transition-all ${error ? 'border-red-500 focus:ring-red-200 bg-red-500/10' : 'border-slate-600 focus:ring-emerald-100 focus:border-emerald-500 bg-slate-800 shadow-sm'}`}
@@ -331,6 +350,7 @@ export default function Trasformazione() {
         subtitle={modal.subtitle}
         content={modal.content}
         primaryAction={modal.primaryAction}
+        secondaryAction={modal.secondaryAction}
       />
     </div>
   );

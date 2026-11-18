@@ -14,6 +14,7 @@ const Sidebar = ({ area, isOpen, setIsOpen }) => {
     { type: 'item', label: '📊 Report', path: '/contabilita/report' }
   ] : [
     { type: 'item', label: '🏠 Dashboard', path: '/admin/dashboard' },
+    { type: 'item', label: '⚡ Azioni veloci', path: '/admin/azioni-veloci' },
     
     { type: 'header', label: '👥 Gestione Dipendenti' },
     { type: 'item', label: '📋 Database Dipendenti', path: '/admin/dipendenti/lista' },

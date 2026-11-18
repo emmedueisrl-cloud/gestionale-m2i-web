@@ -4,12 +4,18 @@ import { TopbarContext } from '../../context/topbarContextValue';
 import { useNavigate } from 'react-router-dom';
 import FileUploader from './FileUploader';
 import ModernModal from './ModernModal';
+import { campiAnagraficiUnilav, campiRapportoUnilav } from '../../pages/Dipendenti/unilavDatiCampi';
 
 const INITIAL_STATE = {
   Cognome: '',
   Nome: '',
   Telefono: '',
   Residenza: '',
+  Citta: '',
+  Cap: '',
+  DataNascita: '',
+  ComuneNascita: '',
+  ProvinciaNascita: '',
   CodiceFiscale: '',
   Email: '',
   IBAN: '',
@@ -19,6 +25,7 @@ const INITIAL_STATE = {
   Importo: '',
   TipoContratto: '',
   Scadenza: '',
+  LivelloInquadramento: '',
   Note: ''
 };
 
@@ -33,6 +40,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
     }
   }));
   const [formData, setFormData] = useState(() => ({ ...INITIAL_STATE, divisione: initialDivisione }));
+  const [extraData, setExtraData] = useState({ anagrafica: {}, rapporto: {} });
   const [inProva, setInProva] = useState(false);
   const [fileDocs, setFileDocs] = useState(null);
   const [fileContratto, setFileContratto] = useState(null);
@@ -65,6 +73,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
         noteFisseElaborato: initialData.noteFisseElaborato || '',
         divisione: initialData.divisione || 'Esterno'
       });
+      setExtraData({ anagrafica: initialData.unilavDati?.anagrafica || {}, rapporto: initialData.unilavDati?.rapporto || {} });
       if (initialData.TipoContratto === 'In Prova') {
         setInProva(true);
       }
@@ -183,7 +192,7 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
       return;
     }
 
-    const payload = { ...formData, isBozza };
+    const payload = { ...formData, unilavDati: extraData, isBozza };
     onSubmit(payload, fileDocs, fileContratto, fileUnilav, fileAltro, 'Documento_Generico');
   };
 
@@ -219,8 +228,11 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-200 mb-1">Residenza</label>
-            <input type="text" name="Residenza" value={formData.Residenza} onChange={handleChange} className="w-full p-2.5 rounded-lg border border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 bg-slate-900/50 hover:bg-slate-800 transition-all" placeholder="es. Via Roma 10, Milano" />
+            <input type="text" name="Residenza" value={formData.Residenza} onChange={handleChange} className="w-full p-2.5 rounded-lg border border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 bg-slate-900/50 hover:bg-slate-800 transition-all" placeholder="es. Via Roma 10" />
           </div>
+          {[['Citta', 'Comune di residenza'], ['Cap', 'CAP di residenza'], ['DataNascita', 'Data di nascita', 'date'], ['ComuneNascita', 'Comune di nascita'], ['ProvinciaNascita', 'Provincia di nascita']].map(([key, label, type]) => <label key={key} className="block text-xs font-semibold text-slate-200">{label}
+            <input type={type || 'text'} name={key} value={formData[key] || ''} onChange={handleChange} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900/50 p-2.5 text-sm text-white" />
+          </label>)}
           <div>
             <label className="block text-xs font-semibold text-slate-200 mb-1">Codice Fiscale <span className="text-red-500">*</span></label>
             <input type="text" name="CodiceFiscale" value={formData.CodiceFiscale} onChange={handleChange} maxLength="16" className={`w-full p-2.5 rounded-lg border text-sm uppercase focus:outline-none focus:ring-2 transition-all ${errors.CodiceFiscale ? 'border-red-500 focus:ring-red-200 bg-red-500/10' : 'border-slate-600 focus:ring-indigo-100 focus:border-indigo-500 bg-slate-900/50 hover:bg-slate-800'}`} placeholder="es. RSSMRA80A01F205Z" />
@@ -239,6 +251,14 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
         </div>
       </div>
 
+      <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+        <h3 className="border-b border-slate-700 bg-slate-900/50 px-6 py-4 text-sm font-semibold uppercase tracking-wide text-slate-50">Altri dati anagrafici</h3>
+        <div className="grid gap-5 p-6 md:grid-cols-2">{campiAnagraficiUnilav.map(([key, label, type]) => <label key={key} className="block text-xs font-semibold text-slate-200">{label}
+          <input type={type || 'text'} value={extraData.anagrafica[key] || ''} onChange={event => setExtraData(current => ({ ...current, anagrafica: { ...current.anagrafica, [key]: event.target.value } }))}
+            className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900/50 p-2.5 text-sm text-white" />
+        </label>)}</div>
+      </div>
+
       {/* 2. DATI CONTRATTUALI */}
       <div className="bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden">
         <div className="bg-slate-900/50 border-b border-slate-700 px-6 py-4 flex items-center gap-2">
@@ -250,6 +270,9 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
             <label className="block text-xs font-semibold text-slate-200 mb-1">Mansione</label>
             <input type="text" name="Mansione" value={formData.Mansione} onChange={handleChange} className="w-full p-2.5 rounded-lg border border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 bg-slate-900/50 hover:bg-slate-800 transition-all" placeholder="es. Operaio, Impiegato..." />
           </div>
+          <label className="block text-xs font-semibold text-slate-200">Livello di inquadramento
+            <input type="text" name="LivelloInquadramento" value={formData.LivelloInquadramento || ''} onChange={handleChange} className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900/50 p-2.5 text-sm text-white" />
+          </label>
           <div>
             <label className="block text-xs font-semibold text-slate-200 mb-1">Divisione (Interno/Esterno)</label>
             <select name="divisione" value={formData.divisione || 'Esterno'} onChange={handleChange} className="w-full p-2.5 rounded-lg border border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 bg-slate-900/50 hover:bg-slate-800 transition-all">
@@ -331,6 +354,15 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
         </div>
         </div>
 
+        <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <h3 className="border-b border-slate-700 bg-slate-900/50 px-6 py-4 text-sm font-semibold uppercase tracking-wide text-slate-50">Altri dati del rapporto</h3>
+          <p className="px-6 pt-4 text-xs text-slate-400">La retribuzione indicata nell’UNILAV è distinta dalla paga della scheda.</p>
+          <div className="grid gap-5 p-6 md:grid-cols-2">{campiRapportoUnilav.map(([key, label]) => <label key={key} className="block text-xs font-semibold text-slate-200">{label}
+            <input type="text" value={extraData.rapporto[key] || ''} onChange={event => setExtraData(current => ({ ...current, rapporto: { ...current.rapporto, [key]: event.target.value } }))}
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900/50 p-2.5 text-sm text-white" />
+          </label>)}</div>
+        </div>
+
         {/* 3. PROGRAMMA FISSO SETTIMANALE */}
         <div className="bg-slate-800 rounded-xl shadow-sm border border-slate-700 overflow-hidden mb-8">
           <div className="bg-slate-900/50 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
@@ -374,8 +406,8 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
                     nome: formData.Nome,
                     cognome: formData.Cognome,
                     indirizzo: formData.Residenza,
-                    cap: '',
-                    citta: '',
+                    cap: formData.Cap,
+                    citta: formData.Citta,
                     provincia: '',
                     mansione: formData.Mansione,
                     sesso: formData.Nome?.trim().toUpperCase().endsWith('A') ? 'F' : 'M',

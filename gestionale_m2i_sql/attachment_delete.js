@@ -26,6 +26,9 @@ async function deleteAttachment(knex, dataDir, table, id, name) {
       fs.writeFileSync(path.join(archive, 'record.json'), JSON.stringify({ table, row, relative, file: 'attachment.bin', originalName: name }, null, 2));
     }
     if (Object.keys(updates).length) await trx(table).where('id', id).update(updates);
+    if (table === 'dipendenti' && await trx.schema.hasTable('unilav_comunicazioni')) {
+      await trx('unilav_comunicazioni').where({ dipendente_id: id, file_path: relative }).update({ file_path: null });
+    }
     await trx('log_attivita').insert({categoria:'Documenti',icona:'🗑️',colore:'#ef4444',
       descrizione:`Rimosso documento ${name} (${table} ${id}); recupero ${archive ? path.basename(archive) : 'file già assente'}`,eseguito_da:'LocalServer'});
   });

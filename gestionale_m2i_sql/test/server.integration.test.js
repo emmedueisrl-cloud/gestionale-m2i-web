@@ -14,7 +14,15 @@ async function createFixtureDatabase(filePath, schemaPath) {
     const handle = new sqlite3.Database(filePath, error => error ? reject(error) : resolve(handle));
   });
   try {
-    await new Promise((resolve, reject) => db.exec(fs.readFileSync(schemaPath, 'utf8'), error => error ? reject(error) : resolve()));
+    const schema = fs.readFileSync(schemaPath, 'utf8');
+    const legacySchema = schema.replace(/\s+logo_path TEXT,/, '')
+      .replace(/\s+posizione_inps TEXT DEFAULT '707349806210',\s+posizione_inail TEXT DEFAULT '9603947533',/, '');
+    assert.notEqual(legacySchema, schema);
+    await new Promise((resolve, reject) => db.exec(legacySchema, error => error ? reject(error) : resolve()));
+    await new Promise((resolve, reject) => db.run(
+      'INSERT INTO m2i_azienda_dati (id, ragione_sociale) VALUES (1, ?)', ['M2I SRL'],
+      error => error ? reject(error) : resolve()
+    ));
     await new Promise((resolve, reject) => db.run(
       'INSERT INTO dipendenti (id, cognome, nome, codice_fiscale, data_assunzione) VALUES (?, ?, ?, ?, ?)',
       ['D0001', 'Prova', 'Test', 'TEST000000000001', '2026-01-01'],
@@ -112,6 +120,40 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const cookie = login.headers.get('set-cookie')?.split(';')[0];
     assert.ok(cookie);
     assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200);
+    const company = await fetch(`${base}/api/run`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ functionName: 'recuperaDatiAzienda', args: [] })
+    }).then(response => response.json());
+    assert.equal(company.data.posizione_inps, '707349806210');
+    assert.equal(company.data.posizione_inail, '9603947533');
+    assert.equal(company.data.logo_path, null);
+    const companySave = await fetch(`${base}/api/run`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ functionName: 'salvaDatiAzienda', args: [{
+        ragioneSociale: 'M2I SRL', posizioneInps: 'INPS-NUOVA', posizioneInail: 'INAIL-NUOVA',
+        logo_path: 'uploads/azienda_m2i/logo.png'
+      }] })
+    }).then(response => response.json());
+    assert.equal(companySave.success, true);
+    const updatedCompany = await fetch(`${base}/api/run`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ functionName: 'recuperaDatiAzienda', args: [] })
+    }).then(response => response.json());
+    assert.equal(updatedCompany.data.posizione_inps, 'INPS-NUOVA');
+    assert.equal(updatedCompany.data.posizione_inail, 'INAIL-NUOVA');
+    assert.equal(updatedCompany.data.logo_path, 'uploads/azienda_m2i/logo.png');
+    const unilavPreviewUrl = `${base}/api/azioni-veloci/unilav/anteprima`;
+    const invalidUnilav = () => {
+      const form = new FormData();
+      form.append('file', new Blob(['non è un PDF'], { type: 'application/pdf' }), 'prova.pdf');
+      return form;
+    };
+    assert.equal((await fetch(unilavPreviewUrl, { method: 'POST', body: invalidUnilav() })).status, 401);
+    const invalidUnilavResponse = await fetch(unilavPreviewUrl, {
+      method: 'POST', headers: { Cookie: cookie }, body: invalidUnilav()
+    });
+    assert.equal(invalidUnilavResponse.status, 400);
+    assert.match((await invalidUnilavResponse.json()).error, /PDF UNILAV valido/);
     const separateXmlUrl = `${base}/api/contabilita/fatture/export-aruba/xml-singoli`;
     assert.equal((await fetch(separateXmlUrl, { method: 'POST',
       headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);

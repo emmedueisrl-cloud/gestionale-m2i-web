@@ -6,6 +6,7 @@ import { recuperaDatiCompletiDipendente, recuperaDocumentiDipendente, eliminaDoc
 import ModernModal from '../../components/ui/ModernModal';
 import ProgrammaFissoModal from '../../components/ui/ProgrammaFissoModal';
 import BustePagaDipendenteModal from '../../components/ui/BustePagaDipendenteModal';
+import { campiAnagraficiUnilav, campiRapportoUnilav } from './unilavDatiCampi';
 
 export default function SchedaDipendente() {
   const { id } = useParams();
@@ -189,7 +190,15 @@ export default function SchedaDipendente() {
             <div className="flex items-center gap-2 text-slate-400 mb-2">
               <MapPin className="w-4 h-4" /> <span className="text-sm font-semibold uppercase tracking-wider">Residenza</span>
             </div>
-            <p className="font-semibold text-lg text-slate-50 leading-snug">{data.indirizzo ? `${data.indirizzo}, ${data.citta}` : 'Non specificata'}</p>
+            <p className="font-semibold text-lg text-slate-50 leading-snug">{[data.indirizzo, data.cap, data.citta].filter(Boolean).join(', ') || 'Non specificata'}</p>
+          </div>
+          <div className="bg-slate-900/40 p-5 rounded-xl border border-slate-700/50">
+            <div className="flex items-center gap-2 text-slate-400 mb-2"><Calendar className="w-4 h-4" /><span className="text-sm font-semibold uppercase tracking-wider">Data di nascita</span></div>
+            <p className="font-semibold text-lg text-slate-50">{safeDate(data.data_nascita)}</p>
+          </div>
+          <div className="bg-slate-900/40 p-5 rounded-xl border border-slate-700/50">
+            <div className="flex items-center gap-2 text-slate-400 mb-2"><MapPin className="w-4 h-4" /><span className="text-sm font-semibold uppercase tracking-wider">Luogo di nascita</span></div>
+            <p className="font-semibold text-lg text-slate-50">{[data.comune_nascita, data.provincia_nascita].filter(Boolean).join(' · ') || '—'}</p>
           </div>
         </div>
       </div>
@@ -206,6 +215,10 @@ export default function SchedaDipendente() {
             <div className="flex justify-between items-center border-b border-slate-700/50 pb-4">
               <span className="text-base font-medium text-slate-400">Mansione / Ruolo</span>
               <span className="font-bold text-xl text-slate-50">{data.mansione || '-'}</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-slate-700/50 pb-4">
+              <span className="text-base font-medium text-slate-400">Livello di inquadramento</span>
+              <span className="font-bold text-lg text-slate-50">{data.livello_inquadramento || '—'}</span>
             </div>
             <div className="flex justify-between items-center border-b border-slate-700/50 pb-4">
               <span className="text-base font-medium text-slate-400">Paga Oraria</span>
@@ -231,6 +244,8 @@ export default function SchedaDipendente() {
                 {safeDate(data.data_assunzione)}
               </span>
             </div>
+            {data.data_trasformazione_indeterminato && <div className="flex justify-between items-center border-b border-slate-700/50 pb-4"><span className="text-base font-medium text-slate-400">Trasformazione a tempo indeterminato</span><span className="font-bold text-lg text-slate-200">{safeDate(data.data_trasformazione_indeterminato)}</span></div>}
+            {data.data_cessazione && <div className="flex justify-between items-center border-b border-slate-700/50 pb-4"><span className="text-base font-medium text-slate-400">Cessazione</span><span className="font-bold text-lg text-slate-200">{safeDate(data.data_cessazione)}</span></div>}
             {data.proroghe && data.proroghe.length > 0 && (
               <div className="flex justify-between items-center border-b border-slate-700/50 pb-4">
                 <span className="text-base font-medium text-slate-400">Scadenza Originale</span>
@@ -267,6 +282,38 @@ export default function SchedaDipendente() {
         </div>
 
       </div>
+
+      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        {[
+          ['Altri dati anagrafici', data.unilavDati?.anagrafica, campiAnagraficiUnilav],
+          ['Altri dati del rapporto', data.unilavDati?.rapporto, campiRapportoUnilav]
+        ].map(([title, values, fields]) => <section key={title} className="rounded-2xl border border-slate-700 bg-slate-800">
+          <h2 className="border-b border-slate-700 p-5 text-sm font-bold uppercase tracking-wide text-slate-100">{title}</h2>
+          <dl className="grid gap-4 p-5 sm:grid-cols-2">{fields.map(([key, label, type]) =>
+            <div key={key}><dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</dt>
+              <dd className="mt-1 break-words text-sm font-medium text-slate-100">{type === 'date' && values?.[key] ? safeDate(values[key]) : values?.[key] || '—'}</dd></div>)}</dl>
+        </section>)}
+      </div>
+
+      {data.unilavComunicazioni?.length > 0 && <section className="mt-8 rounded-2xl border border-slate-700 bg-slate-800">
+        <h2 className="border-b border-slate-700 p-5 text-sm font-bold uppercase tracking-wide text-slate-100">Storico comunicazioni UNILAV</h2>
+        <div className="space-y-3 p-5">{data.unilavComunicazioni.map(communication =>
+          <div key={communication.codice} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-700 bg-slate-900/60 p-4 text-sm text-slate-100">
+            <div><strong className="capitalize">{communication.tipo}</strong> · {safeDate(communication.dataOperazione)}
+              <p className="mt-1 text-slate-400">Comunicazione {communication.codice}{communication.protocollo && ` · Protocollo ${communication.protocollo}`}{!communication.motivoCessazione && !communication.codiceTrasformazione && communication.motivo && ` · ${communication.motivo}`}</p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">
+                <span>Invio: {communication.dataInvio ? safeDate(communication.dataInvio) : '—'}{communication.oraInvio ? `, ore ${communication.oraInvio}` : ''}</span>
+                {communication.tipoComunicazione && <span>Tipo: {communication.tipoComunicazione}</span>}
+                {communication.motivoCessazione && <span>Motivo cessazione: {communication.motivoCessazione}</span>}
+                {communication.codiceTrasformazione && <span>Codice trasformazione: {communication.codiceTrasformazione}</span>}
+                {communication.socioLavoratore && <span>Socio lavoratore: {communication.socioLavoratore}</span>}
+                {communication.lavoratoreMobilita && <span>Lavoratore in mobilità: {communication.lavoratoreMobilita}</span>}
+                {communication.assunzioneForzaMaggiore && <span>Assunzione per forza maggiore: {communication.assunzioneForzaMaggiore}</span>}
+              </div></div>
+            {communication.filePath && <a href={attachmentUrl(`/${communication.filePath}`)} target="_blank" rel="noopener noreferrer"
+              className="rounded-lg bg-indigo-500/20 px-3 py-2 font-semibold text-indigo-200 hover:bg-indigo-500/30">Apri UNILAV</a>}
+          </div>)}</div>
+      </section>}
 
       {/* Registro Chiavi */}
       <div className="mt-8 bg-slate-800 rounded-2xl shadow-sm border border-slate-700 overflow-hidden">

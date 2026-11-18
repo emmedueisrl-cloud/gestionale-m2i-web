@@ -5,6 +5,7 @@ import ModernModal from '../../components/ui/ModernModal';
 import ProgrammaFissoModal from '../../components/ui/ProgrammaFissoModal';
 import ModuloAssunzioneForm from '../../components/moduli/ModuloAssunzioneForm';
 import PrintableContrattoAssunzione from '../../components/moduli/PrintableContrattoAssunzione';
+import { stampaContrattoAssunzione } from '../../utils/printContrattoAssunzione';
 
 import { recuperaElencoDipendenti, recuperaDatiCompletiDipendente, salvaModificheDipendente, uploadFile, recuperaDocumentiDipendente, eliminaDocumentoDipendente } from '../../api/dipendenti';
 import { recuperaDatiProgramma } from '../../api/ore';
@@ -102,7 +103,8 @@ export default function ModificaDipendente() {
           TipoPaga: data.tipo_paga || 'Oraria',
           Importo: data.paga_oraria_reale || 0,
           Note: data.note || '',
-          noteFisseElaborato: data.note_fisse_elaborato || ''
+          noteFisseElaborato: data.note_fisse_elaborato || '',
+          unilavDati: data.unilavDati || { anagrafica: {}, rapporto: {} }
         });
 
         try {
@@ -355,7 +357,7 @@ export default function ModificaDipendente() {
           setIsAssunzioneFormOpen(false);
           setAssunzionePrintData({ formData, aziendaData, dipendenteData: submittedDipendente });
           setTimeout(() => {
-            window.print();
+            stampaContrattoAssunzione(formData);
           }, 500);
         }}
       />

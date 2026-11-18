@@ -103,7 +103,7 @@ const ReportIA = () => {
             tr:nth-child(even) { background-color: #f8fafc; }
             @media print {
               body { padding: 0; }
-              @page { margin: 1cm; }
+              @page { margin: 1cm; @bottom-right { content: counter(page) "/" counter(pages); font: 10px Arial, sans-serif; color: #334155; } }
             }
           </style>
         </head>

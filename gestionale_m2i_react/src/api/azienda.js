@@ -16,7 +16,7 @@ export async function eliminaDocumentoAzienda(idDoc) {
   return await apiCall('eliminaDocumentoAzienda', [idDoc]);
 }
 
-export async function uploadDocumentoAzienda(file, nomeDocumento) {
+export async function uploadDocumentoAzienda(file, nomeDocumento, registraDocumento = true) {
   const formData = new FormData();
   formData.append('idAzienda', 'azienda_m2i');
   formData.append('file', file);
@@ -34,8 +34,9 @@ export async function uploadDocumentoAzienda(file, nomeDocumento) {
 
   const data = await res.json();
   if (data.success) {
-    // Salviamo il riferimento nel DB
-    await apiCall('salvaDocumentoAzienda', [nomeDocumento, data.path, new Date().toISOString().split('T')[0]]);
+    if (registraDocumento) {
+      await apiCall('salvaDocumentoAzienda', [nomeDocumento, data.path, new Date().toISOString().split('T')[0]]);
+    }
     return data;
   } else {
     throw new Error(data.error);

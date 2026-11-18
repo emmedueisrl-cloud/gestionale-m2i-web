@@ -3,6 +3,19 @@ const { deleteAttachment } = require('../attachment_delete');
 const fs = require('fs');
 const path = require('path');
 const { knex, generaIDIncrementale, getVal } = require('../db');
+const extraPersonalKeys = ['sesso', 'cittadinanza', 'titoloSoggiorno', 'motivoSoggiorno', 'numeroSoggiorno', 'scadenzaSoggiorno', 'questura'];
+const extraWorkKeys = ['sedeLavoro', 'ccnl', 'tipoOrario', 'oreSettimanaliMedie', 'entePrevidenziale', 'patInail', 'retribuzioneUnilav'];
+const pickExtra = (source, keys) => Object.fromEntries(keys.map(key => [key, String(source?.[key] || '').trim()]));
+async function saveExtraData(id, input) {
+  if (!input || !await knex.schema.hasTable('unilav_dati_dipendenti')) return;
+  const anagrafica = pickExtra(input.anagrafica, extraPersonalKeys);
+  const rapporto = pickExtra(input.rapporto, extraWorkKeys);
+  const current = await knex('unilav_dati_dipendenti').where({ dipendente_id: id }).first();
+  if (!current && ![...Object.values(anagrafica), ...Object.values(rapporto)].some(Boolean)) return;
+  const row = { anagrafica_json: JSON.stringify(anagrafica), rapporto_json: JSON.stringify(rapporto), aggiornato_at: new Date().toISOString() };
+  if (current) await knex('unilav_dati_dipendenti').where({ dipendente_id: id }).update(row);
+  else await knex('unilav_dati_dipendenti').insert({ dipendente_id: id, ...row });
+}
 
 module.exports = {
   async recuperaDipendentiAttivi() {
@@ -69,6 +82,28 @@ module.exports = {
     
     const proroghe = await knex('proroghe_contratti').where('dipendente_id', id).orderBy('id', 'asc');
     row.proroghe = proroghe || [];
+    if (await knex.schema.hasTable('unilav_dati_dipendenti')) {
+      const extra = await knex('unilav_dati_dipendenti').where({ dipendente_id: id }).first();
+      row.unilavDati = extra ? {
+        anagrafica: pickExtra(JSON.parse(extra.anagrafica_json), extraPersonalKeys),
+        rapporto: pickExtra(JSON.parse(extra.rapporto_json), extraWorkKeys),
+        aggiornatoAt: extra.aggiornato_at
+      } : null;
+    }
+    row.unilavComunicazioni = await knex.schema.hasTable('unilav_comunicazioni')
+      ? await knex('unilav_comunicazioni').where({ dipendente_id: id })
+        .select('codice_comunicazione as codice', 'tipo', 'data_operazione as dataOperazione',
+          'motivo', 'protocollo', 'file_path as filePath', 'file_name as fileName',
+          'confermata_at as confermataAt', 'dati_json as datiJson').orderBy('confermata_at', 'desc')
+      : [];
+    row.unilavComunicazioni = row.unilavComunicazioni.map(({ datiJson, ...communication }) => {
+      let details = {};
+      try { details = JSON.parse(datiJson || '{}'); } catch { /* Comunicazione storica senza dettagli leggibili. */ }
+      return { ...communication, dataInvio: details.dataInvio || null, oraInvio: details.oraInvio || '',
+        tipoComunicazione: details.tipoComunicazione || '', socioLavoratore: details.socioLavoratore || '',
+        lavoratoreMobilita: details.lavoratoreMobilita || '', assunzioneForzaMaggiore: details.assunzioneForzaMaggiore || '',
+        motivoCessazione: details.rapporto?.motivoCessazione || '', codiceTrasformazione: details.rapporto?.codiceTrasformazione || '' };
+    });
     
     return row;
   },
@@ -145,6 +180,7 @@ module.exports = {
       note_fisse_elaborato: getVal(dati, "noteFisseElaborato") || getVal(dati, "noteFisseElaborato"),
       creato_da: "LocalServer"
     });
+    await saveExtraData(id, dati.unilavDati);
 
     await knex('log_attivita').insert({
       categoria: "Dipendenti",
@@ -217,6 +253,7 @@ module.exports = {
         divisione: getVal(dati, "divisione") || getVal(dati, "Tipo") || 'Esterno',
         note_fisse_elaborato: getVal(dati, "noteFisseElaborato") || getVal(dati, "noteFisseElaborato")
       });
+    await saveExtraData(id, dati.unilavDati);
 
     await knex('log_attivita').insert({
       categoria: "Dipendenti", icona: "✏️", colore: "#3b82f6",

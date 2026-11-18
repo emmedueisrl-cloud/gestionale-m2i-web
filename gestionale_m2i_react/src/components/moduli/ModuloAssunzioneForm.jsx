@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, FileText } from 'lucide-react';
 import ModernModal from '../ui/ModernModal';
 import { recuperaDatiAzienda } from '../../api/azienda';
+import { downloadWord } from '../../utils/downloadWord';
 
 export default function ModuloAssunzioneForm({ isOpen, onClose, dipendenteData, onGenerate }) {
   const [aziendaData, setAziendaData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
     nome: '',
@@ -20,10 +22,11 @@ export default function ModuloAssunzioneForm({ isOpen, onClose, dipendenteData, 
     tipoContratto: 'Determinato', // Determinato, Indeterminato
     dataFine: '',
     qualifica: 'operaio',
-    mansioni: 'addetto alle pulizie',
+    mansioni: 'operaio',
     livelloCCNL: '1° C.C.N.L. Pulizie',
     oreSettimanali: '20 ore settimanali part time',
-    periodoProva: '30'
+    periodoProva: '10',
+    allegaRegolamento: false
   });
 
   useEffect(() => {
@@ -50,7 +53,7 @@ export default function ModuloAssunzioneForm({ isOpen, onClose, dipendenteData, 
           provincia: dipendenteData.provincia || '',
           mansioni: dipendenteData.mansione || prev.mansioni,
           dataInizio: dataAssunzione || prev.dataInizio,
-          dataFirma: dataAssunzione || prev.dataFirma,
+          dataFirma: dipendenteData.dataInvioUnilav || dipendenteData.unilav?.dataInvio || dataAssunzione || prev.dataFirma,
           tipoContratto: tipoContratto,
           dataFine: scadenza
         }));
@@ -62,9 +65,7 @@ export default function ModuloAssunzioneForm({ isOpen, onClose, dipendenteData, 
     setIsLoading(true);
     try {
       const resp = await recuperaDatiAzienda();
-      if (resp && resp.length > 0) {
-        setAziendaData(resp[0]);
-      }
+      setAziendaData(Array.isArray(resp) ? resp[0] : resp);
     } catch (err) {
       console.error(err);
     } finally {
@@ -73,16 +74,22 @@ export default function ModuloAssunzioneForm({ isOpen, onClose, dipendenteData, 
   };
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: type === 'checkbox' ? checked : value,
+      ...(name === 'qualifica' && (!prev.mansioni || prev.mansioni === 'operaio')
+        ? { mansioni: /operai/i.test(value) ? 'operaio' : '' } : {})
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onGenerate(formData, aziendaData);
+    setError('');
+    if (e.nativeEvent.submitter?.value === 'word') {
+      try { await downloadWord('assunzione', formData, aziendaData); }
+      catch (err) { setError(err.message || 'Impossibile creare il file Word.'); }
+    } else onGenerate(formData, aziendaData);
   };
 
   return (
@@ -267,7 +274,17 @@ export default function ModuloAssunzioneForm({ isOpen, onClose, dipendenteData, 
             </div>
           </div>
 
+          <div className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm text-slate-200">
+            Posizione INPS: <strong>{aziendaData?.posizione_inps || 'mancante'}</strong> · Posizione INAIL: <strong>{aziendaData?.posizione_inail || 'mancante'}</strong>
+            {(!aziendaData?.posizione_inps || !aziendaData?.posizione_inail) &&
+              <p className="mt-2 text-amber-300">Compila entrambe le posizioni nella <a href="/admin/azienda" className="font-bold underline">Scheda M2I</a> prima di stampare.</p>}
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-200">
+            <input type="checkbox" name="allegaRegolamento" checked={formData.allegaRegolamento} onChange={handleChange} />
+            Allega anche il regolamento interno (aggiunge altre pagine)
+          </label>
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+            {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
             <button
               type="button"
               onClick={onClose}
@@ -277,7 +294,16 @@ export default function ModuloAssunzioneForm({ isOpen, onClose, dipendenteData, 
             </button>
             <button
               type="submit"
-              className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20 flex items-center gap-2"
+              value="word"
+              disabled={!aziendaData?.posizione_inps || !aziendaData?.posizione_inail}
+              className="px-6 py-2 bg-slate-700 text-white font-medium rounded-xl hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Scarica Word
+            </button>
+            <button
+              type="submit"
+              disabled={!aziendaData?.posizione_inps || !aziendaData?.posizione_inail}
+              className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20 flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FileText className="w-4 h-4" />
               Genera PDF

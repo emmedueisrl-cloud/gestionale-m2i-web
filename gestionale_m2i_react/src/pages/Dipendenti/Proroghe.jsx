@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import ModernModal from '../../components/ui/ModernModal';
 import { recuperaElencoDipendenti, recuperaDatiCompletiDipendente, salvaProroga, uploadFile } from '../../api/dipendenti';
 import FileUploader from '../../components/ui/FileUploader';
+import LetteraProrogaForm from '../../components/moduli/LetteraProrogaForm';
 
 export default function Proroghe() {
   const [dipendentiList, setDipendentiList] = useState([]);
@@ -20,6 +21,8 @@ export default function Proroghe() {
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
   const [error, setError] = useState('');
   const [showWarning4Proroga, setShowWarning4Proroga] = useState(false);
+  const [showLetter, setShowLetter] = useState(false);
+  const [letterDraft, setLetterDraft] = useState(null);
   const [searchParams] = useSearchParams();
 
   // 1. Carica la lista dei dipendenti all'avvio
@@ -62,6 +65,8 @@ export default function Proroghe() {
     setFileUnilav(null);
     setError('');
     setShowWarning4Proroga(false);
+    setShowLetter(false);
+    setLetterDraft(null);
     
     if (!id) {
       setDipendenteData(null);
@@ -162,6 +167,11 @@ export default function Proroghe() {
       setShowWarning4Proroga(false);
     }
   };
+
+  if (showLetter && dipendenteData) return <div className="mx-auto max-w-6xl p-6">
+    <LetteraProrogaForm employee={dipendenteData} nuovaScadenza={nuovaScadenza}
+      savedValues={letterDraft} onClose={values => { setLetterDraft(values); setShowLetter(false); }} />
+  </div>;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -285,6 +295,12 @@ export default function Proroghe() {
             )}
 
             {/* Inserimento Nuova Scadenza */}
+            <div className="mb-6 rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-5">
+              <h3 className="font-bold text-slate-100">Lettera di proroga</h3>
+              <p className="mt-1 text-sm text-slate-300">Prepara la lettera con i dati del dipendente, controlla la nuova scadenza e stampala con logo, timbro e firma.</p>
+              <button type="button" disabled={!nuovaScadenza} onClick={() => setShowLetter(true)}
+                className="mt-4 rounded-lg bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-500 disabled:opacity-50">Prepara la lettera di proroga</button>
+            </div>
             <form onSubmit={handleSubmit} className="border-t border-slate-700 pt-6">
               <div className="max-w-md">
                 <label className="block text-sm font-bold text-slate-50 mb-2">Nuova Data di Scadenza <span className="text-red-500">*</span></label>
@@ -295,6 +311,7 @@ export default function Proroghe() {
                   value={nuovaScadenza}
                   onChange={(e) => {
                     setNuovaScadenza(e.target.value);
+                    setLetterDraft(current => current ? { ...current, nuovaScadenza: e.target.value } : null);
                     setError('');
                   }}
                   className={`w-full p-3 rounded-xl border text-base focus:outline-none focus:ring-2 transition-all ${error ? 'border-red-500 focus:ring-red-200 bg-red-500/10' : 'border-slate-600 focus:ring-amber-100 focus:border-amber-500 bg-slate-800 shadow-sm'}`}

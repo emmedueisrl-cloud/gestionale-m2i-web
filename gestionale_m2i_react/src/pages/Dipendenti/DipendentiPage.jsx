@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Users, Loader2, Plus, Eye, Edit, Hourglass, Infinity as InfinityIcon, UserMinus, FileSignature, CalendarDays } from 'lucide-react';
+import { FileText, Users, Loader2, Plus, Eye, Edit, Hourglass, Infinity as InfinityIcon, UserMinus, FileSignature, CalendarDays, FolderOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
 import ProgrammaFissoModal from '../../components/ui/ProgrammaFissoModal';
 import BustePagaDipendenteModal from '../../components/ui/BustePagaDipendenteModal';
 import { recuperaTuttiIDipendenti, recuperaDipendentiCestinati, eliminaDipendente, ripristinaDipendente } from '../../api/dipendenti';
+import BozzeUnilav from './BozzeUnilav';
 
 
 export default function DipendentiPage() {
@@ -19,6 +20,7 @@ export default function DipendentiPage() {
   const [sortBy, setSortBy] = useState('nome'); // 'nome' o 'tipoContratto'
   const [nascondiCessati, setNascondiCessati] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [showDrafts, setShowDrafts] = useState(false);
 
   const triggerRefresh = () => setRefreshTrigger(prev => prev + 1);
 
@@ -341,7 +343,7 @@ export default function DipendentiPage() {
           </div>
         </div>
         
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button 
             onClick={() => setViewCestino(!viewCestino)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-colors shadow-sm ${
@@ -361,6 +363,10 @@ export default function DipendentiPage() {
           >
             <Plus className="w-4 h-4" />
             Nuovo Dipendente
+          </button>
+          <button type="button" onClick={() => setShowDrafts(true)}
+            className="flex items-center gap-2 rounded-lg border border-indigo-500 bg-indigo-500/15 px-4 py-2.5 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/25">
+            <FolderOpen className="h-4 w-4" />Bozze
           </button>
         </div>
       </div>
@@ -448,6 +454,7 @@ export default function DipendentiPage() {
         dipendenteId={bustePagaModalState.dipendenteId}
         dipendenteNome={bustePagaModalState.dipendenteNome}
       />
+      {showDrafts && <BozzeUnilav onClose={() => setShowDrafts(false)} onCompleted={triggerRefresh} />}
     </div>
   );
 }

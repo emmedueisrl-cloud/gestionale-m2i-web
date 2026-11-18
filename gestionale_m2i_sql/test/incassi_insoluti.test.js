@@ -98,6 +98,19 @@ test('registro incassi: storico, acconti, saldo, annullamento e scadenze', async
   assert.equal(credited.accreditato, 20);
   assert.equal(credited.residuo, 49.5);
   await assert.rejects(service.register({ fatturaId: 'F1', data: today, importo: '50' }), /superiore al residuo/);
+  const batch = { data: today, totale: '79.50', incassi: [
+    { fatturaId: 'F2', importo: '30.00' }, { fatturaId: 'F1', importo: '49.50' }
+  ], idempotencyKey: 'bank-test-batch-123' };
+  await assert.rejects(service.registerBatch({ ...batch, totale: '90.00', incassi: [
+    { fatturaId: 'F2', importo: '30.00' }, { fatturaId: 'F1', importo: '60.00' }
+  ] }), /superiore al residuo/);
+  assert.equal((await service.list()).fatture.find(row => row.id === 'F2').incassato, 0);
+  const registeredBatch = await service.registerBatch(batch);
+  assert.equal(registeredBatch.incassi.length, 2);
+  assert.equal((await service.registerBatch(batch)).alreadyRegistered, true);
+  dashboard = await service.list();
+  assert.equal(dashboard.fatture.find(row => row.id === 'F1').residuo, 0);
+  assert.equal(dashboard.fatture.find(row => row.id === 'F2').residuo, 70);
 });
 
 test('incassi mostra solo le fatture elaborate, anche senza importazione generale', async t => {

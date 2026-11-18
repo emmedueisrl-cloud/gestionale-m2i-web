@@ -7,6 +7,7 @@ import ModuloChiaviForm from '../../components/moduli/ModuloChiaviForm';
 import PrintableModuloChiavi from '../../components/moduli/PrintableModuloChiavi';
 import ModuloAssunzioneForm from '../../components/moduli/ModuloAssunzioneForm';
 import PrintableContrattoAssunzione from '../../components/moduli/PrintableContrattoAssunzione';
+import { stampaContrattoAssunzione } from '../../utils/printContrattoAssunzione';
 import ModernModal from '../../components/ui/ModernModal';
 
 export default function ModuliDipendenti() {
@@ -118,7 +119,7 @@ export default function ModuliDipendenti() {
     setAssunzioneFormData({ formData, dipendenteData, aziendaData });
     setPrintMode('assunzione');
     setTimeout(() => {
-      window.print();
+      stampaContrattoAssunzione(formData);
     }, 500);
   };
 

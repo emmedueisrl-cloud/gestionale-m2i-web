@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Building2, Loader2, Plus, Eye, Edit, Trash2, Power } from 'lucide-react';
+import { Building2, Loader2, Plus, Eye, Edit, Trash2, Power, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import DataTable from '../../components/ui/DataTable';
 import ModernModal from '../../components/ui/ModernModal';
@@ -149,6 +149,11 @@ export default function ClientiPage() {
               >
                 <Edit className="w-4 h-4" />
               </button>
+              <button type="button" onClick={() => navigate(`/admin/clienti/contratto/${encodeURIComponent(row.id)}`)}
+                className="flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs font-semibold text-slate-200 hover:border-indigo-500/50 hover:text-indigo-300"
+                title="Crea contratto d'appalto">
+                <FileText className="h-4 w-4" /> Contratto
+              </button>
 
               {row.attivo !== 'Cessato' ? (
                 <button 
@@ -291,6 +296,12 @@ export default function ClientiPage() {
             {viewCestino ? 'Torna all\'Elenco' : 'Cestino Clienti'}
           </button>
           
+          {!viewCestino && (
+            <button type="button" onClick={() => navigate('/admin/azioni-veloci?tipo=visura')}
+              className="flex items-center gap-2 rounded-xl border border-indigo-500/50 bg-indigo-500/10 px-5 py-2.5 text-sm font-bold text-indigo-200 hover:bg-indigo-500/20">
+              <FileText className="h-5 w-5" /> Importa visura
+            </button>
+          )}
           {!viewCestino && (
             <button 
               onClick={() => navigate('/admin/clienti/nuovo')}

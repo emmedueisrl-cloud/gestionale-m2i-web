@@ -153,6 +153,10 @@ module.exports = {
 
   async recuperaDatiCompletiCliente(id) {
     const cliente = await knex('clienti').where('id', id).first();
+    if (cliente) {
+      try { cliente.contrattoAppalto = cliente.contratto_appalto_dati ? JSON.parse(cliente.contratto_appalto_dati) : null; }
+      catch { cliente.contrattoAppalto = null; }
+    }
     if (cliente && typeof cliente.foto_servizio === 'string') {
       try {
         cliente.foto_servizio = JSON.parse(cliente.foto_servizio);
@@ -176,6 +180,22 @@ module.exports = {
       cliente.chiavi_assegnazioni = assegnazioni;
     }
     return cliente;
+  },
+
+  async salvaDatiContrattoAppaltoCliente(id, dati) {
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error('Cliente non valido.');
+    if (!dati || typeof dati !== 'object' || Array.isArray(dati)) throw new Error('Dati contratto non validi.');
+    const fields = [
+      'ragioneSociale', 'partitaIva', 'sedeLegale', 'rappresentante',
+      'luogoNascitaRappresentante', 'dataNascitaRappresentante', 'tipoDocumento',
+      'numeroDocumento', 'rilasciatoDa', 'dataRilascioDocumento', 'localiServizio',
+      'durata', 'dataInizio', 'dataFine', 'corrispettivo', 'corrispettivoLettere',
+      'oreMensili', 'regimeIva', 'clausolaIva', 'indirizzoComunicazioni', 'dataFirma'
+    ];
+    const clean = Object.fromEntries(fields.map(key => [key, String(dati[key] ?? '').trim().slice(0, 3000)]));
+    const updated = await knex('clienti').where({ id }).update({ contratto_appalto_dati: JSON.stringify(clean) });
+    if (!updated) throw new Error('Cliente non trovato.');
+    return clean;
   },
 
   async recuperaDocumentiCliente(id) {

@@ -354,7 +354,7 @@ function createReceiptsService(knex) {
     }, oggi: today };
   }
 
-  async function register({ fatturaId, data, importo, nota, userId, idempotencyKey }) {
+  async function register({ fatturaId, data, importo, nota, userId, idempotencyKey }, database = knex) {
     if (!validDate(data) || data > todayInItaly()) throw new Error('Inserisci una data di incasso valida, non futura.');
     const raw = String(importo ?? '').trim().replace(',', '.');
     if (!/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isSafeInteger(cents(raw)) || cents(raw) <= 0) {
@@ -363,7 +363,7 @@ function createReceiptsService(knex) {
     if (typeof nota !== 'undefined' && (typeof nota !== 'string' || nota.length > 2000)) throw new Error('La nota supera il limite di 2000 caratteri.');
     if (idempotencyKey && (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9-]{8,64}$/.test(idempotencyKey))) throw new Error('Identificativo richiesta non valido.');
     const groupId = extraId(fatturaId);
-    if (groupId) return knex.transaction(async trx => {
+    if (groupId) return database.transaction(async trx => {
       const group = await trx('gruppi_fatturazione_extra').where({ id: groupId, tipo: 'extra' }).first();
       if (!group || !group.inviata_at || group.fattura_registrazione_id) throw new Error('Fattura extra non disponibile per l’incasso.');
       if (idempotencyKey) {
@@ -385,7 +385,7 @@ function createReceiptsService(knex) {
       return { id, incassato: (paid + amount) / 100, residuo: (remaining - amount) / 100 };
     });
     const sentKey = sentId(fatturaId);
-    if (sentKey) return knex.transaction(async trx => {
+    if (sentKey) return database.transaction(async trx => {
       const sent = await sentInvoice(trx, sentKey);
       if (!sent) throw new Error('Fattura inviata non trovata.');
       if (idempotencyKey) {
@@ -422,7 +422,7 @@ function createReceiptsService(knex) {
       return { id, incassato: (paid + amount) / 100, residuo: (remaining - amount) / 100 };
     });
     const registrationId = arubaId(fatturaId);
-    if (registrationId) return knex.transaction(async trx => {
+    if (registrationId) return database.transaction(async trx => {
       const registration = await trx('fatture_aruba_elaborati').where({ id: registrationId }).first();
       if (!registration) throw new Error('Fattura elaborata non trovata.');
       if (idempotencyKey) {
@@ -455,7 +455,7 @@ function createReceiptsService(knex) {
         eseguito_da: String(userId || 'LocalServer') });
       return { id, incassato: (paid + amount) / 100, residuo: (remaining - amount) / 100 };
     });
-    return knex.transaction(async trx => {
+    return database.transaction(async trx => {
       if (idempotencyKey) {
         const existing = await trx('incassi_fatture').where({ idempotency_key: idempotencyKey }).first();
         if (existing) {
@@ -610,7 +610,37 @@ function createReceiptsService(knex) {
     });
   }
 
-  return { initialize, list, register, cancel, setDueDate };
+  async function registerBatch({ data, totale, incassi, nota, userId, idempotencyKey }) {
+    if (!Array.isArray(incassi) || incassi.length < 1 || incassi.length > 20) {
+      throw new Error('Seleziona da 1 a 20 fatture per il bonifico.');
+    }
+    if (!idempotencyKey || typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9-]{8,56}$/.test(idempotencyKey)) {
+      throw new Error('Identificativo del bonifico non valido.');
+    }
+    const ids = incassi.map(row => String(row?.fatturaId || ''));
+    if (ids.some(id => !id) || new Set(ids).size !== ids.length) throw new Error('Le fatture selezionate non sono valide.');
+    const amounts = incassi.map(row => String(row?.importo ?? '').trim().replace(',', '.'));
+    if (amounts.some(value => !/^\d+(?:\.\d{1,2})?$/.test(value) || cents(value) <= 0)) {
+      throw new Error('Verifica gli importi assegnati alle fatture.');
+    }
+    const total = String(totale ?? '').trim().replace(',', '.');
+    if (!/^\d+(?:\.\d{1,2})?$/.test(total) || cents(total) <= 0 ||
+      amounts.reduce((sum, value) => sum + cents(value), 0) !== cents(total)) {
+      throw new Error('La somma assegnata non coincide con il bonifico.');
+    }
+    const note = String(nota || '').trim();
+    if (note.length > 1800) throw new Error('La nota supera il limite consentito.');
+    return knex.transaction(async trx => {
+      const results = [];
+      for (let index = 0; index < incassi.length; index++) {
+        results.push(await register({ fatturaId: ids[index], data, importo: amounts[index],
+          nota: note, userId, idempotencyKey: `${idempotencyKey}-${index}` }, trx));
+      }
+      return { incassi: results, alreadyRegistered: results.every(row => row.alreadyRegistered) };
+    });
+  }
+
+  return { initialize, list, register, registerBatch, cancel, setDueDate };
 }
 
 module.exports = { createReceiptsService, dueDateForPeriod, validDate, todayInItaly, transferSentReceipts };
