@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mail, Paperclip, X } from 'lucide-react';
 import { workflowRequest } from '../../api/workflowElaborati';
 
@@ -9,6 +9,8 @@ const validEmail = value => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(value);
 const splitEmails = value => [...new Set(String(value || '').split(/[;,\s]+/).map(email).filter(Boolean))];
 
 export default function SollecitoFatture({ invoiceId, onClose, onSent }) {
+  const formRef = useRef(null);
+  const sending = useRef(false);
   const [draft, setDraft] = useState(null);
   const [selected, setSelected] = useState([]);
   const [attached, setAttached] = useState([]);
@@ -51,8 +53,8 @@ export default function SollecitoFatture({ invoiceId, onClose, onSent }) {
     setStep(2);
   };
 
-  const send = async event => {
-    event.preventDefault();
+  const send = async () => {
+    if (step !== 2 || sending.current || !formRef.current?.reportValidity()) return;
     const ccAddresses = splitEmails(cc);
     if (!uniqueRecipients.length || [...uniqueRecipients, ...ccAddresses].some(address => !validEmail(address))) {
       return setError('Inserisci indirizzi email validi per destinatario e CC.');
@@ -60,6 +62,7 @@ export default function SollecitoFatture({ invoiceId, onClose, onSent }) {
     if (changedEmail && updateEmail === 'secondaria' && draft.cliente.emailSecondaria) {
       return setError('La seconda email è già presente. Scegli “Solo per questo invio” o “Sostituisci la principale”.');
     }
+    sending.current = true;
     setBusy(true); setError('');
     try {
       const result = await workflowRequest('contabilita/incassi-insoluti/solleciti/invia', {
@@ -69,7 +72,7 @@ export default function SollecitoFatture({ invoiceId, onClose, onSent }) {
       });
       onSent(result.warning || 'Sollecito inviato.');
     } catch (err) { setError(err.message || 'Invio non riuscito.'); }
-    finally { setBusy(false); }
+    finally { sending.current = false; setBusy(false); }
   };
 
   return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-3 sm:p-6" role="presentation">
@@ -86,7 +89,7 @@ export default function SollecitoFatture({ invoiceId, onClose, onSent }) {
           })}</tbody></table></div>
           <p className="text-right font-bold">Totale selezionato: {euro(chosen.reduce((sum, row) => sum + Number(row.residuo), 0))}</p>
         </div>}
-        {draft && step === 2 && <form id="sollecito-form" onSubmit={send} className="space-y-4">
+        {draft && step === 2 && <form ref={formRef} onSubmit={event => event.preventDefault()} className="space-y-4">
           <div className="rounded-lg bg-indigo-50 p-3 text-sm"><strong>{chosen.length} {chosen.length === 1 ? 'fattura' : 'fatture'}</strong> · {euro(chosen.reduce((sum, row) => sum + Number(row.residuo), 0))} · {attached.filter(id => selected.includes(id)).length} PDF in allegato</div>
           <fieldset className="space-y-2"><legend className="font-semibold">A</legend>
             {draft.cliente.email && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={primary} onChange={event => setPrimary(event.target.checked)} />{draft.cliente.email} <span className="text-slate-500">(principale)</span></label>}
@@ -99,9 +102,18 @@ export default function SollecitoFatture({ invoiceId, onClose, onSent }) {
           <label className="block text-sm font-semibold">CC <span className="font-normal text-slate-500">(separa più indirizzi con virgole o punto e virgola)</span><input type="text" value={cc} onChange={event => setCc(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
           <label className="block text-sm font-semibold">Oggetto<input required maxLength={250} value={subject} onChange={event => setSubject(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
           <label className="block text-sm font-semibold">Messaggio<textarea required maxLength={10000} rows={12} value={body} onChange={event => setBody(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal leading-relaxed" /></label>
+          <button type="button" onClick={send} disabled={busy}
+            className="rounded-lg bg-indigo-700 px-5 py-2 font-bold text-white disabled:opacity-50">
+            {busy ? 'Invio…' : 'Invia sollecito'}
+          </button>
         </form>}
       </div>
-      {draft && <footer className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4"><button type="button" disabled={busy} onClick={step === 2 ? () => setStep(1) : onClose} className="rounded-lg bg-slate-100 px-4 py-2 font-semibold">{step === 2 ? 'Indietro' : 'Annulla'}</button>{step === 1 ? <button type="button" onClick={continueToEmail} className="rounded-lg bg-indigo-700 px-5 py-2 font-bold text-white">Continua alla mail</button> : <button type="submit" form="sollecito-form" disabled={busy} className="rounded-lg bg-indigo-700 px-5 py-2 font-bold text-white disabled:opacity-50">{busy ? 'Invio…' : 'Invia sollecito'}</button>}</footer>}
+      {draft && <footer className="flex items-center justify-between gap-2 border-t border-slate-200 px-5 py-4">
+        <button type="button" disabled={busy} onClick={step === 2 ? () => setStep(1) : onClose}
+          className="rounded-lg bg-slate-100 px-4 py-2 font-semibold">{step === 2 ? 'Indietro' : 'Annulla'}</button>
+        {step === 1 && <button type="button" onClick={continueToEmail}
+          className="rounded-lg bg-indigo-700 px-5 py-2 font-bold text-white">Continua alla mail</button>}
+      </footer>}
     </div>
   </div>;
 }
