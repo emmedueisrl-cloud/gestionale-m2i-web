@@ -1,4 +1,5 @@
 const { knex } = require('../db');
+const { dataIso } = require('../cessazioni_dipendenti');
 const { calcolaImportiFatturaCliente } = require('../valori_contabilita_clienti');
 
 module.exports = {
@@ -46,10 +47,18 @@ module.exports = {
 
     // Calcolo al volo
     const dip = await connection('dipendenti')
-      .select('id', 'cognome', 'nome', 'paga_oraria_reale', 'tipo_paga', 'iban', 'note_fisse_elaborato')
-      .whereNot('stato', 'Cessato')
-      .andWhere('cestinato', 0)
-      .andWhere('divisione', 'Esterno');
+      .select('id', 'cognome', 'nome', 'paga_oraria_reale', 'tipo_paga', 'iban', 'note_fisse_elaborato',
+        'stato', 'data_assunzione', 'data_cessazione')
+      .where({ cestinato: 0, divisione: 'Esterno' });
+    const periodo = String(anno) + '-' + String(mese).padStart(2, '0');
+    const registro = await connection('registro_ore')
+      .select('dipendente_id', 'causale_assenza').sum('ore_totali as s')
+      .where({ mese, anno }).groupBy('dipendente_id', 'causale_assenza');
+    const orePerDipendente = new Map();
+    for (const record of registro) {
+      if (!orePerDipendente.has(record.dipendente_id)) orePerDipendente.set(record.dipendente_id, []);
+      orePerDipendente.get(record.dipendente_id).push(record);
+    }
       
     const noteMensili = await connection('note_elaborati').where({ tipo: 'dipendente', mese, anno });
     const notePerDipendente = new Map(noteMensili.map(n => [n.soggetto_id, n.testo || '']));
@@ -67,16 +76,19 @@ module.exports = {
     }
     const rows = [];
     for (const d of dip) {
+      const cessazione = dataIso(d.data_cessazione);
+      if (cessazione && cessazione.slice(0, 7) < periodo) continue;
       const extra = extraPerDipendente.get(String(d.id)) || [];
       const oreExtraElaborato = extra.filter(l => l.modalita === 'elaborato')
         .reduce((sum, l) => sum + JSON.parse(l.giornate_json).reduce((part, day) => part + Number(day.ore || 0), 0), 0);
       const noteExtra = extra.filter(l => l.modalita === 'solo_nota')
         .map(l => `€ ${(Number(l.compenso_cent || 0) / 100).toFixed(2)} da dare per ${l.servizio_nome} presso ${l.ragione_sociale}`);
-      const oreRecords = await connection('registro_ore')
-        .select('causale_assenza')
-        .sum('ore_totali as s')
-        .where({ dipendente_id: d.id, mese, anno })
-        .groupBy('causale_assenza');
+      const oreRecords = orePerDipendente.get(d.id) || [];
+      // Una riassunzione sostituisce la data in scheda: le presenze del vecchio rapporto restano valide.
+      const assunzione = dataIso(d.data_assunzione);
+      const giaAssunto = !assunzione || assunzione.slice(0, 7) <= periodo;
+      const nelRapporto = giaAssunto && (cessazione !== null || d.stato !== 'Cessato');
+      if (!nelRapporto && !extra.length && !oreRecords.some(r => r.s > 0)) continue;
 
       let oreLavorateOrd = 0;
       let oreFPM = 0;
@@ -168,6 +180,11 @@ module.exports = {
       const chiuso = await trx('mesi_chiusi_dipendenti').where({ mese, anno }).first();
       if (chiuso) throw new Error('Mese dipendenti già chiuso: lo storico non può essere sovrascritto. Sbloccalo entro 30 giorni prima di richiuderlo.');
       const ids = datiElaborati.map(d => d.idDipendente);
+      const corrente = await module.exports.ottieniElaboratoMensile(mese, anno, trx);
+      const idsAttesi = new Set(corrente.dati.map(d => d.idDipendente));
+      if (new Set(ids).size !== ids.length || ids.length !== idsAttesi.size || ids.some(id => !idsAttesi.has(id))) {
+        throw new Error('L’elenco dipendenti è cambiato: ricarica l’elaborato prima di chiudere il mese.');
+      }
       const blocchi = await trx('righe_bloccate_elaborati').where({ tipo: 'dipendente', mese, anno });
       const snapshotPerId = new Map(blocchi.map(b => [b.soggetto_id, JSON.parse(b.snapshot)]));
       if (blocchi.some(b => !ids.includes(b.soggetto_id))) throw new Error('La chiusura non può escludere righe già blindate.');

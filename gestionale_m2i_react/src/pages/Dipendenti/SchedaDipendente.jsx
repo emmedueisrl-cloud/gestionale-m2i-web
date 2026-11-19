@@ -100,10 +100,16 @@ export default function SchedaDipendente() {
 
   const statoColor = statoColors[data.stato] || 'bg-slate-100 text-slate-50 border-slate-700';
 
+  const comunicazioneCessazione = data.unilavComunicazioni?.find(comunicazione =>
+    comunicazione.tipo === 'cessazione' && comunicazione.dataOperazione === data.data_cessazione);
+  const motivoCessazione = data.motivo_cessazione || comunicazioneCessazione?.motivo || data.note || '';
+  const tipoContratto = data.stato === 'Cessato' ? data.stato_pre_cessazione : data.stato;
+  const contrattoIndeterminato = tipoContratto === 'Indeterminato' || (!tipoContratto && !data.scadenza && data.data_trasformazione_indeterminato);
+
   const safeDate = (dateString) => {
     if (!dateString) return '-';
     const d = new Date(dateString);
-    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('it-IT');
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
   };
 
   return (
@@ -245,7 +251,6 @@ export default function SchedaDipendente() {
               </span>
             </div>
             {data.data_trasformazione_indeterminato && <div className="flex justify-between items-center border-b border-slate-700/50 pb-4"><span className="text-base font-medium text-slate-400">Trasformazione a tempo indeterminato</span><span className="font-bold text-lg text-slate-200">{safeDate(data.data_trasformazione_indeterminato)}</span></div>}
-            {data.data_cessazione && <div className="flex justify-between items-center border-b border-slate-700/50 pb-4"><span className="text-base font-medium text-slate-400">Cessazione</span><span className="font-bold text-lg text-slate-200">{safeDate(data.data_cessazione)}</span></div>}
             {data.proroghe && data.proroghe.length > 0 && (
               <div className="flex justify-between items-center border-b border-slate-700/50 pb-4">
                 <span className="text-base font-medium text-slate-400">Scadenza Originale</span>
@@ -263,15 +268,26 @@ export default function SchedaDipendente() {
               </div>
             ))}
             <div className="flex justify-between items-center border-b border-slate-700/50 pb-4">
-              <span className="text-base font-medium text-slate-400">Scadenza Attuale</span>
+              <span className="text-base font-medium text-slate-400">Scadenza da contratto</span>
               <span className={`font-black text-2xl ${
-                data.stato === 'Indeterminato' ? 'text-emerald-400' : 
+                contrattoIndeterminato ? 'text-emerald-400' :
                 data.scadenza ? 'text-amber-400' : 'text-slate-50'
               }`}>
-                {data.stato === 'Indeterminato' ? 'Indeterminato' : 
+                {contrattoIndeterminato ? 'Indeterminato' :
                  (data.scadenza ? safeDate(data.scadenza) : 'Nessuna')}
               </span>
             </div>
+            {data.data_cessazione && (
+              <div className="flex justify-between items-center gap-4 border-b border-slate-700/50 pb-4">
+                <div>
+                  <span className="text-base font-medium text-slate-300">
+                    {/dimissioni/i.test(motivoCessazione) ? 'Scadenza per dimissioni al' : 'Cessazione al'}
+                  </span>
+                  {data.stato !== 'Cessato' && <p className="text-sm text-amber-300">Rapporto attivo fino a questa data inclusa</p>}
+                </div>
+                <span className="font-bold text-xl text-slate-100">{safeDate(data.data_cessazione)}</span>
+              </div>
+            )}
             <div className="flex flex-col pt-2">
               <span className="text-base font-medium text-slate-400 mb-2">Note / Annotazioni</span>
               <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-700 text-base text-slate-200 min-h-[80px] font-medium leading-relaxed shadow-inner">

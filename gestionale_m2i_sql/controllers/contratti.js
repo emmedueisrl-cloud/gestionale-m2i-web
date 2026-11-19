@@ -1,4 +1,5 @@
 const { knex, getVal } = require('../db');
+const { dataIso, registraCessazioneDipendente, statoAllaData } = require('../cessazioni_dipendenti');
 const { recuperaDatiCompletiDipendente, recuperaDipendentiAttivi } = require('./dipendenti');
 
 module.exports = {
@@ -43,14 +44,18 @@ module.exports = {
     const dataTrasf = getVal(dati, "dataTrasformazione") || new Date().toISOString().split('T')[0];
     
     return knex.transaction(async trx => {
-      const updated = await trx('dipendenti')
-        .where('id', id)
-        .update({
+      const dipendente = await trx('dipendenti').where({ id }).first();
+      if (!dipendente) throw new Error('Dipendente non trovato.');
+      if (statoAllaData(dipendente) === 'Cessato') throw new Error('Il rapporto è già cessato.');
+      if (dipendente.data_cessazione && dataIso(dataTrasf) > dataIso(dipendente.data_cessazione)) {
+        throw new Error('La data di trasformazione è successiva alla cessazione registrata.');
+      }
+      await trx('dipendenti').where({ id }).update({
         stato: 'Indeterminato',
         scadenza: null,
-        data_trasformazione_indeterminato: dataTrasf
+        data_trasformazione_indeterminato: dataTrasf,
+        ...(dipendente.data_cessazione ? { stato_pre_cessazione: 'Indeterminato' } : {})
       });
-      if (updated !== 1) throw new Error("Dipendente non trovato");
       await trx('log_attivita').insert({
         categoria: "Contratti", icona: "✨", colore: "#3b82f6",
         descrizione: `Trasformato contratto dipendente ${id} in Indeterminato (dal ${dataTrasf})`, eseguito_da: "LocalServer"
@@ -65,17 +70,12 @@ module.exports = {
     const note = getVal(dati, "note");
     
     return knex.transaction(async trx => {
-      const updated = await trx('dipendenti')
-        .where('id', id)
-        .update({
-        stato: 'Cessato',
-        data_cessazione: dataCess,
-        note
-      });
-      if (updated !== 1) throw new Error("Dipendente non trovato");
+      const dipendente = await trx('dipendenti').where({ id }).first();
+      await registraCessazioneDipendente(trx, dipendente, dataCess, getVal(dati, 'motivoCessazione') || note);
+      if (note) await trx('dipendenti').where({ id }).update({ note });
       await trx('log_attivita').insert({
         categoria: "Contratti", icona: "⛔", colore: "#ef4444",
-        descrizione: `Registrata cessazione contratto dipendente ${id} (dal ${dataCess})`, eseguito_da: "LocalServer"
+        descrizione: `Registrata cessazione contratto dipendente ${id} (ultimo giorno ${dataCess})`, eseguito_da: "LocalServer"
       });
       return true;
     });
@@ -94,7 +94,9 @@ module.exports = {
         stato,
         data_assunzione: assunzione,
         scadenza,
-        data_cessazione: null
+        data_cessazione: null,
+        motivo_cessazione: null,
+        stato_pre_cessazione: null
       });
       if (updated !== 1) throw new Error("Dipendente non trovato");
       await trx('log_attivita').insert({

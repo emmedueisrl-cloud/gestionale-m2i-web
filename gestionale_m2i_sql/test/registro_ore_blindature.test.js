@@ -260,3 +260,48 @@ test('mesi chiusi: clienti impedisce nuove ore cliente, dipendenti impedisce qua
     await knex('mesi_chiusi_dipendenti').where({ mese: 9, anno: 2026 }).del();
   }
 });
+
+
+test('il mese di cessazione comprende il dipendente fino all’ultimo giorno di rapporto, anche se la scadenza contrattuale è successiva', async () => {
+  const elaborati = require('../controllers/elaborati');
+  const f = await fixture();
+  await knex('dipendenti').where({ id: f.id }).update({
+    data_assunzione: '2036-10-31T12:22:10Z', scadenza: '2037-01-31', data_cessazione: '2036-11-30'
+  });
+  const carica = mese => elaborati.ottieniElaboratoMensile(mese, 2036);
+  const riga = async mese => (await carica(mese)).dati.find(d => d.idDipendente === f.id);
+  assert.equal(await riga(9), undefined);
+  assert.ok(await riga(10));
+  assert.ok(await riga(11));
+  assert.equal(await riga(12), undefined);
+
+  await knex('dipendenti').where({ id: f.id }).update({ stato: 'Cessato', data_cessazione: '02/11/2036' });
+  await knex('registro_ore').insert({ dipendente_id: f.id, cliente_id: f.a, mese: 11, anno: 2036, giorno_2: 4, ore_totali: 4 });
+  const novembre = await carica(11);
+  assert.equal(novembre.dati.find(d => d.idDipendente === f.id).oreLavorate, 4);
+  assert.equal((await riga(11)).stipendioNetto, 28);
+  assert.equal(await riga(12), undefined);
+  assert.equal((await workflow.missingCount('dipendente', 11, 2036)).totale, novembre.dati.length);
+
+  await knex('dipendenti').where({ id: f.id }).update({ data_cessazione: '2036-10-31' });
+  await assert.rejects(() => elaborati.chiudiMeseDipendenti(11, 2036, novembre.dati), /ricarica l’elaborato/);
+  await knex('dipendenti').where({ id: f.id }).update({ data_cessazione: '2036-11-02' });
+  await workflow.lockRow('dipendente', 11, 2036, f.id);
+  await elaborati.chiudiMeseDipendenti(11, 2036, (await carica(11)).dati);
+  assert.equal((await riga(11)).oreLavorate, 4);
+});
+
+test('le ore del rapporto precedente e dei cessati senza data restano nell’elaborato dei mesi lavorati', async () => {
+  const elaborati = require('../controllers/elaborati');
+  const f = await fixture();
+  const presente = async mese => (await elaborati.ottieniElaboratoMensile(mese, 2038)).dati.some(d => d.idDipendente === f.id);
+  await knex('dipendenti').where({ id: f.id }).update({ stato: 'Cessato', data_cessazione: null });
+  await knex('registro_ore').insert({ dipendente_id: f.id, cliente_id: f.a, mese: 2, anno: 2038, ore_totali: 5 });
+  assert.equal(await presente(2), true);
+  assert.equal(await presente(3), false);
+
+  await knex('dipendenti').where({ id: f.id }).update({ stato: 'Determinato', data_assunzione: '01/04/2038' });
+  assert.equal(await presente(2), true);
+  assert.equal(await presente(3), false);
+  assert.equal(await presente(4), true);
+});

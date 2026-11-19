@@ -21,6 +21,8 @@ CREATE TABLE dipendenti (
     paga_oraria_reale REAL DEFAULT 0.0,
     data_trasformazione_indeterminato TEXT,
     data_cessazione TEXT,
+    motivo_cessazione TEXT,
+    stato_pre_cessazione TEXT,
     note TEXT,
     allegato_documenti TEXT,
     allegato_contratto TEXT,

@@ -48,7 +48,7 @@ export default function Cessazione() {
   }, [searchParams]);
 
   // Helper per leggere il tipo contratto indipendentemente dal nome del campo
-  const getTipoContratto = (d) => d.tipo_contratto || d.TipoContratto || d.tipoContratto || d.stato || '';
+  const getTipoContratto = (d) => d.tipo_contratto || d.TipoContratto || d.tipoContratto || (d.stato === 'Cessato' && d.stato_pre_cessazione) || d.stato || '';
 
   // 2. Carica i dati quando si seleziona un dipendente
   const handleSelectChange = async (e) => {
@@ -69,6 +69,10 @@ export default function Cessazione() {
     try {
       const data = await recuperaDatiCompletiDipendente(id);
       setDipendenteData(data);
+      if (data.data_cessazione) {
+        setDataCessazione(data.data_cessazione);
+        setNoteCessazione(data.motivo_cessazione || data.note || '');
+      }
     } catch (error) {
       setModal({
         isOpen: true,
@@ -113,7 +117,7 @@ export default function Cessazione() {
       isOpen: true,
       type: 'warning',
       title: 'Conferma Cessazione',
-      content: `Stai per registrare la cessazione del rapporto lavorativo per ${dipendenteData.nome} ${dipendenteData.cognome}. Questa operazione contrassegnerà il dipendente come inattivo. Confermi?`,
+      content: `Stai per registrare la cessazione del rapporto lavorativo per ${dipendenteData.nome} ${dipendenteData.cognome}. Confermi il ${new Date(dataCessazione).toLocaleDateString('it-IT', { timeZone: 'UTC' })} come ultimo giorno di rapporto?`,
       primaryAction: {
         label: 'Sì, conferma cessazione',
         variant: 'danger',
@@ -134,7 +138,8 @@ export default function Cessazione() {
       await registraCessazione({ 
         IdDipendente: selectedId, 
         DataCessazione: dataCessazione,
-        Note: noteCessazione 
+        MotivoCessazione: noteCessazione,
+        Note: noteCessazione
       });
       
       // Caricamento dei file di cessazione se presenti
@@ -149,12 +154,7 @@ export default function Cessazione() {
         isOpen: true,
         type: 'success',
         title: 'Cessazione Registrata',
-        subtitle: 'Il rapporto lavorativo è stato chiuso.',
-        content: `Il dipendente ${dipendenteData.nome} ${dipendenteData.cognome} è stato marcato come inattivo a partire dal ${new Date(dataCessazione).toLocaleDateString('it-IT')}.`,
-        primaryAction: {
-          label: 'Chiudi',
-          onClick: closeModal
-        }
+        content: `L’ultimo giorno di rapporto di ${dipendenteData.nome} ${dipendenteData.cognome} è il ${new Date(dataCessazione).toLocaleDateString('it-IT', { timeZone: 'UTC' })}. Dal giorno successivo il dipendente risulta cessato.`,
       });
     } catch (error) {
       setModal({
@@ -244,7 +244,7 @@ export default function Cessazione() {
                     <CalendarClock className="w-5 h-5" />
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-xs">Scadenza Attuale</span>
+                    <span className="text-slate-400 block text-xs">Scadenza da contratto</span>
                     <p className="font-bold text-slate-50 text-lg">
                       {(dipendenteData.scadenza || dipendenteData.scadenza_contratto) ? new Date(dipendenteData.scadenza || dipendenteData.scadenza_contratto).toLocaleDateString('it-IT') : 'Nessuna scadenza impostata'}
                     </p>
@@ -284,7 +284,7 @@ export default function Cessazione() {
               <div className="max-w-xl">
                 <div className="mb-6">
                   <label className="block text-sm font-bold text-slate-50 mb-2">Data Cessazione <span className="text-red-500">*</span></label>
-                  <p className="text-xs text-slate-400 mb-3">Inserisci la data di chiusura del rapporto lavorativo.</p>
+                  <p className="text-xs text-slate-400 mb-3">Inserisci l’ultimo giorno di rapporto. Il dipendente è attivo fino a questa data inclusa.</p>
                   
                   <input 
                     type="date" 

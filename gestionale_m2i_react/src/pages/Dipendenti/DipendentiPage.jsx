@@ -159,7 +159,12 @@ export default function DipendentiPage() {
         else if (stato === 'Cessato') colorClass = 'bg-red-500/20 text-red-300';
 
         let testoScadenza = null;
-        if (stato === 'Determinato' && row.scadenza) {
+        if (row.dataCessazione) {
+          const dataFine = new Date(row.dataCessazione).toLocaleDateString('it-IT', { timeZone: 'UTC' });
+          testoScadenza = <span className="mt-1 block text-xs text-slate-300">
+            {stato === 'Cessato' ? 'Ultimo giorno di rapporto' : 'Attivo fino al'} {dataFine}
+          </span>;
+        } else if (stato === 'Determinato' && row.scadenza) {
           const oggi = new Date();
           oggi.setHours(0, 0, 0, 0);
           const dataScadenza = new Date(row.scadenza);

@@ -166,7 +166,7 @@ const UnilavReview = forwardRef(function UnilavReview({ file, preview, initialDr
           {employeeName(employee)} · {employee.codiceFiscale} · {employee.stato}</button>)}</div>}
         {selected && <div className="rounded-lg bg-slate-900 p-4 text-sm">
           <strong>Dipendente da confermare: {employeeName(selected)}</strong> · {selected.id}<br />
-          Stato attuale: {selected.stato} · Assunzione: {dateIt(selected.dataAssunzione)} · Scadenza: {dateIt(selected.scadenza)}
+          Stato attuale: {selected.stato} · Assunzione: {dateIt(selected.dataAssunzione)} · Scadenza da contratto: {dateIt(selected.scadenza)}
           {mismatch && <label className="mt-3 flex items-start gap-2 text-amber-200"><input type="checkbox" checked={confirmMismatch} onChange={event => setConfirmMismatch(event.target.checked)} />
             Il codice fiscale della scheda è diverso da quello dell’UNILAV. Confermo manualmente che è la stessa persona.</label>}
         </div>}
@@ -203,12 +203,13 @@ const UnilavReview = forwardRef(function UnilavReview({ file, preview, initialDr
       <h3 className="text-lg font-bold">Modifiche proposte</h3>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {detail('Operazione', labels[unilav.tipo])}
-        {detail('Data effettiva', dateIt(operation.dataOperazione))}
+        {detail(unilav.tipo === 'cessazione' ? 'Ultimo giorno di rapporto' : 'Data effettiva', dateIt(operation.dataOperazione))}
         {unilav.tipo === 'proroga' && <>{detail('Scadenza attuale', dateIt(selected?.scadenza))}{detail('Nuova scadenza', dateIt(operation.dataOperazione))}</>}
         {unilav.tipo === 'trasformazione' && <>{detail('Stato attuale', selected?.stato)}{detail('Nuovo stato', 'Indeterminato, senza scadenza')}</>}
-        {unilav.tipo === 'cessazione' && <>{detail('Nuovo stato', 'Cessato')}{detail('Motivo', operation.motivoCessazione)}</>}
+        {unilav.tipo === 'cessazione' && detail('Motivo', operation.motivoCessazione)}
         {unilav.tipo === 'assunzione' && detail('Fine contratto indicata', dateIt(operation.dataFine))}
       </div>
+      {unilav.tipo === 'cessazione' && <p className="mt-3 text-sm text-slate-200">Il dipendente risulta cessato dal giorno successivo all’ultimo giorno di rapporto indicato nell’UNILAV.</p>}
       {unilav.tipo === 'proroga' && selected?.scadenza && selected.scadenza >= operation.dataOperazione &&
         <p className="mt-3 text-sm text-amber-200">La scadenza in scheda è già uguale o successiva: l’UNILAV sarà conservato nello storico senza arretrare la scadenza.</p>}
       {unilav.tipo === 'assunzione' && mode === 'esistente' && <p className="mt-3 text-sm text-amber-200">Se la data di assunzione coincide con la scheda, l’UNILAV sarà allegato senza cambiare il rapporto esistente.</p>}

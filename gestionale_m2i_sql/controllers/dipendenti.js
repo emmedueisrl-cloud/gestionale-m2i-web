@@ -1,3 +1,4 @@
+const { statoAllaData } = require('../cessazioni_dipendenti');
 const { ownerFolder } = require('../upload_paths');
 const { deleteAttachment } = require('../attachment_delete');
 const fs = require('fs');
@@ -42,7 +43,7 @@ module.exports = {
 
   async elencoTuttiIDipendenti() {
     const list = await knex('dipendenti')
-      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email', 'mansione', 'scadenza', 'data_assunzione', 'data_cessazione', 'link_cv', 'link_documenti', 'allegato_documenti')
+      .select('id', 'cognome', 'nome', 'codice_fiscale', 'stato', 'email', 'mansione', 'scadenza', 'data_assunzione', 'data_cessazione', 'motivo_cessazione', 'link_cv', 'link_documenti', 'allegato_documenti')
       .where('cestinato', 0);
       
     return list.map(d => ({
@@ -56,6 +57,7 @@ module.exports = {
       stato: d.stato,
       dataAssunzione: d.data_assunzione,
       dataCessazione: d.data_cessazione,
+      motivoCessazione: d.motivo_cessazione,
       email: d.email,
       link_cv: d.link_cv,
       link_documenti: d.link_documenti || d.allegato_documenti,
@@ -216,7 +218,7 @@ module.exports = {
       }
     }
 
-    const currentState = await knex('dipendenti').where('id', id).select('stato').first();
+    const currentState = await knex('dipendenti').where('id', id).select('stato', 'data_cessazione', 'stato_pre_cessazione', 'scadenza', 'data_trasformazione_indeterminato').first();
     let newStato = currentState ? currentState.stato : 'Determinato';
     if (isBozza) {
       newStato = 'Bozza';
@@ -246,7 +248,9 @@ module.exports = {
         livello_inquadramento: getVal(dati, "livelloInquadramento") || getVal(dati, "LivelloInquadramento"),
         ruolo: getVal(dati, "ruolo") || getVal(dati, "Ruolo"),
         mansione: getVal(dati, "mansione") || getVal(dati, "Mansione"),
-        stato: newStato,
+        stato: currentState?.data_cessazione ? statoAllaData({ ...currentState, stato: newStato }) : newStato,
+        ...(currentState?.data_cessazione && ['Determinato', 'Indeterminato', 'In Prova'].includes(newStato)
+          ? { stato_pre_cessazione: newStato } : {}),
         tipo_paga: getVal(dati, "tipoPaga") || getVal(dati, "TipoPaga") || 'Oraria',
         paga_oraria_reale: getVal(dati, "pagaOrariaReale") || getVal(dati, "Importo") || getVal(dati, "pagaOraria") || 0,
         note: getVal(dati, "note") || getVal(dati, "Note"),

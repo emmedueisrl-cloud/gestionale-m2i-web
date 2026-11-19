@@ -5,6 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const knexFactory = require('knex');
 const { parseUnilav, createUnilavService } = require('../unilav');
+const { inizializzaCessazioniDipendenti } = require('../cessazioni_dipendenti');
 
 const source = (section, worker = 'ROSSI', name = 'MARIO') => `Comunicazione Obbligatoria Unificato UniLav
 Numero Protocollo01956401
@@ -50,8 +51,9 @@ test('legge le cinque tipologie e usa le date operative nelle sezioni UNILAV', (
   assert.equal(extension.rapporto.dataOperazione, '2027-03-31');
   const change = parseUnilav(source('Sezione 6 - Trasformazione\nData trasformazione01/08/2026\nCodice trasformazioneDI - TEMPO INDETERMINATO'));
   assert.equal(change.tipo, 'trasformazione');
-  const resignation = parseUnilav(source('Sezione 7 - Cessazione\nData cessazione16/11/2026\nMotivo cessazioneDI - DIMISSIONI'));
+  const resignation = parseUnilav(source('Sezione 7 - Cessazione\nData cessazione16/11/2026\nMotivo cessazioneDI - DIMISSIONI\nSezione 7.2 - Dati Rapporto\nData inizio03/11/2025\nData fine31/01/2027'));
   assert.equal(resignation.rapporto.dataOperazione, '2026-11-16');
+  assert.equal(resignation.rapporto.dataFine, '2027-01-31');
   assert.match(resignation.rapporto.motivoCessazione, /DIMISSIONI/);
   const trial = parseUnilav(source('Sezione 7 - Cessazione\nData cessazione25/07/2026\nMotivo cessazionePP - MANCATO SUPERAMENTO DEL PERIODO DI PROVA'));
   assert.match(trial.rapporto.motivoCessazione, /MANCATO SUPERAMENTO/);
@@ -82,6 +84,7 @@ test('anteprima non modifica dati; conferma crea, proroga, trasforma, cessa e al
   let current = parsed;
   const service = createUnilavService(db, dataDir, async () => current);
   await service.initialize();
+  await inizializzaCessazioniDipendenti(db);
   const buffer = Buffer.from('%PDF-test');
   const preview = await service.preview(buffer);
   assert.equal(preview.candidati.length, 0);
@@ -144,10 +147,46 @@ test('anteprima non modifica dati; conferma crea, proroga, trasforma, cessa e al
   assert.equal(transformed.scadenza, null);
 
   current = { ...parsed, tipo: 'cessazione', codiceComunicazione: '0805826048617570',
-    rapporto: { ...parsed.rapporto, dataOperazione: '2027-04-15', motivoCessazione: 'DI - DIMISSIONI' } };
+    rapporto: { ...parsed.rapporto, dataOperazione: '2099-11-30', motivoCessazione: 'DI - DIMISSIONI' } };
   await service.confirm(buffer, { mode: 'esistente', dipendenteId: saved.dipendenteId }, 'test');
-  const ended = await db('dipendenti').where({ id: saved.dipendenteId }).first();
-  assert.equal(ended.stato, 'Cessato');
-  assert.equal(ended.data_cessazione, '2027-04-15');
+  const scheduled = await db('dipendenti').where({ id: saved.dipendenteId }).first();
+  assert.equal(scheduled.stato, 'Indeterminato');
+  assert.equal(scheduled.scadenza, null);
+  assert.equal(scheduled.data_cessazione, '2099-11-30');
+  assert.equal(scheduled.motivo_cessazione, 'DI - DIMISSIONI');
+  const candidate = (await service.preview(buffer)).candidati[0];
+  assert.equal(candidate.stato, 'Indeterminato');
+  assert.equal(candidate.dataCessazione, '2099-11-30');
+  current = { ...current, codiceComunicazione: '0805826048617572',
+    rapporto: { ...current.rapporto, dataOperazione: '2099-11-02' } };
+  await assert.rejects(service.confirm(buffer, { mode: 'esistente', dipendenteId: saved.dipendenteId }, 'test'), /data diversa/);
   assert.equal((await db('unilav_comunicazioni').where({ dipendente_id: saved.dipendenteId })).length, 5);
+
+  await db('dipendenti').insert({ id: 'D0002', nome: 'ANNA', cognome: 'ROSSI',
+    codice_fiscale: 'RSSNNA75P10H501A', stato: 'Determinato', data_assunzione: '2005-11-03' });
+  current = { ...current, dipendente: { ...parsed.dipendente, nome: 'ANNA', codiceFiscale: 'RSSNNA75P10H501A' },
+    rapporto: { ...current.rapporto, dataOperazione: '2006-11-02', dataFine: '2007-01-31' } };
+  const resignation = await service.confirm(buffer, { mode: 'esistente', dipendenteId: 'D0002' }, 'test');
+  const ended = await db('dipendenti').where({ id: 'D0002' }).first();
+  assert.equal(ended.stato, 'Cessato');
+  assert.equal(ended.scadenza, '2007-01-31');
+  assert.equal(ended.data_cessazione, '2006-11-02');
+  assert.equal(ended.allegato_unilav, resignation.file);
+  assert.ok(fs.existsSync(path.join(dataDir, resignation.file)));
+
+  await db('dipendenti').insert({ id: 'D0003', nome: 'LUCA', cognome: 'ROSSI',
+    codice_fiscale: 'RSSLCA80P10H501A', stato: 'Determinato', data_assunzione: '2020-11-03', scadenza: '2100-01-31' });
+  current = { ...current, codiceComunicazione: '0805826048617573',
+    dipendente: { ...parsed.dipendente, nome: 'LUCA', codiceFiscale: 'RSSLCA80P10H501A' },
+    rapporto: { ...parsed.rapporto, dataOperazione: '2099-11-02', dataFine: '2099-12-31', motivoCessazione: 'DI - DIMISSIONI' } };
+  const selected = { mode: 'esistente', dipendenteId: 'D0003' };
+  await service.confirm(buffer, selected, 'test');
+  const active = (await service.preview(buffer)).candidati[0];
+  assert.equal(active.id, 'D0003');
+  assert.equal(active.stato, 'Determinato');
+  assert.equal(active.dataCessazione, '2099-11-02');
+  assert.equal(active.scadenza, '2100-01-31');
+  current = { ...current, tipo: 'trasformazione', codiceComunicazione: '0805826048617574',
+    rapporto: { ...current.rapporto, dataOperazione: '2099-12-01' } };
+  await assert.rejects(service.confirm(buffer, selected, 'test'), /successiva alla cessazione/);
 });

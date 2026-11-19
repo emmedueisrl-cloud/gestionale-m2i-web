@@ -94,7 +94,7 @@ export default function ModificaDipendente() {
           Mansione: data.mansione || '',
           divisione: data.divisione || 'Esterno',
           DataAssunzione: data.data_assunzione || '',
-          TipoContratto: data.stato || '',
+          TipoContratto: (data.stato === 'Cessato' ? data.stato_pre_cessazione || data.stato : data.stato) || '',
           Scadenza: data.scadenza || '',
           OreContrattuali: data.ore_contrattuali || '',
           LivelloInquadramento: data.livello_inquadramento || '',

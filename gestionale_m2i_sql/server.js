@@ -42,6 +42,8 @@ const { createReceiptsService } = require('./incassi_insoluti');
 const { createReminderService } = require('./solleciti_fatture');
 const incassiInsoluti = createReceiptsService(knex);
 const sollecitiFatture = createReminderService(knex, incassiInsoluti);
+const { inizializzaCessazioniDipendenti, creaAggiornamentoCessazioni } = require('./cessazioni_dipendenti');
+const aggiornaCessazioni = creaAggiornamentoCessazioni(knex);
 const { createUnilavService } = require('./unilav');
 const { createVisuraService } = require('./visura_camerale');
 const visuraCamerale = createVisuraService(knex);
@@ -109,6 +111,10 @@ const auth = createAuth(knex);
 const publicAgenda = createPublicAgenda(knex);
 const publicAppuntamenti = createPublicAppuntamenti(knex);
 app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+app.use('/api', async (req, res, next) => {
+  await aggiornaCessazioni();
+  next();
+});
 app.use('/api/auth', auth.router);
 app.get('/api/public/agenda/:token', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
@@ -1673,6 +1679,9 @@ Promise.resolve().then(async () => {
   await incassiInsoluti.initialize();
   initializationStep = 'UNILAV';
   await unilav.initialize();
+  initializationStep = 'cessazioni dipendenti';
+  await inizializzaCessazioniDipendenti(knex);
+  await aggiornaCessazioni();
   initializationStep = 'indici';
   await ensureIndexes(knex);
   app.listen(PORT, process.env.HOST || '0.0.0.0', () => {

@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const pdfParse = require('pdf-parse');
 const { ownerFolder } = require('./upload_paths');
+const { registraCessazioneDipendente, statoAllaData } = require('./cessazioni_dipendenti');
 
 const validDate = value => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
@@ -276,8 +277,11 @@ function createUnilavService(knex, dataDir, extractDocument = parsePdf) {
       ? await knex('m2i_azienda_dati').whereNotNull('codice_fiscale').first() : null;
     const existing = parsed.codiceComunicazione
       ? await knex('unilav_comunicazioni').where({ codice_comunicazione: parsed.codiceComunicazione }).first() : null;
-    const employees = await knex('dipendenti').where('cestinato', 0)
-      .select('id', 'nome', 'cognome', 'codice_fiscale', 'data_nascita', 'stato', 'data_assunzione', 'scadenza', 'data_cessazione', 'indirizzo', 'cap', 'citta', 'mansione');
+    const rows = await knex('dipendenti').where('cestinato', 0)
+      .select('id', 'nome', 'cognome', 'codice_fiscale', 'data_nascita', 'stato', 'data_assunzione',
+        'scadenza', 'data_cessazione', 'stato_pre_cessazione', 'data_trasformazione_indeterminato',
+        'indirizzo', 'cap', 'citta', 'mansione');
+    const employees = rows.map(row => ({ ...row, stato: statoAllaData(row) }));
     const ranked = employees.map(row => {
       const exact = normalize(row.codice_fiscale) === normalize(parsed.dipendente.codiceFiscale);
       const name = normalize(`${row.cognome} ${row.nome}`);
@@ -367,9 +371,11 @@ function createUnilavService(knex, dataDir, extractDocument = parsePdf) {
             throw new Error('Il codice fiscale del dipendente differisce dall’UNILAV: serve una conferma esplicita.');
           }
           const when = parsed.rapporto.dataOperazione;
+          const stato = statoAllaData(employee);
+          const cessazioneRegistrata = date(employee.data_cessazione) || employee.data_cessazione;
           if (parsed.tipo === 'proroga') {
             const historical = employee.scadenza && when <= employee.scadenza;
-            if (!historical && (employee.stato === 'Cessato' || employee.stato === 'Indeterminato')) {
+            if (!historical && (stato === 'Cessato' || stato === 'Indeterminato')) {
               throw new Error('Non si può prorogare un rapporto cessato o indeterminato.');
             }
             if (!await trx('proroghe_contratti').where({ dipendente_id: id, nuova_scadenza: when }).first()) {
@@ -377,13 +383,24 @@ function createUnilavService(knex, dataDir, extractDocument = parsePdf) {
             }
             if (!historical) await trx('dipendenti').where({ id }).update({ scadenza: when });
           } else if (parsed.tipo === 'trasformazione') {
-            if (employee.stato === 'Cessato') throw new Error('Il rapporto è già cessato.');
-            await trx('dipendenti').where({ id }).update({ stato: 'Indeterminato', scadenza: null, data_trasformazione_indeterminato: when });
-          } else if (parsed.tipo === 'cessazione') {
-            if (employee.stato === 'Cessato' && employee.data_cessazione && employee.data_cessazione !== when) {
-              throw new Error('Il dipendente è già cessato con una data diversa.');
+            if (stato === 'Cessato') throw new Error('Il rapporto è già cessato.');
+            if (cessazioneRegistrata && when > cessazioneRegistrata) {
+              throw new Error('La data di trasformazione è successiva alla cessazione registrata.');
             }
-            await trx('dipendenti').where({ id }).update({ stato: 'Cessato', data_cessazione: when });
+            await trx('dipendenti').where({ id }).update({ stato: 'Indeterminato', scadenza: null,
+              data_trasformazione_indeterminato: when,
+              ...(employee.data_cessazione ? { stato_pre_cessazione: 'Indeterminato' } : {}) });
+          } else if (parsed.tipo === 'cessazione') {
+            if (cessazioneRegistrata && cessazioneRegistrata !== when) {
+              throw new Error('La scheda riporta già una cessazione con una data diversa.');
+            }
+            if (!employee.scadenza && parsed.rapporto.dataFine && !employee.data_trasformazione_indeterminato &&
+                stato !== 'Indeterminato' && !/A\.01\.00|TEMPO INDETERMINATO/i.test(parsed.rapporto.tipologiaContrattuale)) {
+              employee.scadenza = parsed.rapporto.dataFine;
+              await trx('dipendenti').where({ id }).update({ scadenza: employee.scadenza });
+            }
+            await registraCessazioneDipendente(trx, employee, when,
+              parsed.rapporto.motivoCessazione || employee.motivo_cessazione);
           } else if (parsed.tipo === 'assunzione') {
             if (employee.data_assunzione !== when) throw new Error('L’assunzione esistente ha una data diversa: verifica la scheda manualmente.');
           }
