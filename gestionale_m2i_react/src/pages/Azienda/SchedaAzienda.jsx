@@ -16,6 +16,10 @@ import {
 } from '../../api/azienda';
 import ModernModal from '../../components/ui/ModernModal';
 import { companyStampUrl } from '../../utils/companyStampUrl';
+import { workflowRequest } from '../../api/workflowElaborati';
+import { campiVisuraAzienda, campiAziendaDaVisura } from './visuraAziendaCampi';
+
+const campiVisuraAggiuntivi = campiVisuraAzienda.filter(([key]) => !campiAziendaDaVisura.includes(key));
 
 export default function SchedaAzienda() {
   const [loading, setLoading] = useState(true);
@@ -34,9 +38,11 @@ export default function SchedaAzienda() {
     amministratoreUnico: '',
     capitaleSociale: '',
     codiceAteco: '',
+    visuraDati: {},
     posizioneInps: '',
     posizioneInail: '',
     numeroPolizzaRct: '2021/03/2430364',
+    compagniaPolizzaRct: '',
     timbro_path: '',
     logo_path: '',
     legaleRappresentante: '',
@@ -51,6 +57,11 @@ export default function SchedaAzienda() {
   const [salvataggio, setSalvataggio] = useState(false);
   const [messaggio, setMessaggio] = useState(null);
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', content: '' });
+  const [visuraFile, setVisuraFile] = useState(null);
+  const [visuraAnteprima, setVisuraAnteprima] = useState(null);
+  const [visuraInLettura, setVisuraInLettura] = useState(false);
+  const [visuraInSalvataggio, setVisuraInSalvataggio] = useState(false);
+  const [visuraErrore, setVisuraErrore] = useState('');
 
   useEffect(() => {
     caricaDati();
@@ -76,9 +87,11 @@ export default function SchedaAzienda() {
           amministratoreUnico: resDati.amministratore_unico || '',
           capitaleSociale: resDati.capitale_sociale || '',
           codiceAteco: resDati.codice_ateco || '',
+          visuraDati: (() => { try { return JSON.parse(resDati.visura_dati_json || '{}'); } catch { return {}; } })(),
           posizioneInps: resDati.posizione_inps || '',
           posizioneInail: resDati.posizione_inail || '',
           numeroPolizzaRct: resDati.numero_polizza_rct || '2021/03/2430364',
+          compagniaPolizzaRct: resDati.compagnia_polizza_rct || '',
           timbro_path: resDati.timbro_path || '',
           logo_path: resDati.logo_path || '',
           ...Object.fromEntries(['fatturazione_indirizzo', 'fatturazione_cap', 'fatturazione_citta', 'fatturazione_provincia', 'fatturazione_paese', 'fatturazione_id_paese_iva', 'fatturazione_regime', 'fatturazione_iban', 'fatturazione_banca', 'fatturazione_ufficio_rea', 'fatturazione_numero_rea', 'fatturazione_socio_unico', 'fatturazione_stato_liquidazione'].map(key => [key, resDati[key] || '']))
@@ -96,6 +109,50 @@ export default function SchedaAzienda() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setDati(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleVisura = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setVisuraErrore('');
+    if (!/\.pdf$/i.test(file.name) || file.size > 10 * 1024 * 1024) {
+      setVisuraErrore('Carica una visura PDF di massimo 10 MB.'); return;
+    }
+    setVisuraFile(file); setVisuraInLettura(true);
+    try {
+      const body = new FormData(); body.append('file', file);
+      const result = await workflowRequest('azienda/visura/anteprima', { method: 'POST', body });
+      setVisuraAnteprima(result);
+    } catch (error) { setVisuraErrore(error.message || 'Impossibile leggere la visura.'); }
+    finally { setVisuraInLettura(false); }
+  };
+
+  const confermaVisura = async () => {
+    if (!visuraAnteprima || !visuraFile || visuraInSalvataggio) return;
+    const values = visuraAnteprima.dati;
+    if (dati.partitaIva && values.partitaIva && dati.partitaIva.replace(/\D/g, '') !== values.partitaIva.replace(/\D/g, '')) {
+      setVisuraErrore('La Partita IVA della visura è diversa da quella nella scheda M2I. Verifica di aver caricato il documento corretto.');
+      return;
+    }
+    setVisuraInSalvataggio(true); setVisuraErrore('');
+    let datiSalvati = false;
+    try {
+      const updates = Object.fromEntries(campiAziendaDaVisura.filter(key => String(values[key] || '').trim())
+        .map(key => [key, String(values[key]).trim()]));
+      const next = { ...dati, ...updates, visuraDati: { ...dati.visuraDati, ...values } };
+      await salvaDatiAzienda(next);
+      datiSalvati = true;
+      setDati(next);
+      await uploadDocumentoAzienda(visuraFile, `Visura camerale M2I ${values.dataVisura || ''}`.trim());
+      setDocumenti(await recuperaDocumentiAzienda());
+      setVisuraAnteprima(null); setVisuraFile(null);
+      setMessaggio({ tipo: 'success', testo: 'Visura allegata e dati M2I aggiornati.' });
+    } catch (error) {
+      setVisuraErrore(datiSalvati
+        ? 'I dati sono stati salvati, ma il PDF non è stato allegato. Riprova il caricamento.'
+        : error.message || 'Impossibile salvare i dati della visura.');
+    } finally { setVisuraInSalvataggio(false); }
   };
 
   const handleSalva = async () => {
@@ -138,8 +195,8 @@ export default function SchedaAzienda() {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
-    if (!/\.(png|jpe?g|webp)$/i.test(file.name) || file.size > 10 * 1024 * 1024) {
-      setMessaggio({ tipo: 'error', testo: 'Carica un logo PNG, JPG o WebP fino a 10 MB.' });
+    if (!/\.(png|jpe?g)$/i.test(file.name) || file.size > 10 * 1024 * 1024) {
+      setMessaggio({ tipo: 'error', testo: 'Carica un logo PNG o JPG fino a 10 MB, compatibile con PDF e Word.' });
       return;
     }
     try {
@@ -224,6 +281,18 @@ export default function SchedaAzienda() {
         </div>
       )}
 
+      <section className="mb-8 rounded-2xl border border-indigo-500/40 bg-indigo-500/10 p-5 text-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div><h2 className="text-lg font-bold">Visura camerale M2I</h2>
+            <p className="mt-1 text-sm text-slate-300">Carica il PDF, verifica i campi letti e conferma. I dati non trovati restano come sono; la visura viene conservata negli allegati.</p></div>
+          <label className="cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 font-semibold hover:bg-indigo-500">
+            <Upload size={16} className="mr-2 inline" />{visuraInLettura ? 'Lettura in corso…' : 'Carica visura M2I'}
+            <input type="file" accept="application/pdf,.pdf" onChange={handleVisura} disabled={visuraInLettura || visuraInSalvataggio} className="hidden" />
+          </label>
+        </div>
+        {visuraErrore && !visuraAnteprima && <p role="alert" className="mt-3 text-sm text-red-200">{visuraErrore}</p>}
+      </section>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Form Dati */}
@@ -306,6 +375,11 @@ export default function SchedaAzienda() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Compagnia polizza RCT</label>
+                <input type="text" name="compagniaPolizzaRct" value={dati.compagniaPolizzaRct} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200" />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">PEC</label>
                 <input type="email" name="pec" value={dati.pec} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200" />
               </div>
@@ -320,6 +394,19 @@ export default function SchedaAzienda() {
                 <input type="text" name="telefono" value={dati.telefono} onChange={handleChange} className="w-full p-3 bg-slate-900/50 border border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-200" />
               </div>
             </div>
+          </div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-800 p-6">
+            <h2 className="mb-2 font-bold text-slate-100">Altri dati della visura</h2>
+            <p className="mb-5 text-sm text-slate-400">Queste caselle restano modificabili anche dopo il caricamento.</p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">{campiVisuraAggiuntivi.map(([key, label, type]) =>
+              <label key={key} className={`text-sm text-slate-300 ${type === 'textarea' ? 'md:col-span-2' : ''}`}>{label}
+                {type === 'textarea' ? <textarea rows={key === 'oggettoSociale' ? 6 : 3} value={dati.visuraDati?.[key] || ''}
+                  onChange={event => setDati(current => ({ ...current, visuraDati: { ...current.visuraDati, [key]: event.target.value } }))}
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/50 p-2 text-slate-100" /> :
+                  <input value={dati.visuraDati?.[key] || ''}
+                    onChange={event => setDati(current => ({ ...current, visuraDati: { ...current.visuraDati, [key]: event.target.value } }))}
+                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/50 p-2 text-slate-100" />}
+              </label>)}</div>
           </div>
           <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6">
             <h2 className="mb-4 font-bold text-slate-100">Dati fatturazione elettronica M2I</h2>
@@ -350,14 +437,14 @@ export default function SchedaAzienda() {
               </div>
               <label className="cursor-pointer bg-slate-700 hover:bg-slate-600 p-2 rounded-lg transition-colors" title="Carica o sostituisci il logo">
                 <Upload className="w-4 h-4 text-slate-300" />
-                <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={handleUploadLogo} aria-label="Carica logo aziendale" />
+                <input type="file" className="hidden" accept=".png,.jpg,.jpeg,image/png,image/jpeg" onChange={handleUploadLogo} aria-label="Carica logo aziendale" />
               </label>
             </div>
             <div className="p-6 flex flex-col items-center justify-center min-h-[180px] bg-slate-900/30">
               {companyStampUrl(dati.logo_path) ?
                 <img src={companyStampUrl(dati.logo_path)} alt="Logo aziendale M2I" className="max-h-40 max-w-full object-contain rounded-lg bg-white p-3" /> :
                 <p className="text-sm text-slate-400">Nessun logo caricato</p>}
-              <p className="mt-3 text-xs text-slate-400">PNG, JPG o WebP · massimo 10 MB</p>
+              <p className="mt-3 text-xs text-slate-400">PNG o JPG · massimo 10 MB</p>
             </div>
           </div>
           
@@ -433,6 +520,24 @@ export default function SchedaAzienda() {
         {...alertModal}
         onClose={() => setAlertModal({ isOpen: false })}
       />
+      {visuraAnteprima && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-3 sm:p-5">
+        <div role="dialog" aria-modal="true" aria-label="Verifica visura camerale M2I" className="max-h-[95vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-slate-600 bg-slate-900 p-5 text-slate-100 shadow-2xl">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">Verifica dati della visura M2I</h2>
+            <p className="mt-1 text-sm text-slate-300">{visuraFile?.name} · {visuraAnteprima.pagine} pagine. {visuraAnteprima.letturaOcr ? 'Lettura OCR: controlla con attenzione.' : 'Correggi i campi prima di salvare.'}</p></div>
+            <button type="button" onClick={() => { setVisuraAnteprima(null); setVisuraFile(null); setVisuraErrore(''); }} disabled={visuraInSalvataggio} className="rounded-lg bg-slate-700 px-4 py-2 font-semibold disabled:opacity-50">Chiudi</button></div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{campiVisuraAzienda.map(([key, label, type]) =>
+            <label key={key} className={`text-sm font-semibold ${type === 'textarea' ? 'sm:col-span-2 lg:col-span-3' : ''}`}>{label}
+              {type === 'textarea' ? <textarea rows={key === 'oggettoSociale' ? 6 : 3} value={visuraAnteprima.dati[key] || ''}
+                onChange={event => setVisuraAnteprima(current => ({ ...current, dati: { ...current.dati, [key]: event.target.value } }))}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-800 p-2 text-white" /> :
+                <input value={visuraAnteprima.dati[key] || ''}
+                  onChange={event => setVisuraAnteprima(current => ({ ...current, dati: { ...current.dati, [key]: event.target.value } }))}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-800 p-2 text-white" />}
+            </label>)}</div>
+          {visuraErrore && <p role="alert" className="mt-4 rounded-lg bg-red-950 p-3 text-sm text-red-200">{visuraErrore}</p>}
+          <button type="button" onClick={confermaVisura} disabled={visuraInSalvataggio} className="mt-5 rounded-lg bg-indigo-600 px-5 py-3 font-bold hover:bg-indigo-500 disabled:opacity-50">{visuraInSalvataggio ? 'Salvataggio…' : 'Salva dati e allega PDF'}</button>
+        </div>
+      </div>}
     </div>
   );
 }

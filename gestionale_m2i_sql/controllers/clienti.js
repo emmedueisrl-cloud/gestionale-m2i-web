@@ -156,6 +156,8 @@ module.exports = {
     if (cliente) {
       try { cliente.contrattoAppalto = cliente.contratto_appalto_dati ? JSON.parse(cliente.contratto_appalto_dati) : null; }
       catch { cliente.contrattoAppalto = null; }
+      try { cliente.visuraDati = cliente.visura_dati ? JSON.parse(cliente.visura_dati) : null; }
+      catch { cliente.visuraDati = null; }
     }
     if (cliente && typeof cliente.foto_servizio === 'string') {
       try {
@@ -190,12 +192,50 @@ module.exports = {
       'luogoNascitaRappresentante', 'dataNascitaRappresentante', 'tipoDocumento',
       'numeroDocumento', 'rilasciatoDa', 'dataRilascioDocumento', 'localiServizio',
       'durata', 'dataInizio', 'dataFine', 'corrispettivo', 'corrispettivoLettere',
-      'oreMensili', 'regimeIva', 'clausolaIva', 'indirizzoComunicazioni', 'dataFirma'
+      'oreMensili', 'regimeIva', 'clausolaIva', 'indirizzoComunicazioni', 'dataFirma',
+      'modello', 'attivitaPulizia', 'titoloContratto'
     ];
     const clean = Object.fromEntries(fields.map(key => [key, String(dati[key] ?? '').trim().slice(0, 3000)]));
     const updated = await knex('clienti').where({ id }).update({ contratto_appalto_dati: JSON.stringify(clean) });
     if (!updated) throw new Error('Cliente non trovato.');
     return clean;
+  },
+
+  async salvaDatiVisuraCliente(id, dati) {
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error('Cliente non valido.');
+    if (!dati || typeof dati !== 'object' || Array.isArray(dati)) throw new Error('Dati visura non validi.');
+    const mapping = { ragioneSociale: 'ragione_sociale', partitaIva: 'partita_iva',
+      codiceFiscale: 'codice_fiscale', sedeLegale: 'sede_legale', indirizzoSede: 'indirizzo_sede',
+      cap: 'cap', citta: 'citta', provincia: 'provincia', pec: 'pec', rappresentante: 'titolare' };
+    return knex.transaction(async trx => {
+      const cliente = await trx('clienti').where({ id }).first();
+      if (!cliente) throw new Error('Cliente non trovato.');
+      const update = {};
+      for (const [source, target] of Object.entries(mapping)) {
+        const value = String(dati[source] ?? '').trim().slice(0, 3000);
+        if (value && !String(cliente[target] ?? '').trim()) update[target] = value;
+      }
+      let contract = {};
+      try { contract = JSON.parse(cliente.contratto_appalto_dati || '{}') || {}; } catch { /* Dati precedenti non validi. */ }
+      const fromVisura = { ragioneSociale: dati.ragioneSociale, partitaIva: dati.partitaIva,
+        sedeLegale: dati.sedeLegale, rappresentante: dati.rappresentante };
+      for (const [key, raw] of Object.entries(fromVisura)) {
+        const value = String(raw ?? '').trim().slice(0, 3000);
+        if (value && !String(contract[key] ?? '').trim()) contract[key] = value;
+      }
+      update.contratto_appalto_dati = JSON.stringify(contract);
+      let previousVisura = {};
+      try { previousVisura = JSON.parse(cliente.visura_dati || '{}') || {}; } catch { /* Dati precedenti non validi. */ }
+      const visuraFields = [...Object.keys(mapping), 'numeroRea', 'formaGiuridica', 'codiceAteco', 'attivita'];
+      const visura = { ...previousVisura };
+      for (const key of visuraFields) {
+        const value = String(dati[key] ?? '').trim().slice(0, 3000);
+        if (value) visura[key] = value;
+      }
+      update.visura_dati = JSON.stringify(visura);
+      await trx('clienti').where({ id }).update(update);
+      return { ...cliente, ...update, contrattoAppalto: contract, visuraDati: visura };
+    });
   },
 
   async recuperaDocumentiCliente(id) {

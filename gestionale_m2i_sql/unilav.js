@@ -280,7 +280,7 @@ function createUnilavService(knex, dataDir, extractDocument = parsePdf) {
     const rows = await knex('dipendenti').where('cestinato', 0)
       .select('id', 'nome', 'cognome', 'codice_fiscale', 'data_nascita', 'stato', 'data_assunzione',
         'scadenza', 'data_cessazione', 'stato_pre_cessazione', 'data_trasformazione_indeterminato',
-        'indirizzo', 'cap', 'citta', 'mansione');
+        'indirizzo', 'cap', 'citta', 'mansione', 'telefono', 'email', 'iban');
     const employees = rows.map(row => ({ ...row, stato: statoAllaData(row) }));
     const ranked = employees.map(row => {
       const exact = normalize(row.codice_fiscale) === normalize(parsed.dipendente.codiceFiscale);
@@ -301,7 +301,8 @@ function createUnilavService(knex, dataDir, extractDocument = parsePdf) {
       dipendenti: employees.map(row => ({ id: row.id, nome: row.nome, cognome: row.cognome,
         codiceFiscale: row.codice_fiscale, stato: row.stato, dataAssunzione: row.data_assunzione,
         scadenza: row.scadenza, dataCessazione: row.data_cessazione,
-        indirizzo: row.indirizzo, cap: row.cap, citta: row.citta, mansione: row.mansione })),
+        indirizzo: row.indirizzo, cap: row.cap, citta: row.citta, mansione: row.mansione,
+        telefono: row.telefono, email: row.email, iban: row.iban })),
       giaImportato: existing ? { dipendenteId: existing.dipendente_id, tipo: existing.tipo } : null };
   }
 

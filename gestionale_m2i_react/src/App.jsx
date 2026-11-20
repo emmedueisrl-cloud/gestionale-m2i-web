@@ -126,6 +126,7 @@ function App() {
         {/* Gestione Documentale (Fase 5) */}
         <Route path="bustepaga" element={<BustePaga />} />
         <Route path="dipendenti/moduli" element={<ModuliDipendenti />} />
+        <Route path="dipendenti/null" element={<Navigate to="/admin/dipendenti/moduli" replace />} />
 
         {/* AI Reports */}
         <Route path="report" element={<ReportIA />} />

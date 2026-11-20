@@ -8,6 +8,9 @@ test('salva i dati del contratto per cliente e lascia vuoti quelli mai inseriti'
   t.after(() => knex.destroy());
   await knex.schema.createTable('clienti', table => {
     table.text('id').primary(); table.text('ragione_sociale'); table.text('contratto_appalto_dati');
+    table.text('visura_dati'); table.text('partita_iva'); table.text('codice_fiscale');
+    table.text('sede_legale'); table.text('indirizzo_sede'); table.text('cap'); table.text('citta');
+    table.text('provincia'); table.text('pec'); table.text('titolare');
   });
   await knex.schema.createTable('clienti_periodi_attivita', table => {
     table.increments('id'); table.text('cliente_id'); table.text('data_inizio');
@@ -29,10 +32,24 @@ test('salva i dati del contratto per cliente e lascia vuoti quelli mai inseriti'
     if (previous) require.cache[dbPath] = previous; else delete require.cache[dbPath]; });
   const clienti = require('../controllers/clienti');
   assert.equal((await clienti.recuperaDatiCompletiCliente('C2')).contrattoAppalto, null);
-  await clienti.salvaDatiContrattoAppaltoCliente('C1', { localiServizio: 'Uffici', oreMensili: '36', dataFirma: '' });
+  await clienti.salvaDatiContrattoAppaltoCliente('C1', { modello: 'standard', localiServizio: 'Uffici',
+    attivitaPulizia: 'Pulizia pavimenti e arredi', titoloContratto: 'CONTRATTO DI APPALTO PERSONALIZZATO', oreMensili: '36', dataFirma: '' });
   const saved = await clienti.recuperaDatiCompletiCliente('C1');
   assert.equal(saved.contrattoAppalto.localiServizio, 'Uffici');
   assert.equal(saved.contrattoAppalto.oreMensili, '36');
+  assert.equal(saved.contrattoAppalto.modello, 'standard');
+  assert.equal(saved.contrattoAppalto.attivitaPulizia, 'Pulizia pavimenti e arredi');
+  assert.equal(saved.contrattoAppalto.titoloContratto, 'CONTRATTO DI APPALTO PERSONALIZZATO');
   assert.equal(saved.contrattoAppalto.dataFirma, '');
+  await clienti.salvaDatiVisuraCliente('C2', { ragioneSociale: 'Altro nome', partitaIva: '12345678901',
+    sedeLegale: 'ROMA VIA TEST 1', rappresentante: 'MARIO ROSSI', numeroRea: 'RM-123456' });
+  const withVisura = await clienti.recuperaDatiCompletiCliente('C2');
+  assert.equal(withVisura.ragione_sociale, 'Cliente senza contratto');
+  assert.equal(withVisura.partita_iva, '12345678901');
+  assert.equal(withVisura.contrattoAppalto.rappresentante, 'MARIO ROSSI');
+  assert.equal(withVisura.contrattoAppalto.numeroDocumento, undefined);
+  assert.equal(withVisura.visuraDati.numeroRea, 'RM-123456');
+  await clienti.salvaDatiVisuraCliente('C2', { partitaIva: '99999999999', numeroRea: 'RM-789' });
+  assert.equal((await clienti.recuperaDatiCompletiCliente('C2')).partita_iva, '12345678901');
   await assert.rejects(() => clienti.salvaDatiContrattoAppaltoCliente('C3', {}), /Cliente non trovato/);
 });

@@ -70,6 +70,10 @@ export async function salvaDatiContrattoAppaltoCliente(idCliente, dati) {
   return await apiCall('salvaDatiContrattoAppaltoCliente', [idCliente, dati]);
 }
 
+export async function salvaDatiVisuraCliente(idCliente, dati) {
+  return await apiCall('salvaDatiVisuraCliente', [idCliente, dati]);
+}
+
 export async function aggiornaRagioneSocialeCliente(idCliente, nuovaRagioneSociale) {
   return await apiCall('aggiornaRagioneSocialeCliente', [idCliente, nuovaRagioneSociale]);
 }

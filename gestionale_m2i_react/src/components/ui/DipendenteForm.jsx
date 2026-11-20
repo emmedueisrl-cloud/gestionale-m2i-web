@@ -413,7 +413,10 @@ const DipendenteForm = forwardRef(({ mode = 'inserimento', initialData = null, i
                     sesso: formData.Nome?.trim().toUpperCase().endsWith('A') ? 'F' : 'M',
                     dataAssunzione: formData.DataAssunzione,
                     tipoContratto: formData.TipoContratto,
-                    scadenza: formData.Scadenza
+                    scadenza: formData.Scadenza,
+                    telefono: formData.Telefono,
+                    email: formData.Email,
+                    iban: formData.IBAN
                   };
                   onGenerateAssunzione(mappedData);
                 }}

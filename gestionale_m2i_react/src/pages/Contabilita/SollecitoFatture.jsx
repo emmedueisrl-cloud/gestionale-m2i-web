@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Mail, Paperclip, X } from 'lucide-react';
 import { workflowRequest } from '../../api/workflowElaborati';
+import { recuperaDatiAzienda } from '../../api/azienda';
 
 const euro = value => Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 const dateIt = value => /^\d{4}-\d{2}-\d{2}/.test(value || '') ? `${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}` : '—';
@@ -44,12 +45,17 @@ export default function SollecitoFatture({ invoiceId, onClose, onSent }) {
   const newEmail = email(customEmail);
   const changedEmail = newEmail && ![email(draft?.cliente.email), email(draft?.cliente.emailSecondaria)].includes(newEmail);
 
-  const continueToEmail = () => {
+  const continueToEmail = async () => {
     if (!chosen.length) return setError('Seleziona almeno una fattura da sollecitare.');
     setError('');
+    let nomeAzienda;
+    try {
+      nomeAzienda = String((await recuperaDatiAzienda())?.ragione_sociale || '').trim();
+      if (!nomeAzienda) throw new Error('Ragione sociale M2I mancante.');
+    } catch (err) { return setError(err.message || 'Impossibile leggere la scheda M2I.'); }
     const plural = chosen.length > 1;
-    setSubject(`Sollecito pagamento ${plural ? 'fatture' : 'fattura'} ${chosen.map(row => row.numero).join(', ')} – M2I S.R.L.`);
-    setBody(`Buongiorno,\n\ncon la presente vi ricordiamo che ${plural ? 'le seguenti fatture risultano ancora da saldare' : 'la seguente fattura risulta ancora da saldare'}:\n\n${chosen.map(row => `• Fattura n. ${row.numero}, emessa il ${dateIt(row.dataFattura)}${row.scadenza ? `, scadenza ${dateIt(row.scadenza)}` : ''}, importo residuo ${euro(row.residuo)}.`).join('\n')}\n\nTotale da saldare: ${euro(chosen.reduce((sum, row) => sum + Number(row.residuo), 0))}.\n\nVi chiediamo cortesemente di provvedere al pagamento o di comunicarci gli estremi del versamento, qualora già effettuato, così da aggiornare la nostra contabilità.\n\nPer qualsiasi chiarimento restiamo a disposizione.\n\nCordiali saluti,\nM2I S.R.L.`);
+    setSubject(`Sollecito pagamento ${plural ? 'fatture' : 'fattura'} ${chosen.map(row => row.numero).join(', ')} – ${nomeAzienda}`);
+    setBody(`Buongiorno,\n\ncon la presente vi ricordiamo che ${plural ? 'le seguenti fatture risultano ancora da saldare' : 'la seguente fattura risulta ancora da saldare'}:\n\n${chosen.map(row => `• Fattura n. ${row.numero}, emessa il ${dateIt(row.dataFattura)}${row.scadenza ? `, scadenza ${dateIt(row.scadenza)}` : ''}, importo residuo ${euro(row.residuo)}.`).join('\n')}\n\nTotale da saldare: ${euro(chosen.reduce((sum, row) => sum + Number(row.residuo), 0))}.\n\nVi chiediamo cortesemente di provvedere al pagamento o di comunicarci gli estremi del versamento, qualora già effettuato, così da aggiornare la nostra contabilità.\n\nPer qualsiasi chiarimento restiamo a disposizione.\n\nCordiali saluti,\n${nomeAzienda}`);
     setStep(2);
   };
 

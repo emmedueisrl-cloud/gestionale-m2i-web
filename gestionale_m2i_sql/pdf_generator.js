@@ -20,18 +20,18 @@ const defaultStyles = {
   totale: { fontSize: 12, bold: true, alignment: 'right', margin: [0, 10, 0, 0] }
 };
 
-function logoHeader() {
+function logoHeader(azienda) {
   return {
     columns: [
       {
-        text: 'M2I S.r.l.',
+        text: azienda?.ragione_sociale || '',
         fontSize: 24,
         bold: true,
         color: '#2563eb',
         width: '*'
       },
       {
-        text: "P.IVA: 15989811003\nVia del Fontanile Anagnino, 183\n00118 Roma (RM)",
+        text: [azienda?.partita_iva && `P.IVA: ${azienda.partita_iva}`, azienda?.sede_legale].filter(Boolean).join('\n'),
         alignment: 'right',
         fontSize: 10,
         color: '#64748b',
@@ -43,10 +43,10 @@ function logoHeader() {
 }
 
 // 1. Generatore Fattura PDF
-function buildFatturaPDF(fattura) {
+function buildFatturaPDF(fattura, azienda) {
   const docDefinition = {
     content: [
-      logoHeader(),
+      logoHeader(azienda),
       { text: `FATTURA DI CORTESIA N. ${fattura.numero_fattura || fattura.numero}`, style: 'header' },
       { text: `Data Emissione: ${fattura.data_fattura || fattura.dataEmissione}`, style: 'testo', margin: [0, 0, 0, 20] },
       
@@ -110,10 +110,10 @@ function buildFatturaPDF(fattura) {
 }
 
 // 2. Generatore Elaborato Dipendente (Busta Paga)
-function buildElaboratoDipendentePDF(data) {
+function buildElaboratoDipendentePDF(data, azienda) {
   const docDefinition = {
     content: [
-      logoHeader(),
+      logoHeader(azienda),
       { text: `PROSPETTO RETRIBUZIONE INTERNO`, style: 'header' },
       { text: `Mese di Competenza: ${data.mese}/${data.anno}`, style: 'testo', margin: [0, 0, 0, 20] },
       
@@ -148,10 +148,10 @@ function buildElaboratoDipendentePDF(data) {
 }
 
 // 3. Generatore Elaborato Cliente (Rendiconto Ore)
-function buildElaboratoClientePDF(data) {
+function buildElaboratoClientePDF(data, azienda) {
   const docDefinition = {
     content: [
-      logoHeader(),
+      logoHeader(azienda),
       { text: `FATTURA CORTESIA`, style: 'header' },
       { text: `Competenza: ${data.mese}/${data.anno}`, style: 'testo', margin: [0, 0, 0, 20] },
       
@@ -183,10 +183,10 @@ function buildElaboratoClientePDF(data) {
 }
 
 // 4. Generatore Prospetto Provvigioni
-function buildProvvigioniPDF(data) {
+function buildProvvigioniPDF(data, azienda) {
   const docDefinition = {
     content: [
-      logoHeader(),
+      logoHeader(azienda),
       { text: `PROSPETTO LIQUIDAZIONE PROVVIGIONI`, style: 'header' },
       { text: `Mese di Competenza: ${data.mese}/${data.anno}`, style: 'testo', margin: [0, 0, 0, 20] },
       
@@ -216,11 +216,11 @@ function buildProvvigioniPDF(data) {
 }
 
 // 5. Generatore Foglio Presenze
-function buildFoglioPresenzePDF(data) {
+function buildFoglioPresenzePDF(data, azienda) {
   const docDefinition = {
     pageOrientation: 'landscape',
     content: [
-      logoHeader(),
+      logoHeader(azienda),
       { text: `FOGLIO PRESENZE MENSILE`, style: 'header' },
       { text: `Mese: ${data.mese}/${data.anno} - Dipendente: ${data.dipendente}`, style: 'testo', margin: [0, 0, 0, 20] },
       

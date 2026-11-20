@@ -52,11 +52,16 @@ async function entries(buffer, kind) {
 }
 
 async function parseInvoice(content) {
-  const parsed = await xml2js.parseStringPromise(content.toString('utf8'), { explicitArray: false, ignoreAttrs: true });
+  const xml = content.toString('utf8');
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error('DTD ed entità XML non consentite.');
+  const parsed = await xml2js.parseStringPromise(xml, { explicitArray: false, ignoreAttrs: true });
   const root = parsed[Object.keys(parsed).find(key => key.includes('FatturaElettronica'))];
   const body = one(root?.FatturaElettronicaBody);
   const document = one(body?.DatiGenerali?.DatiGeneraliDocumento);
-  const customer = root?.FatturaElettronicaHeader?.CessionarioCommittente?.DatiAnagrafici;
+  const recipient = root?.FatturaElettronicaHeader?.CessionarioCommittente;
+  const customer = recipient?.DatiAnagrafici;
+  const issuer = root?.FatturaElettronicaHeader?.CedentePrestatore?.DatiAnagrafici;
+  const address = recipient?.Sede || {};
   const number = String(document?.Numero || '').trim();
   const tipoDocumento = String(document?.TipoDocumento || '').trim().toUpperCase();
   const date = String(document?.Data || '').trim();
@@ -69,6 +74,9 @@ async function parseInvoice(content) {
     calcolaImportoXmlFattura(document, body, taxable, tax);
   const descriptions = [...[document?.Causale].flat(), ...[body?.DatiBeniServizi?.DettaglioLinee].flat()
     .filter(Boolean).map(line => line.Descrizione)].filter(Boolean).join(' ');
+  const dueDates = [...new Set([body?.DatiPagamento].flat().filter(Boolean)
+    .flatMap(payment => [payment.DettaglioPagamento].flat().filter(Boolean))
+    .map(detail => String(detail.DataScadenzaPagamento || '').trim()).filter(Boolean))];
   const referencePeriods = new Set([...descriptions.toLowerCase().matchAll(
     /\b(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+(20\d{2})\b/g
   )].map(match => `${match[2]}-${String(italianMonths.indexOf(match[1]) + 1).padStart(2, '0')}`));
@@ -79,7 +87,16 @@ async function parseInvoice(content) {
   return { numero: number, tipoDocumento, dataFattura: date, importoTotale: cents(total) / 100,
     importoLordo, importoRitenuta,
     imponibile: cents(taxable) / 100, iva: cents(tax) / 100,
-    vat, taxCode, periodoDescrizione: referencePeriods.size === 1 ? [...referencePeriods][0] : null,
+    vat, taxCode, issuerVat: fiscal(issuer?.IdFiscaleIVA?.IdCodice),
+    clienteCodiceSdi: String(root?.FatturaElettronicaHeader?.DatiTrasmissione?.CodiceDestinatario || '').trim(),
+    clientePec: String(root?.FatturaElettronicaHeader?.DatiTrasmissione?.PECDestinatario || '').trim(),
+    clienteSede: { indirizzo: String(address.Indirizzo || '').trim(), civico: String(address.NumeroCivico || '').trim(),
+      cap: String(address.CAP || '').trim(), citta: String(address.Comune || '').trim(),
+      provincia: String(address.Provincia || '').trim(), paese: String(address.Nazione || '').trim() },
+    dataScadenza: dueDates.length === 1 && validDate(dueDates[0]) ? dueDates[0] : null,
+    scadenzeMultiple: dueDates.length > 1,
+    descrizione: descriptions.slice(0, 2000),
+    periodoDescrizione: referencePeriods.size === 1 ? [...referencePeriods][0] : null,
     periodoAmbiguo: referencePeriods.size > 1,
     clienteXml: customer?.Anagrafica?.Denominazione ||
       [customer?.Anagrafica?.Nome, customer?.Anagrafica?.Cognome].filter(Boolean).join(' ') };
@@ -635,4 +652,4 @@ function createArubaZipService(knex, workflow) {
   return { preview, importSelected, previewSingle, importSingle, replaceSingle };
 }
 
-module.exports = { createArubaZipService, readPair, classify };
+module.exports = { createArubaZipService, readPair, readSingle, classify };

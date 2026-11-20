@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { recuperaTuttiIClienti, salvaNuovoCliente, uploadFileCliente } from '../../api/clienti';
+import { recuperaTuttiIClienti, salvaNuovoCliente, salvaDatiVisuraCliente, uploadFileCliente } from '../../api/clienti';
 import ContrattoAppaltoForm from '../../components/appalto/ContrattoAppaltoForm';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white';
@@ -8,7 +8,8 @@ const norm = value => String(value || '').toLocaleUpperCase('it-IT').replace(/[^
 const fields = [
   ['ragioneSociale', 'Ragione sociale'], ['partitaIva', 'Partita IVA'], ['codiceFiscale', 'Codice fiscale'],
   ['sedeLegale', 'Sede legale completa'], ['indirizzoSede', 'Via e civico'], ['cap', 'CAP'],
-  ['citta', 'Comune'], ['provincia', 'Provincia'], ['pec', 'PEC'], ['rappresentante', 'Legale rappresentante']
+  ['citta', 'Comune'], ['provincia', 'Provincia'], ['pec', 'PEC'], ['rappresentante', 'Legale rappresentante'],
+  ['numeroRea', 'Numero REA'], ['formaGiuridica', 'Forma giuridica'], ['codiceAteco', 'Codice ATECO'], ['attivita', 'Attività']
 ];
 
 export default function VisuraReview({ file, preview }) {
@@ -63,6 +64,7 @@ export default function VisuraReview({ file, preview }) {
         setSavedId(id);
       }
       if (!id) id = selected.id;
+      await salvaDatiVisuraCliente(id, values);
       await uploadFileCliente(id, file, 'Visura_Camerale', values.ragioneSociale, '');
       setSavedId(id);
       setAttached(true);
@@ -93,7 +95,7 @@ export default function VisuraReview({ file, preview }) {
         <label className="block text-sm font-semibold">Cerca un cliente<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Nome, Partita IVA o codice fiscale" className={inputClass} /></label>
         {search && <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">{filtered.map(row => <button key={row.id} type="button"
           onClick={() => { setSelectedId(row.id); setSearch(''); setConfirmMismatch(false); }} className="block w-full rounded-lg bg-slate-900 px-3 py-2 text-left text-sm hover:bg-slate-700">{row.ragione_sociale} · {row.id} · {row.partita_iva || row.codice_fiscale}</button>)}</div>}
-        {selected && <p className="mt-3 text-sm text-indigo-200">Allegherò la nuova visura alla scheda <strong>{selected.ragione_sociale}</strong> ({selected.id}). Nessun dato esistente sarà sovrascritto.</p>}
+        {selected && <p className="mt-3 text-sm text-indigo-200">Allegherò la visura alla scheda <strong>{selected.ragione_sociale}</strong> ({selected.id}). I dati letti completeranno solo i campi ancora vuoti.</p>}
         {fiscalMismatch && <label className="mt-3 flex items-center gap-2 text-sm text-amber-200"><input type="checkbox" checked={confirmMismatch} onChange={event => setConfirmMismatch(event.target.checked)} /> Gli identificativi fiscali sono diversi. Confermo che la visura appartiene al cliente selezionato.</label>}
       </div>}
       {mode === 'nuovo' && <div className="mt-4 text-sm text-slate-300"><p>La scheda verrà creata come bozza, con i dati letti dalla visura. Potrai completarla nell’anagrafica clienti.</p>

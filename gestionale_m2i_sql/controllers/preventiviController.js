@@ -88,14 +88,28 @@ exports.generatePreventivo = async (req, res) => {
 
     // Recupera dati azienda per il footer
     const aziendaDati = await knex('m2i_azienda_dati').where('id', 1).first();
-    const tel = aziendaDati?.telefono || '351 54 71 406';
-    const em = aziendaDati?.email || 'info@emmeduei.com';
-    const pec = aziendaDati?.pec || 'emmedueisrl@pec.it';
-    const sedeLegale = aziendaDati?.sede_legale || 'Via del Fontanile Anagnino 183 - 00118 Roma';
-    const sedeOperativa = aziendaDati?.sede_operativa || 'Via Pier Vittorio Aldini 28 - 00178 Roma';
-    const piva = aziendaDati?.partita_iva || '15989811003';
-    const rea = aziendaDati?.rea || 'RM - 1627538';
-    const capSoc = aziendaDati?.capitale_sociale || '10.000,00';
+    const tel = aziendaDati?.telefono || '';
+    const em = aziendaDati?.email || '';
+    const pec = aziendaDati?.pec || '';
+    const sedeLegale = aziendaDati?.sede_legale || '';
+    const sedeOperativa = aziendaDati?.sede_operativa || '';
+    const piva = aziendaDati?.partita_iva || '';
+    const rea = aziendaDati?.rea || '';
+    const capSoc = aziendaDati?.capitale_sociale || '';
+    const nomeM2i = aziendaDati?.ragione_sociale || '';
+    const testoM2i = value => String(value || '')
+      .replace(/M2I(?: S\.r\.l\.)?/gi, nomeM2i)
+      .replace(/2021\/03\/2430364/g, aziendaDati?.numero_polizza_rct || '________________')
+      .replace(/REALE MUTUA/g, aziendaDati?.compagnia_polizza_rct || '________________');
+    let visura = {};
+    try { visura = JSON.parse(aziendaDati?.visura_dati_json || '{}'); } catch { /* Dati precedenti. */ }
+    const luogoM2i = visura.sedeLegaleComune || aziendaDati?.fatturazione_citta || sedeLegale.match(/^([^(),]+)\s*\([A-Z]{2}\)/i)?.[1]?.trim() || '';
+    const rootUploads = path.resolve(process.env.DATA_DIR || path.join(__dirname, '..'), 'uploads');
+    const relativeLogo = String(aziendaDati?.logo_path || '').replace(/^\/?uploads\//, '');
+    const logoPath = path.resolve(rootUploads, relativeLogo);
+    const logoDisponibile = /^\/?uploads\//.test(String(aziendaDati?.logo_path || ''))
+      && logoPath.startsWith(rootUploads + path.sep) && /\.(png|jpe?g)$/i.test(logoPath) && fs.existsSync(logoPath);
+    const logoImmagine = logoDisponibile ? logoPath : path.join(__dirname, '..', 'public', 'images', 'logo-m2i.png');
 
     // Genera numero preventivo (es. 2026-001)
     const year = new Date().getFullYear();
@@ -121,9 +135,9 @@ exports.generatePreventivo = async (req, res) => {
       numero: numero_preventivo,
       data: dataItaliana
     };
-    const testoCompilato = renderBody(corpo, valoriTesto).replace(/servizio {2,}/g, 'servizio ');
+    const testoCompilato = testoM2i(renderBody(corpo, valoriTesto)).replace(/servizio {2,}/g, 'servizio ');
     const titoloCompilato = renderBody(titolo_documento || DEFAULT_CONTENT.titolo_documento, valoriTesto);
-    const dataCompilata = renderBody(riga_data || DEFAULT_CONTENT.riga_data, valoriTesto);
+    const dataCompilata = renderBody(riga_data || DEFAULT_CONTENT.riga_data, valoriTesto).replace(/^Roma,\s*/i, `${luogoM2i}, `);
     const destinatarioCompilato = renderBody(destinatario_label || DEFAULT_CONTENT.destinatario_label, valoriTesto);
     const oggettoCompilato = renderBody(oggetto_label || DEFAULT_CONTENT.oggetto_label, valoriTesto);
 
@@ -138,7 +152,7 @@ exports.generatePreventivo = async (req, res) => {
       content: [
         {
           columns: [
-            { image: path.join(__dirname, '..', 'public', 'images', 'logo-m2i.png'), width: 130, alignment: 'left' },
+            { image: logoImmagine, width: 130, alignment: 'left' },
             {
               text: [
                 { text: `${titoloCompilato}\n`, fontSize: 14, bold: true, color: '#004aad' },
@@ -188,7 +202,7 @@ exports.generatePreventivo = async (req, res) => {
                       width: '33%',
                       text: [
                         { text: 'Telefono & Email:\n', bold: true, color: '#004aad', fontSize: 10 },
-                        { text: `${tel}\n${em}\n${pec}\n`, fontSize: 10 }
+                        { text: [tel, em, pec].filter(Boolean).join('\n'), fontSize: 10 }
                       ],
                       margin: [40, 10, 0, 10]
                     },
@@ -204,7 +218,8 @@ exports.generatePreventivo = async (req, res) => {
                       width: '34%',
                       text: [
                         { text: 'Dati Societari:\n', bold: true, color: '#004aad', fontSize: 10 },
-                        { text: `P.IVA / C.F.: ${piva}\nREA: ${rea}\nCap. Soc.: € ${capSoc} i.v.`, fontSize: 10 }
+                        { text: [piva && `P.IVA / C.F.: ${piva}`, rea && `REA: ${rea}`,
+                          capSoc && `Cap. Soc.: € ${capSoc}`].filter(Boolean).join('\n'), fontSize: 10 }
                       ],
                       margin: [0, 10, 40, 10]
                     }

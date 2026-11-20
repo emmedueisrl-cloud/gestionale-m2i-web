@@ -170,6 +170,8 @@ function createReceiptsService(knex) {
     const extraTablesPresent = await knex.schema.hasTable('gruppi_fatturazione_extra') && await knex.schema.hasTable('incassi_gruppi_extra');
     const creditsPresent = await knex.schema.hasTable('documenti_rettifica_extra');
     const descriptionTablePresent = await knex.schema.hasTable('descrizioni_fatture_elaborati');
+    const sentRemindersTablePresent = await knex.schema.hasTable('solleciti_fatture_inviati');
+    const historicalTablePresent = await knex.schema.hasTable('fatture_storiche_insoluti');
     const [savedDescriptions, descriptionClients] = await Promise.all([
       descriptionTablePresent ? knex('descrizioni_fatture_elaborati').select('*') : Promise.resolve([]),
       knex('clienti').select('*')
@@ -181,7 +183,7 @@ function createReceiptsService(knex) {
       descrizionePredefinita(descriptionClientById.get(String(clientId)), month, year);
     // Solo le registrazioni della sezione Fatturazione appartengono a questo flusso.
     // La tabella generale fatture contiene anche importazioni storiche non elaborate qui.
-    const [registrations, sentInvoices, receipts, arubaReceipts, sentReceipts, extraGroups, extraReceipts, monthlyGroups, credits] = await Promise.all([
+    const [registrations, sentInvoices, receipts, arubaReceipts, sentReceipts, extraGroups, extraReceipts, monthlyGroups, credits, sentReminders, historicalInvoices] = await Promise.all([
       knex('fatture_aruba_elaborati as a')
         .leftJoin('clienti as c', 'a.cliente_id', 'c.id')
         .leftJoin('fatture as f', 'a.fattura_id', 'f.id')
@@ -211,8 +213,15 @@ function createReceiptsService(knex) {
         .select('g.*', 'c.ragione_sociale').where({ 'g.tipo': 'extra' }).whereNotNull('g.inviata_at') : Promise.resolve([]),
       extraTablesPresent ? knex('incassi_gruppi_extra').select('*').orderBy('registrato_at', 'desc') : Promise.resolve([]),
       extraTablesPresent ? knex('gruppi_fatturazione_extra').where({ tipo: 'mensile' }).orderBy('creata_at') : Promise.resolve([]),
-      creditsPresent ? knex('documenti_rettifica_extra').select('fattura_origine_id', 'totale_cent') : Promise.resolve([])
+      creditsPresent ? knex('documenti_rettifica_extra').select('fattura_origine_id', 'totale_cent') : Promise.resolve([]),
+      sentRemindersTablePresent ? knex('solleciti_fatture_inviati').select('fattura_id').count('* as totale').groupBy('fattura_id') : Promise.resolve([]),
+      historicalTablePresent ? knex('fatture_storiche_insoluti as h').join('fatture as f', 'h.fattura_id', 'f.id')
+        .leftJoin('clienti as c', 'f.cliente_id', 'c.id')
+        .select('h.fattura_id', 'h.descrizione', 'f.cliente_id', 'c.ragione_sociale', 'f.numero_fattura',
+          'f.data_fattura', 'f.data_scadenza', 'f.importo_totale', 'f.importo_pagato',
+          'f.stato_pagamento', 'f.tipo_documento') : Promise.resolve([])
     ]);
+    const sentReminderCountByInvoice = new Map(sentReminders.map(row => [String(row.fattura_id), Number(row.totale)]));
     const byInvoice = new Map();
     for (const receipt of receipts) {
       const key = String(receipt.fattura_id);
@@ -270,6 +279,7 @@ function createReceiptsService(knex) {
       const scadenza = dueDateForPeriod(invoice.anno, invoice.mese);
       return {
         id: linked && !awaitingTransfer ? invoice.fattura_id : `aruba:${invoice.registrazione_id}`,
+        numeroSolleciti: sentReminderCountByInvoice.get(`aruba:${invoice.registrazione_id}`) || 0,
         clienteId: invoice.cliente_id, cliente: invoice.ragione_sociale || 'Cliente non disponibile',
         descrizione: extraGroup ? descriptionByKey.get(`extra:${extraGroup.id}:${extraGroup.anno}:${extraGroup.mese}`) || extraDescriptionByGroup.get(extraGroup.id) :
           monthlyDescription(invoice.cliente_id, invoice.mese, invoice.anno),
@@ -286,6 +296,23 @@ function createReceiptsService(knex) {
         storico: history
       };
     });
+    for (const invoice of historicalInvoices) {
+      const history = byInvoice.get(String(invoice.fattura_id)) || [];
+      const total = money(invoice.importo_totale), paid = money(invoice.importo_pagato);
+      const recorded = history.filter(row => !row.annullatoAt).reduce((sum, row) => sum + cents(row.importo), 0);
+      rows.push({ id: invoice.fattura_id, clienteId: invoice.cliente_id,
+        cliente: invoice.ragione_sociale || 'Cliente non disponibile',
+        descrizione: invoice.descrizione || 'Fattura storica', numero: invoice.numero_fattura,
+        registrata: true, gestibile: true, storica: true,
+        pdfUrl: `/api/contabilita/incassi-insoluti/storiche/${encodeURIComponent(invoice.fattura_id)}/pdf`,
+        numeroSolleciti: sentReminderCountByInvoice.get(String(invoice.fattura_id)) || 0,
+        tipoDocumento: invoice.tipo_documento || 'TD01',
+        periodo: invoice.data_fattura?.slice(0, 7), dataFattura: invoice.data_fattura,
+        scadenza: invoice.data_scadenza, totale: total, incassato: paid,
+        residuo: Math.max(0, (cents(total) - cents(paid)) / 100),
+        stato: statusFor(invoice, today),
+        incongruenza: recorded !== cents(paid) || cents(paid) > cents(total), storico: history });
+    }
     const monthGroupByPeriod = new Map(monthlyGroups.map(group => [`${group.cliente_id}:${group.anno}:${group.mese}`, group]));
     const registeredPeriods = new Set(registrations.filter(row => row.tipo_documento !== 'TD04' && cents(row.importo_totale) >= 0)
       .filter(row => {

@@ -8,6 +8,7 @@ const net = require('node:net');
 const { spawn } = require('node:child_process');
 const sqlite3 = require('sqlite3');
 const parsePdf = require('pdf-parse');
+const JSZip = require('jszip');
 
 async function createFixtureDatabase(filePath, schemaPath) {
   const db = await new Promise((resolve, reject) => {
@@ -20,7 +21,7 @@ async function createFixtureDatabase(filePath, schemaPath) {
     assert.notEqual(legacySchema, schema);
     await new Promise((resolve, reject) => db.exec(legacySchema, error => error ? reject(error) : resolve()));
     await new Promise((resolve, reject) => db.run(
-      'INSERT INTO m2i_azienda_dati (id, ragione_sociale) VALUES (1, ?)', ['M2I SRL'],
+      'INSERT INTO m2i_azienda_dati (id, ragione_sociale, partita_iva) VALUES (1, ?, ?)', ['M2I SRL', '15989811003'],
       error => error ? reject(error) : resolve()
     ));
     await new Promise((resolve, reject) => db.run(
@@ -1073,6 +1074,47 @@ test('server reale: SQLite, login, privilegi, logout e funzioni di test non espo
     const receipts = await fetch(`${base}/api/contabilita/incassi-insoluti`, { headers: { Cookie: accountingCookie } });
     assert.equal(receipts.status, 200);
     assert.ok(Array.isArray((await receipts.json()).fatture));
+    const historicalZip = new JSZip();
+    historicalZip.file('XML/storica.xml', `<?xml version="1.0"?><FatturaElettronica><FatturaElettronicaHeader>
+      <CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>15989811003</IdCodice></IdFiscaleIVA></DatiAnagrafici></CedentePrestatore>
+      <CessionarioCommittente><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>43210987654</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>Cliente storico insoluto</Denominazione></Anagrafica></DatiAnagrafici></CessionarioCommittente>
+      </FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Numero>STOR 991/26</Numero><Data>2026-04-01</Data><ImportoTotaleDocumento>122.00</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali>
+      <DatiBeniServizi><DatiRiepilogo><ImponibileImporto>100.00</ImponibileImporto><Imposta>22.00</Imposta></DatiRiepilogo></DatiBeniServizi>
+      <DatiPagamento><DettaglioPagamento><DataScadenzaPagamento>2026-05-31</DataScadenzaPagamento></DettaglioPagamento></DatiPagamento></FatturaElettronicaBody></FatturaElettronica>`);
+    historicalZip.file('PDF/storica.xml - STOR 991_26.pdf', Buffer.from('%PDF-1.4\nexample'));
+    const historicalBuffer = await historicalZip.generateAsync({ type: 'nodebuffer' });
+    const historicalForm = () => { const form = new FormData(); form.append('zip', new Blob([historicalBuffer], { type: 'application/zip' }), 'storiche.zip'); return form; };
+    const historicalPreviewResponse = await fetch(`${base}/api/contabilita/incassi-insoluti/storiche/anteprima`,
+      { method: 'POST', headers: accountingHeaders, body: historicalForm() });
+    assert.equal(historicalPreviewResponse.status, 200, await historicalPreviewResponse.clone().text());
+    const historicalPreview = await historicalPreviewResponse.json();
+    assert.equal(historicalPreview.fatture[0].stato, 'pronta');
+    const historicalConfirmForm = historicalForm();
+    historicalConfirmForm.append('selected', JSON.stringify([{ id: historicalPreview.fatture[0].id }]));
+    const historicalConfirm = await fetch(`${base}/api/contabilita/incassi-insoluti/storiche/conferma`,
+      { method: 'POST', headers: accountingHeaders, body: historicalConfirmForm });
+    assert.equal(historicalConfirm.status, 200, await historicalConfirm.clone().text());
+    assert.equal((await historicalConfirm.json()).importate, 1);
+    const historicalRows = await fetch(`${base}/api/contabilita/incassi-insoluti`, { headers: accountingHeaders }).then(response => response.json());
+    const historicalRow = historicalRows.fatture.find(row => row.numero === 'STOR 991/26');
+    assert.equal(historicalRow.stato, 'Insoluta');
+    assert.equal(historicalRow.scadenza, '2026-05-31');
+    assert.equal((await fetch(`${base}${historicalRow.pdfUrl}`, { headers: accountingHeaders })).status, 200);
+    const historicalReminder = await fetch(`${base}/api/contabilita/incassi-insoluti/${historicalRow.id}/sollecito`,
+      { headers: accountingHeaders }).then(response => response.json());
+    assert.equal(historicalReminder.fatture.find(row => row.id === historicalRow.id)?.allegabile, true);
+    const historicalPayment = await fetch(`${base}/api/contabilita/incassi-insoluti/${historicalRow.id}/incassi`, {
+      method: 'POST', headers: { ...accountingHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: historicalRows.oggi, importo: '20.00', idempotencyKey: crypto.randomUUID() })
+    });
+    assert.equal(historicalPayment.status, 200, await historicalPayment.clone().text());
+    const afterHistoricalPayment = await fetch(`${base}/api/contabilita/incassi-insoluti`,
+      { headers: accountingHeaders }).then(response => response.json());
+    assert.equal(afterHistoricalPayment.fatture.find(row => row.id === historicalRow.id).residuo, 102);
+    const duplicatePreviewForm = historicalForm();
+    const duplicatePreview = await fetch(`${base}/api/contabilita/incassi-insoluti/storiche/anteprima`,
+      { method: 'POST', headers: accountingHeaders, body: duplicatePreviewForm }).then(response => response.json());
+    assert.equal(duplicatePreview.fatture[0].stato, 'presente');
     assert.equal((await fetch(`${base}/api/contabilita/dipendenti/anagrafica`, { headers: { Cookie: accountingCookie } })).status, 200);
     assert.equal((await fetch(`${base}/api/buste-paga/mese?mese=4&anno=2026`, { headers: { Cookie: accountingCookie } })).status, 200);
     assert.equal((await fetch(`${base}/api/buste-paga/nessuna`, { method: 'DELETE', headers: { Cookie: accountingCookie } })).status, 404);

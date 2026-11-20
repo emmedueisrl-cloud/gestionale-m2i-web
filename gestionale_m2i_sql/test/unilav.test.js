@@ -115,6 +115,7 @@ test('anteprima non modifica dati; conferma crea, proroga, trasforma, cessa e al
     indirizzo: null, citta: null, cap: null, livello_inquadramento: null });
   assert.equal(fs.existsSync(path.join(dataDir, saved.file)), true);
   assert.equal((await service.preview(buffer)).giaImportato.dipendenteId, saved.dipendenteId);
+  assert.equal((await service.preview(buffer)).dipendenti.find(employee => employee.id === saved.dipendenteId).telefono, '123456789');
   await assert.rejects(service.confirm(buffer, { mode: 'nuovo', nuovo: {} }, 'test'), /già stato acquisito/);
   current = { ...parsed, codiceComunicazione: '0805826048617599',
     dipendente: { ...parsed.dipendente, cognome: 'ROSSO', codiceFiscale: 'RSSMRA73L68E958X' } };

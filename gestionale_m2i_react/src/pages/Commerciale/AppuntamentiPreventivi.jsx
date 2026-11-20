@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowDownUp, ArrowUp, CalendarDays, Check, ChevronDown, Clock3, Copy, Download, FilePlus2, FileText, Link2, MapPin, Paperclip, Pencil, Plus, Printer, Search, Trash2, UserRound, X } from 'lucide-react';
 import NuovoPreventivoModal from './NuovoPreventivoModal';
+import ContrattoAppaltoAppuntamento from './ContrattoAppaltoAppuntamento';
 import { recuperaElencoDipendenti } from '../../api/dipendenti';
 import { notePostAppuntamento } from '../../utils/noteAppuntamento';
 import { sortRows } from '../../utils/sortRows';
@@ -61,6 +62,7 @@ export default function AppuntamentiPreventivi() {
   const [linkForm, setLinkForm] = useState(null);
   const [newQuoteFor, setNewQuoteFor] = useState(null);
   const [quoteToEdit, setQuoteToEdit] = useState(null);
+  const [contractFor, setContractFor] = useState(null);
   const [ordinamentoAppuntamenti, setOrdinamentoAppuntamenti] = useState(null);
   const [ricercaAppuntamenti, setRicercaAppuntamenti] = useState('');
   const [dettagliAperti, setDettagliAperti] = useState(null);
@@ -384,6 +386,7 @@ export default function AppuntamentiPreventivi() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={() => { setError(''); setUploadForm({ id: a.id, file: null, numeroPreventivo: '' }); }} className="flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-100 hover:bg-slate-600"><Paperclip size={15} /> Allega PDF</button>
             <button type="button" onClick={() => setNewQuoteFor(a)} className="flex items-center gap-1.5 rounded-lg bg-indigo-500/20 px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/30"><FilePlus2 size={15} /> Crea preventivo</button>
+            <button type="button" onClick={() => setContractFor(a)} className="flex items-center gap-1.5 rounded-lg bg-emerald-500/20 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/30"><FileText size={15} /> Genera contratto</button>
             <button type="button" onClick={() => { setError(''); setLinkForm({ id: a.id, preventivoId: '' }); }} className="flex items-center gap-1.5 rounded-lg bg-slate-700 px-3 py-2 text-sm text-slate-100 hover:bg-slate-600"><Link2 size={15} /> Collega esistente</button>
           </div>
         </div>
@@ -526,5 +529,6 @@ export default function AppuntamentiPreventivi() {
 
     {newQuoteFor && <NuovoPreventivoModal appuntamento={newQuoteFor} onClose={() => setNewQuoteFor(null)} onSuccess={async () => { setNewQuoteFor(null); await load(); }} />}
     {quoteToEdit && <NuovoPreventivoModal preventivo={quoteToEdit} onClose={() => setQuoteToEdit(null)} onSuccess={async () => { setQuoteToEdit(null); await load(); }} />}
+    {contractFor && <ContrattoAppaltoAppuntamento appuntamento={contractFor} onClose={() => setContractFor(null)} />}
   </div>;
 }

@@ -7,7 +7,6 @@ import ModernModal from '../../components/ui/ModernModal';
 import AttrezzatureCliente from '../../components/clienti/AttrezzatureCliente';
 import PreventiviCliente from '../../components/clienti/PreventiviCliente';
 import { campiFatturazione } from '../../components/clienti/campiFatturazioneCliente';
-import DatiContrattoAppaltoCliente from '../../components/appalto/DatiContrattoAppaltoCliente';
 
 const formattaData = valore => /^\d{4}-\d{2}-\d{2}$/.test(valore || '')
   ? valore.split('-').reverse().join('/') : valore || '-';
@@ -176,8 +175,25 @@ export default function SchedaCliente() {
         <CampoScheda etichetta="Codice cliente" valore={data.id} />
       </div>
 
-      <DatiContrattoAppaltoCliente clienteId={id} dati={data.contrattoAppalto}
-        onSaved={saved => setData(current => ({ ...current, contrattoAppalto: saved }))} />
+      <section className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-700 bg-slate-800 p-5 text-slate-100">
+        <div><h2 className="text-lg font-bold">Contratto d’appalto</h2>
+          <p className="mt-1 text-sm text-slate-300">Apri il modulo aggiornato per completare i dati, scegliere il modello e controllare il riepilogo prima della stampa. I dati inseriti vengono salvati in questa anagrafica.</p></div>
+        <button type="button" onClick={() => navigate(`/admin/clienti/contratto/${encodeURIComponent(id)}`)} className="rounded-lg bg-indigo-600 px-4 py-2 font-semibold hover:bg-indigo-500">Apri modulo contratto</button>
+      </section>
+
+      {data.visuraDati && <section className="mb-8 rounded-2xl border border-slate-700 bg-slate-800 p-5">
+        <h2 className="mb-4 text-lg font-bold text-slate-100">Dati letti dalla visura</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ['ragioneSociale', 'Ragione sociale'], ['partitaIva', 'Partita IVA'],
+            ['codiceFiscale', 'Codice fiscale'], ['sedeLegale', 'Sede legale'],
+            ['indirizzoSede', 'Indirizzo sede'], ['cap', 'CAP'], ['citta', 'Comune'],
+            ['provincia', 'Provincia'], ['pec', 'PEC'], ['rappresentante', 'Legale rappresentante'],
+            ['numeroRea', 'Numero REA'], ['formaGiuridica', 'Forma giuridica'],
+            ['codiceAteco', 'Codice ATECO'], ['attivita', 'Attività']
+          ].map(([key, label]) => <CampoScheda key={key} etichetta={label} valore={data.visuraDati[key]} />)}
+        </div>
+      </section>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-5 flex items-center gap-4">

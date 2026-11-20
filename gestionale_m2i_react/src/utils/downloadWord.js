@@ -2,12 +2,17 @@ import { AlignmentType, BorderStyle, Document, Footer, ImageRun, Packer, PageNum
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import RegolamentoInterno from '../components/moduli/RegolamentoInterno';
-import { testoContrattoAppalto } from '../components/appalto/testoContrattoAppalto';
+import { segmentiLetteraTrasformazione } from '../components/moduli/letteraTrasformazioneTesto';
+import { dataProrogaIt, oggettoLetteraProroga, presaVisioneProroga, segmentiLetteraProroga } from '../components/moduli/letteraProrogaTesto';
+import { modelloContrattoAppalto } from '../components/appalto/modelloContrattoAppalto';
+import { paragrafoOriginaleContrattoAssunzione, segmentiContrattoAssunzione,
+  segmentiRecapitiContrattoAssunzione, titoloContrattoAssunzione } from '../components/moduli/contrattoAssunzioneTesto';
 import { companyStampUrl } from './companyStampUrl';
 import { nomeContrattoAssunzione } from './printContrattoAssunzione';
 import { nomeLetteraTrasformazione } from './printLetteraTrasformazione';
 import { nomeLetteraProroga } from './printLetteraProroga';
 import { nomeContrattoAppalto } from './printContrattoAppalto';
+import { luogoM2i, nomeM2i, righeIntestazioneM2i, sedeM2i } from './datiM2iDocumento';
 
 const BLUE = '1E40AF';
 const GRAY = '475569';
@@ -35,11 +40,10 @@ async function image(path, width, height) {
 
 async function brand(company, area) {
   const logo = await image(company?.logo_path, 104, 47);
-  const sede = company?.sede_legale || 'VIA DEL FONTANILE ANAGNINO 183, 00118 ROMA (RM)';
-  const line = [sede, `Tel. ${company?.telefono || '351 547 1406'} · PEC ${company?.pec || 'emmedueisrl@pec.it'}`, `P. IVA ${company?.partita_iva || '15989811003'}`];
+  const line = righeIntestazioneM2i(company).slice(1);
   const items = [];
   if (logo) items.push(para([logo], { spacing: { after: 70 } }));
-  items.push(para([strong(company?.ragione_sociale || 'M2I S.R.L.'), ...(area ? [text(`   ${area}`, { color: BLUE, size: 18 })] : [])], { spacing: { after: 45 } }));
+  items.push(para([strong(nomeM2i(company)), ...(area ? [text(`   ${area}`, { color: BLUE, size: 18 })] : [])], { spacing: { after: 45 } }));
   line.forEach(value => items.push(small(value)));
   items.push(para('', { border: { bottom: { color: BLUE, size: 12, style: BorderStyle.SINGLE } }, spacing: { after: 150 } }));
   return items;
@@ -52,19 +56,34 @@ async function signature(company, label = 'Timbro e firma') {
     para('____________________________', { alignment: AlignmentType.RIGHT, spacing: { after: 130 } })];
 }
 
-async function appaltoSignature(company) {
-  const stamp = await image(company?.timbro_path, 208, 94);
+function appaltoSignature() {
   return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: {
     top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE }, left: { style: BorderStyle.NONE },
     right: { style: BorderStyle.NONE }, insideHorizontal: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE }
   }, rows: [new TableRow({ children: [
     new TableCell({ children: [para('APPALTATORE', { alignment: AlignmentType.CENTER }),
-      ...(stamp ? [para([stamp], { alignment: AlignmentType.CENTER })] : [para(' ')]),
+      para(' ', { spacing: { before: 900, after: 120 } }),
       para('____________________________', { alignment: AlignmentType.CENTER })] }),
     new TableCell({ children: [para('COMMITTENTE', { alignment: AlignmentType.CENTER }),
       para(' ', { spacing: { before: 900, after: 120 } }),
       para('____________________________', { alignment: AlignmentType.CENTER })] })
   ] })] });
+}
+
+async function assunzioneFirme(company) {
+  const stamp = await image(company?.timbro_path, 208, 94);
+  const borders = { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE },
+    left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE },
+    insideHorizontal: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } };
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders,
+    rows: [new TableRow({ children: [
+      new TableCell({ children: [para('(Lavoratore)', { alignment: AlignmentType.CENTER }),
+        para(' ', { spacing: { before: 1000, after: 50 } }),
+        para('____________________________', { alignment: AlignmentType.CENTER })] }),
+    new TableCell({ children: [para(`${nomeM2i(company)} (Datore di lavoro)`, { alignment: AlignmentType.CENTER }),
+        ...(stamp ? [para([stamp], { alignment: AlignmentType.CENTER, spacing: { before: 70, after: 0 } })]
+          : [para(' ', { spacing: { before: 1000, after: 50 } })])] })
+    ] })] });
 }
 
 async function acceptance(company) {
@@ -87,87 +106,104 @@ async function acceptance(company) {
 }
 
 function addressee(d, company) {
-  return [small(`Datore di lavoro: ${company?.ragione_sociale || 'M2I S.R.L.'} · ${company?.sede_legale || ''}`),
+  return [small(`Datore di lavoro: ${nomeM2i(company)} · ${sedeM2i(company)}`),
     ...recipient(d).map(line => small(line))];
 }
 
-function regulation() {
-  const html = renderToStaticMarkup(createElement(RegolamentoInterno, { dataFirma: '' }));
+function letterAddressBlock(d, company) {
+  const borders = { top: { style: BorderStyle.NONE }, bottom: { style: BorderStyle.NONE },
+    left: { style: BorderStyle.NONE }, right: { style: BorderStyle.NONE },
+    insideHorizontal: { style: BorderStyle.NONE }, insideVertical: { style: BorderStyle.NONE } };
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders,
+    rows: [new TableRow({ children: [
+      new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE }, children: [
+        small('Datore di lavoro'),
+        para([strong(nomeM2i(company))], { spacing: { after: 30 } }),
+        para([strong(sedeM2i(company))], { spacing: { after: 30 } })
+      ] }),
+      new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE }, children: [
+        small('Destinatario'),
+        ...recipient(d).map(line => para([strong(line)], { alignment: AlignmentType.LEFT, spacing: { after: 30 } }))
+      ] })
+    ] })] });
+}
+
+function regulation(company, formData) {
+  const html = renderToStaticMarkup(createElement(RegolamentoInterno, { formData, azienda: company }));
   const dom = new DOMParser().parseFromString(html, 'text/html');
-  return Array.from(dom.querySelectorAll('h2, h3, p, li')).map(el => {
-    const value = el.textContent.trim();
-    if (el.tagName === 'H2') return title(value);
-    if (el.tagName === 'H3') return heading(value);
-    return para(value);
+  const pages = Array.from(dom.querySelectorAll('.regolamento-pagina'));
+  return pages.flatMap((page, pageIndex) => {
+    const paragraphs = Array.from(page.querySelectorAll('h2, h3, p'))
+      .map((el, index) => {
+        const value = el.textContent.trim();
+        const options = { spacing: { after: 70 }, ...(index === 0 ? { pageBreakBefore: true } : {}) };
+        if (el.tagName === 'H2') return para([strong(value)], { ...options, alignment: AlignmentType.CENTER });
+        if (el.tagName === 'H3') return para([strong(value)], { ...options, keepWithNext: true });
+        return para([text(value, { size: 18 })], options);
+      });
+    if (pageIndex === pages.length - 1) paragraphs.push(para('Firma del lavoratore: ______________________________', { spacing: { before: 350 } }));
+    return paragraphs;
   });
 }
 
 async function assunzione(d, a) {
-  const maschio = d.sesso === 'M';
-  const assunto = maschio ? 'assunto' : 'assunta';
-  const obbligato = maschio ? 'obbligato' : 'obbligata';
-  const autorizzato = maschio ? 'autorizzato' : 'autorizzata';
-  const ccnl = d.ccnlRetribuzione || (str(d.livelloCCNL).includes('C.C.N.L.') ? str(d.livelloCCNL).split(' ').slice(1).join(' ') : 'C.C.N.L. Pulizie');
-  const rows = [
-    ['01  Durata del lavoro', d.tipoContratto === 'Indeterminato' ? 'Tempo indeterminato.' : `Tempo determinato fino al ${date(d.dataFine)}, ai sensi del D.Lgs. n. 81 del 15/06/2015 e art. 17 D.L. 22 marzo 2021 n. 41.`],
-    ['02  Qualifica, mansioni e categoria', `Qualifica: ${d.qualifica}. Mansioni: ${d.mansioni}. Livello: ${d.livelloCCNL}.`],
-    ['03  Orario e retribuzione', `L’orario stabilito è di ${d.oreSettimanali}. La retribuzione sarà quella prevista dal ${ccnl}.`],
-    ['04  Posizioni assicurative', `INAIL: ${a?.posizione_inail || '________'} · INPS: ${a?.posizione_inps || '________'}`],
-    ['05  Periodo di prova', `Il periodo di prova avrà la durata di ${d.periodoProva} giorni di lavoro effettivo.`],
-    ['06  Sede', `La sede dell’attività è sita in ${d.sedeLavoro || a?.sede_legale || 'Via del Fontanile Anagnino 183, Roma'}. Il datore di lavoro si riserva il diritto di affidarle, per motivi inerenti all’attività lavorativa, compiti o mansioni anche fuori sede.`],
-    ['07  Regolamento ed usi dell’azienda', 'Dovrà attenersi al regolamento, alle disposizioni e agli usi della società, che si intendono conosciuti e accettati qualora non abbia avanzato eccezioni per iscritto entro la scadenza del periodo di prova.']
-  ];
-  const body = [...await brand(a, 'Risorse umane · Comunicazione individuale'), title('Lettera di assunzione'), small(`Roma, ${date(d.dataFirma)}`), ...addressee(d, a),
-    para([text(`Gentile ${maschio ? 'Sig.' : 'Sig.ra'} `), strong(`${d.cognome} ${d.nome}`), text(`, siamo lieti di comunicarLe che Lei è ${assunto} alle nostre dipendenze dal giorno `), strong(date(d.dataInizio)), text(' alle seguenti condizioni.')]),
-    heading('Condizioni del rapporto')];
-  rows.forEach(([label, value]) => { body.push(para([strong(label), text(`\n${value}`)], { spacing: { after: 100 } })); });
-  body.push(small(`Roma, ${date(d.dataFirma)}`), ...await signature(a, 'Il datore di lavoro'), heading('Trattamento dei dati personali'),
-    para('Per l’instaurazione e l’esecuzione del rapporto di lavoro regolato dal presente contratto, la Società acquisisce e tratta i Suoi dati personali, conformemente a quanto previsto dal Regolamento UE 2016/679 e dalla normativa nazionale vigente, compresi eventuali provvedimenti emanati dall’Autorità di Controllo, ove applicabili, nonché allo Statuto dei Lavoratori (L. 300/1970), come da Informativa sul trattamento dei dati personali allegata.'),
-    para(`In virtù del presente contratto, Lei è altresì ${obbligato} a prestare la Sua attività nel rispetto delle istruzioni impartite ai sensi dell’art. 29 Regolamento UE 2016/679 sul trattamento dei dati personali per il quale è ${autorizzato} dalla scrivente (come da documento allegato per il conferimento dell’autorizzazione al trattamento dei dati personali ed individuazione dell’ambito del trattamento consentito, ai sensi del Regolamento UE 2016/679).`),
-    await acceptance(a));
-  if (d.allegaRegolamento) body.push(...regulation());
+  const body = [...await brand(a, ''), para([text(`${luogoM2i(a)}, `), strong(date(d.dataFirma))], { alignment: AlignmentType.RIGHT, spacing: { before: 180, after: 180 } }),
+    para([strong(d.sesso === 'F' ? 'Gent.ma Sig.ra' : 'Gent.mo Sig.')], { alignment: AlignmentType.RIGHT, spacing: { after: 30 } }),
+    ...recipient(d).map(line => para([strong(line)], { alignment: AlignmentType.RIGHT, spacing: { after: 30 } })),
+    para([strong(titoloContrattoAssunzione(d))], { alignment: AlignmentType.CENTER, spacing: { before: 300, after: 260 } })];
+  for (const paragraph of segmentiContrattoAssunzione(d, a)) {
+    body.push(para(paragraph.map(part => text(part.text, { bold: part.bold })),
+      { spacing: { after: 180 }, alignment: AlignmentType.JUSTIFIED }));
+  }
+  body.push(para(paragrafoOriginaleContrattoAssunzione(39)), para([text(`${luogoM2i(a)}, lì `), strong(date(d.dataFirma))]),
+    await assunzioneFirme(a),
+    ...segmentiRecapitiContrattoAssunzione(d).map(parts => para(parts.map(part => text(part.text, { bold: part.bold })))),
+    para(paragrafoOriginaleContrattoAssunzione(56), { spacing: { before: 150, after: 30 } }),
+    para(paragrafoOriginaleContrattoAssunzione(57), { spacing: { after: 230 } }),
+    para(paragrafoOriginaleContrattoAssunzione(58), { spacing: { before: 190, after: 100 } }),
+    para(paragrafoOriginaleContrattoAssunzione(59, a)),
+    para(paragrafoOriginaleContrattoAssunzione(61), { spacing: { before: 150 } }),
+    para(paragrafoOriginaleContrattoAssunzione(64), { spacing: { before: 150, after: 30 } }),
+    para(paragrafoOriginaleContrattoAssunzione(65)));
+  if (d.allegaRegolamento) body.push(...regulation(a, d));
   return body;
 }
 
 async function trasformazione(d, a) {
-  return [...await brand(a, 'Risorse umane · Comunicazione individuale'), title('Lettera di trasformazione'), small(`Roma, ${date(d.dataFirma)}`), ...addressee(d, a),
-    heading('Oggetto: trasformazione contratto di lavoro a tempo indeterminato.'),
-    para(`In riferimento al rapporto di lavoro a tempo determinato instaurato con la S.V. in data ${date(d.dataAssunzione, '.')}, ai sensi del Dlgs. n. 368/2001, della Legge 247/2007 e secondo quanto previsto dall’art. 11 del CCNL Pulizie, siamo lieti di comunicarle che dalla data del ${date(d.dataTrasformazione, '.')} il suo rapporto sarà trasformato in rapporto di lavoro a tempo indeterminato.`),
-    para(`La qualifica d’assunzione è quella di ${d.qualifica} con le mansioni di ${d.mansioni} ${d.livello} per ${d.oreSettimanali}.`),
-    para('Per la retribuzione e gli altri aspetti del rapporto di lavoro, si fa riferimento alle norme di legge e del C.C.N.L. vigente del settore Imprese di pulizia.'),
-    para(`Roma, ${date(d.dataFirma)}`, { spacing: { before: 450, after: 100 } }), ...await signature(a)];
+  return [...await brand(a, ''), title('Lettera di trasformazione'),
+    para([text(`${luogoM2i(a)}, `), strong(date(d.dataFirma))], { alignment: AlignmentType.RIGHT }),
+    letterAddressBlock(d, a),
+    ...segmentiLetteraTrasformazione(d).map(parti => para(parti.map(parte => text(parte.text, { bold: parte.bold })),
+      { spacing: { before: 180, after: 180 }, alignment: AlignmentType.JUSTIFIED })),
+    para([text(`${luogoM2i(a)}, `), strong(date(d.dataFirma))], { spacing: { before: 450, after: 100 } }),
+    await assunzioneFirme(a)];
 }
 
 async function proroga(d, a) {
-  const company = a?.ragione_sociale || 'M2I S.R.L.';
-  return [...await brand(a, 'Risorse umane · Comunicazione individuale'), title('Lettera di proroga'), small(`Roma, ${date(d.dataFirma, '.')}`), ...addressee(d, a),
-    heading('Oggetto: comunicazione di proroga del contratto di lavoro a tempo determinato ai sensi del D.Lgs. n. 81 del 15/06/2015 e art. 17 D.L. 22 marzo 2021 n. 41.'),
-    para(`Il sottoscritto ${d.amministratore}, in qualità di Amministratore Unico della “${company}” C.F. ${a?.codice_fiscale || a?.partita_iva || '15989811003'}, con sede legale a Roma in ${a?.sede_legale || 'VIA DEL FONTANILE ANAGNINO 183, 00118 ROMA (RM)'}, Le comunica la proroga del rapporto di lavoro a tempo determinato ai sensi del D.Lgs. n. 81 del 15/06/2015 e art. 17 D.L. 22 marzo 2021 n. 41, instaurato in data ${date(d.dataAssunzione, '.')}, con scadenza al ${date(d.nuovaScadenza, '.')}.`),
-    para(`La sede di lavoro e le mansioni attribuiteLe restano immutate; le ore di lavoro saranno ${d.oreSettimanali} ore settimanali. La proroga si riferisce alla stessa attività lavorativa per la quale è stato stipulato inizialmente il contratto a termine.`),
-    para('La preghiamo sottoscrivere la copia della presente, per ricevuta e per integrale accettazione del contenuto.'),
-    para(`Roma, ${date(d.dataFirma)}`), para('Firma del lavoratore __________________________'), ...await signature(a),
-    para('Per l’instaurazione e l’esecuzione del rapporto di lavoro regolato dal presente contratto, la Società acquisisce e tratta i Suoi dati personali, conformemente a quanto previsto dal Regolamento UE 2016/679 e dalla normativa nazionale vigente, compresi eventuali provvedimenti emanati dall’Autorità di Controllo, ove applicabili, nonché dallo Statuto dei Lavoratori (L. 300/1970), come da Informativa sul trattamento dei dati personali allegata.'),
-    para('In virtù del presente contratto, Lei è altresì obbligato/a a prestare la Sua attività nel rispetto delle istruzioni impartite ai sensi dell’art. 29 Regolamento UE 2016/679 sul trattamento dei dati personali per il quale è autorizzato dalla scrivente (come da documento allegato per il conferimento dell’autorizzazione al trattamento dei dati personali ed individuazione dell’ambito del trattamento consentito, ai sensi del Regolamento UE 2016/679).'),
-    para('Firma del lavoratore __________________________')];
+  return [...await brand(a, ''), title('Lettera di proroga'),
+    letterAddressBlock(d, a),
+    heading(oggettoLetteraProroga),
+    ...segmentiLetteraProroga(d).map(parti => para(parti.map(parte => text(parte.text, { bold: parte.bold })),
+      { spacing: { before: 180, after: 180 }, alignment: AlignmentType.JUSTIFIED })),
+    para([text(`${luogoM2i(a)}, `), strong(dataProrogaIt(d.dataFirma))], { spacing: { before: 300, after: 160 } }),
+    para(presaVisioneProroga), await assunzioneFirme(a)];
 }
 
 async function appalto(d, a) {
-  const paragraphs = testoContrattoAppalto(d, a);
-  const headings = new Set([10, 13, 19, 25, 34, 38, 45, 50, 59, 63, 66, 70, 74, 79, 82, 95]);
+  const { paragrafi: paragraphs, headings, firme } = modelloContrattoAppalto(d, a);
   const body = [...await brand(a, '')];
   for (const [index, value] of paragraphs.entries()) {
     if (!value.trim()) continue;
     if (index === 0) body.push(title(value));
     else if (headings.has(index)) body.push(para(value, { style: 'Heading2', spacing: { before: 160, after: 90 }, keepWithNext: true }));
-    else if (index === 100 || index === 117) body.push(await appaltoSignature(a));
+    else if (firme.has(index)) body.push(appaltoSignature());
     else body.push(para(value, { spacing: { after: index === 8 ? 150 : 65 } }));
   }
   return body;
 }
 
 function footer(company, isAppalto) {
-  const children = isAppalto ? [small(`${company?.ragione_sociale || 'M2I S.R.L.'} · P. IVA ${company?.partita_iva || '15989811003'} · ${company?.sede_legale || ''}`),
-    small(`Tel. ${company?.telefono || '351 547 1406'} · PEC ${company?.pec || 'emmedueisrl@pec.it'}`)] : [];
+  const children = isAppalto ? righeIntestazioneM2i(company).map(line => small(line)) : [];
   children.push(para([text('Pagina ', { color: GRAY }), new TextRun({ children: [PageNumber.CURRENT], color: GRAY }),
     text('/' , { color: GRAY }), new TextRun({ children: [PageNumber.TOTAL_PAGES], color: GRAY })],
   { alignment: AlignmentType.RIGHT }));

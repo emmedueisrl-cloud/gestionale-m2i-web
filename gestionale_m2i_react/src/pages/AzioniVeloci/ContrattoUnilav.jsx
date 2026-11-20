@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { recuperaDatiAzienda } from '../../api/azienda';
 import PrintableContrattoAssunzione from '../../components/moduli/PrintableContrattoAssunzione';
+import { NUMERO_PAGINE_REGOLAMENTO } from '../../components/moduli/RegolamentoInterno';
 import { companyStampUrl } from '../../utils/companyStampUrl';
 import { stampaContrattoAssunzione } from '../../utils/printContrattoAssunzione';
 import { downloadWord } from '../../utils/downloadWord';
 import { domicilioUnilav } from './domicilioUnilav';
+import { provinciaDaComune } from '../../utils/provinciaDaComune';
 
 const withoutCode = value => String(value || '').replace(/^[\d.]+\s*-\s*/, '').trim();
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white';
@@ -18,17 +20,24 @@ export default function ContrattoUnilav({ unilav, draft, selected, savedValues, 
   const [azienda, setAzienda] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [values, setValues] = useState(() => savedValues || ({
+  const [values, setValues] = useState(() => {
+    const initial = ({
     cognome: draft.cognome || selected?.cognome || worker.cognome,
     nome: draft.nome || selected?.nome || worker.nome,
+    codiceFiscale: worker.codiceFiscale || selected?.codice_fiscale || '',
     sesso: worker.sesso || '',
     indirizzo: draft.indirizzo || selected?.indirizzo || domicileFields.indirizzo,
     cap: draft.cap || selected?.cap || domicileFields.cap,
     citta: draft.citta || selected?.citta || domicileFields.citta,
-    provincia: selected?.provincia || '',
+    provincia: draft.provincia || selected?.provincia || '',
+    telefono: selected?.telefono || draft.telefono || '',
+    email: selected?.email || draft.email || '',
+    iban: selected?.iban || draft.iban || '',
     dataFirma: unilav.dataInvio || work.dataOperazione,
     dataInizio: work.dataOperazione,
     tipoContratto: /A\.01\.00|TEMPO INDETERMINATO/i.test(work.tipologiaContrattuale) ? 'Indeterminato' : 'Determinato',
+    tipoOrario: work.tipoOrario || '',
+    codiceComunicazione: unilav.codiceComunicazione || '',
     dataFine: work.dataFine || '',
     qualifica,
     mansioni: draft.mansione || selected?.mansione || (/operai/i.test(qualifica) ? 'operaio' : ''),
@@ -36,8 +45,12 @@ export default function ContrattoUnilav({ unilav, draft, selected, savedValues, 
     oreSettimanali: work.oreSettimanaliMedie ? `${work.oreSettimanaliMedie} ore settimanali${/PARZIALE/i.test(work.tipoOrario) ? ' part time' : ''}` : '',
     periodoProva: '10',
     ccnlRetribuzione: work.ccnl ? `C.C.N.L. ${withoutCode(work.ccnl)}` : '',
-    sedeLavoro: work.sedeLavoro || ''
-  }));
+    sedeLavoro: work.sedeLavoro || '',
+    allegaRegolamento: true,
+    ...(savedValues || {})
+    });
+    return { ...initial, provincia: initial.provincia || provinciaDaComune(initial.citta) };
+  });
   useEffect(() => { onDraftChange?.(values); }, [values, onDraftChange]);
 
   useEffect(() => {
@@ -49,10 +62,12 @@ export default function ContrattoUnilav({ unilav, draft, selected, savedValues, 
     return () => { active = false; };
   }, []);
 
-  const change = (key, value) => setValues(current => ({ ...current, [key]: value }));
-  const field = (key, label, type = 'text', hint = '') => <label key={key} className="block text-sm font-semibold text-slate-200">
-    {label} *
-    <input type={type} required value={values[key]} onChange={event => change(key, event.target.value)} className={inputClass} />
+  const change = (key, value) => setValues(current => key === 'citta'
+    ? { ...current, citta: value, provincia: provinciaDaComune(value) }
+    : { ...current, [key]: value });
+  const field = (key, label, type = 'text', hint = '', required = true) => <label key={key} className="block text-sm font-semibold text-slate-200">
+    {label}{required && ' *'}
+    <input type={type} required={required} value={values[key] || ''} onChange={event => change(key, event.target.value)} className={inputClass} />
     {hint && <span className="mt-1 block text-xs font-normal text-slate-400">{hint}</span>}
   </label>;
   const submit = async event => {
@@ -80,11 +95,6 @@ export default function ContrattoUnilav({ unilav, draft, selected, savedValues, 
       <button type="button" onClick={() => onClose(values)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold">Torna all’UNILAV</button>
     </div>
     {loading ? <p>Caricamento dati aziendali...</p> : <>
-      <div className="rounded-lg border border-slate-700 bg-slate-800 p-4 text-sm">
-        <strong>Datore di lavoro:</strong> {azienda?.ragione_sociale || unilav.azienda.denominazione} · {azienda?.sede_legale || 'Indirizzo non presente'}<br />
-        <strong>Timbro e firma aziendale:</strong> {companyStampUrl(azienda?.timbro_path) ? 'presenti nel gestionale' : 'non disponibili'}<br />
-        <strong>Posizione INPS:</strong> {azienda?.posizione_inps || 'da compilare nella Scheda M2I'} · <strong>Posizione INAIL:</strong> {azienda?.posizione_inail || 'da compilare nella Scheda M2I'}
-      </div>
       <form onSubmit={submit} className="space-y-5">
         <div><h4 className="mb-3 font-bold text-indigo-300">Riepilogo anagrafico</h4>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -101,12 +111,26 @@ export default function ContrattoUnilav({ unilav, draft, selected, savedValues, 
             <label className="block text-sm font-semibold">Tipo contratto *<select required value={values.tipoContratto} onChange={event => change('tipoContratto', event.target.value)} className={inputClass}>
               <option value="Determinato">Determinato</option><option value="Indeterminato">Indeterminato</option></select></label>
             {values.tipoContratto === 'Determinato' && field('dataFine', 'Data di fine', 'date')}
+            {field('tipoOrario', 'Tipo orario UNILAV', 'text', 'Tempo parziale o tempo pieno; determina il titolo della lettera.', false)}
+            {field('codiceComunicazione', 'Codice comunicazione UNILAV', 'text', '', false)}
             {field('qualifica', 'Qualifica')}{field('mansioni', 'Mansioni')}
             {field('livelloCCNL', 'Livello e CCNL')}{field('oreSettimanali', 'Orario settimanale')}
             {field('periodoProva', 'Giorni di prova', 'number')}
             {field('ccnlRetribuzione', 'CCNL della retribuzione')}{field('sedeLavoro', 'Sede di lavoro')}
           </div>
         </div>
+        <div><h4 className="mb-3 font-bold text-indigo-300">Recapiti e coordinate</h4>
+          <p className="mb-3 text-sm text-slate-400">Facoltativi. Se restano vuoti, il dipendente potrà compilarli a mano sulla lettera.</p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {field('telefono', 'Recapito telefonico', 'tel', '', false)}
+            {field('email', 'Indirizzo e-mail', 'email', '', false)}
+            {field('iban', 'Coordinate bancarie (IBAN)', 'text', '', false)}
+          </div>
+        </div>
+        <label className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-sm font-semibold">
+          <input type="checkbox" checked={values.allegaRegolamento !== false} onChange={event => change('allegaRegolamento', event.target.checked)} />
+          Allega il regolamento interno al contratto ({NUMERO_PAGINE_REGOLAMENTO} pagine)
+        </label>
         {error && <p role="alert" className="rounded-lg bg-red-950 p-3 text-red-200">{error}</p>}
         <button type="submit" className="rounded-lg bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-500">Controlla e stampa il contratto</button>
         <button type="submit" value="word" className="ml-3 rounded-lg bg-slate-700 px-5 py-3 font-bold text-white hover:bg-slate-600">Scarica Word</button>

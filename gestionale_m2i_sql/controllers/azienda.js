@@ -24,8 +24,11 @@ module.exports = {
       capitale_sociale: dati.capitaleSociale,
       codice_ateco: dati.codiceAteco
     };
-    for (const [key, column] of [['posizioneInps', 'posizione_inps'], ['posizioneInail', 'posizione_inail'], ['numeroPolizzaRct', 'numero_polizza_rct']]) {
+    for (const [key, column] of [['posizioneInps', 'posizione_inps'], ['posizioneInail', 'posizione_inail'], ['numeroPolizzaRct', 'numero_polizza_rct'], ['compagniaPolizzaRct', 'compagnia_polizza_rct']]) {
       if (Object.prototype.hasOwnProperty.call(dati, key)) updateData[column] = String(dati[key] ?? '').trim();
+    }
+    if (dati.visuraDati && typeof dati.visuraDati === 'object' && !Array.isArray(dati.visuraDati)) {
+      updateData.visura_dati_json = JSON.stringify(dati.visuraDati);
     }
     for (const field of Object.keys(ISSUER_FIELDS)) {
       if (field.startsWith('fatturazione_') && Object.prototype.hasOwnProperty.call(dati, field)) {

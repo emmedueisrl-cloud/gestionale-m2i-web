@@ -19,6 +19,6 @@ export default function ContrattoAppaltoCliente() {
   }, [id]);
   if (error) return <p role="alert" className="rounded-lg bg-red-950 p-5 text-red-200">{error}</p>;
   if (!cliente) return <p className="p-5 text-slate-300">Caricamento cliente...</p>;
-  return <div className="mx-auto max-w-6xl p-5"><ContrattoAppaltoForm cliente={cliente} clienteId={id}
+  return <div className="mx-auto max-w-6xl p-5"><ContrattoAppaltoForm cliente={cliente} clienteId={id} visura={cliente.visuraDati}
     onClose={() => navigate(`/admin/clienti/scheda/${encodeURIComponent(id)}`)} /></div>;
 }

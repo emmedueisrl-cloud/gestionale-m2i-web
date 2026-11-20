@@ -13,18 +13,35 @@ function createReminderService(knex, receipts, options = {}) {
   const dataDir = options.dataDir || process.env.DATA_DIR || __dirname;
   const createTransport = options.createTransport || (config => nodemailer.createTransport(config));
 
+  async function ensureSentRemindersTable() {
+    if (await knex.schema.hasTable('solleciti_fatture_inviati')) return;
+    await knex.schema.createTable('solleciti_fatture_inviati', table => {
+      table.text('id').primary();
+      table.text('email_id').notNullable();
+      table.text('fattura_id').notNullable().index();
+      table.text('cliente_id').notNullable();
+      table.text('inviato_at').notNullable();
+    });
+  }
+
   async function openInvoices(clientId) {
     const result = await receipts.list();
     const rows = result.fatture.filter(row => String(row.clienteId) === String(clientId) && row.registrata && row.residuo > 0 &&
       row.tipoDocumento !== 'TD04' && !row.incongruenza && !row.daCollegare && row.gestibile);
     const registrations = await knex('fatture_aruba_elaborati').where({ cliente_id: clientId })
       .select('id', 'fattura_id', 'allegato_path');
-    const root = path.resolve(dataDir, 'uploads', 'fatture_aruba');
+    const historical = await knex.schema.hasTable('fatture_storiche_insoluti')
+      ? await knex('fatture_storiche_insoluti as h').join('fatture as f', 'h.fattura_id', 'f.id')
+        .where({ 'f.cliente_id': clientId }).select('h.fattura_id', 'h.pdf_path') : [];
+    const roots = ['fatture_aruba', 'fatture_storiche'].map(folder => path.resolve(dataDir, 'uploads', folder));
     return rows.map(row => {
       const registration = registrations.find(item => `aruba:${item.id}` === String(row.id) ||
         (item.fattura_id && String(item.fattura_id) === String(row.id)));
-      const file = registration?.allegato_path ? path.resolve(dataDir, registration.allegato_path) : '';
-      const allegabile = Boolean(file && file.startsWith(root + path.sep) && path.extname(file).toLowerCase() === '.pdf' && fs.existsSync(file));
+      const archive = historical.find(item => String(item.fattura_id) === String(row.id));
+      const relative = registration?.allegato_path || archive?.pdf_path;
+      const file = relative ? path.resolve(dataDir, relative) : '';
+      const allegabile = Boolean(file && roots.some(root => file.startsWith(root + path.sep)) &&
+        path.extname(file).toLowerCase() === '.pdf' && fs.existsSync(file));
       return { id: row.id, numero: row.numero, dataFattura: row.dataFattura, scadenza: row.scadenza,
         residuo: row.residuo, cliente: row.cliente, allegabile, registrationId: registration?.id, file: allegabile ? file : '' };
     });
@@ -79,15 +96,22 @@ function createReminderService(knex, receipts, options = {}) {
     });
     const transporter = createTransport({ host: config.host, port: Number(config.port) || 465,
       secure: Boolean(config.secure), auth: { user: config.user, pass: config.pass } });
+    await ensureSentRemindersTable();
     await transporter.sendMail({ from: { name: config.nome_mittente || 'Gestionale M2I', address: config.user },
       to: to.join(', '), cc: cc.join(', ') || undefined, subject, text: body, attachments });
     const warnings = [];
+    const emailId = `EM_SOL_${crypto.randomUUID()}`;
+    try {
+      await knex('solleciti_fatture_inviati').insert(selected.map(invoice => ({ id: crypto.randomUUID(), email_id: emailId,
+        fattura_id: invoice.registrationId ? `aruba:${invoice.registrationId}` : String(invoice.id),
+        cliente_id: draft.cliente.id, inviato_at: new Date().toISOString() })));
+    } catch (error) { warnings.push('Email inviata, ma conteggio solleciti non aggiornato.'); console.error(error); }
     if (update !== 'nessuno') {
       try { await knex('clienti').where({ id: draft.cliente.id }).update(update === 'sostituisci' ? { email: newEmail } : { email_secondaria: newEmail }); }
       catch (error) { warnings.push('Email inviata, ma indirizzo non salvato in anagrafica.'); console.error(error); }
     }
     try {
-      await knex('emails').insert({ id: `EM_SOL_${crypto.randomUUID()}`, data_invio: new Date().toISOString(),
+      await knex('emails').insert({ id: emailId, data_invio: new Date().toISOString(),
         mittente: config.user, destinatario: to.join(', '), oggetto: subject, corpo: body, tipo: 'outgoing', stato: 'Inviata',
         id_cliente: draft.cliente.id, cartella: 'sent', letto: 1,
         allegati: JSON.stringify(attachmentIds.map(id => ({ filename: attachments[attachmentIds.indexOf(id)].filename,

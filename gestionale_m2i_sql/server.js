@@ -23,6 +23,12 @@ async function ensureCampiAzienda() {
     await knex.schema.alterTable('m2i_azienda_dati', table => table.text('numero_polizza_rct'));
     await knex('m2i_azienda_dati').whereNull('numero_polizza_rct').update({ numero_polizza_rct: '2021/03/2430364' });
   }
+  if (!await knex.schema.hasColumn('m2i_azienda_dati', 'visura_dati_json')) {
+    await knex.schema.alterTable('m2i_azienda_dati', table => table.text('visura_dati_json'));
+  }
+  if (!await knex.schema.hasColumn('m2i_azienda_dati', 'compagnia_polizza_rct')) {
+    await knex.schema.alterTable('m2i_azienda_dati', table => table.text('compagnia_polizza_rct'));
+  }
 }
 const { ensureTipoCliente } = require('./tipo_cliente');
 const { createAuth } = require('./auth');
@@ -47,11 +53,14 @@ const aggiornaCessazioni = creaAggiornamentoCessazioni(knex);
 const { createUnilavService } = require('./unilav');
 const { createVisuraService } = require('./visura_camerale');
 const visuraCamerale = createVisuraService(knex);
+const { previewVisuraAzienda } = require('./visura_azienda');
 const descrizioniFatture = require('./descrizioni_fatture');
 const { createServiziExtra } = require('./servizi_extra');
 const serviziExtra = createServiziExtra(knex);
 const { createArubaZipService } = require('./fatture_aruba_zip');
 const arubaZip = createArubaZipService(knex, workflowElaborati);
+const { createHistoricalInvoiceService } = require('./fatture_storiche_insoluti');
+const historicalInvoices = createHistoricalInvoiceService(knex);
 const { createInvoiceUploadCleanup } = require('./fatture_caricamenti_cleanup');
 const invoiceUploadCleanup = createInvoiceUploadCleanup(knex, process.env.DATA_DIR);
 const consulenteEmail = require('./consulente_email');
@@ -267,6 +276,8 @@ app.post('/api/azioni-veloci/unilav/anteprima', requireAdmin, uploadUnilav,
   handleWorkflow(req => unilav.preview(req.file?.buffer), 'Anteprima UNILAV'));
 app.post('/api/azioni-veloci/visura/anteprima', requireAdmin, uploadUnilav,
   handleWorkflow(req => visuraCamerale.preview(req.file?.buffer), 'Anteprima visura camerale'));
+app.post('/api/azienda/visura/anteprima', requireAdmin, uploadUnilav,
+  handleWorkflow(req => previewVisuraAzienda(req.file?.buffer), 'Anteprima visura M2I'));
 app.post('/api/azioni-veloci/unilav/conferma', requireAdmin, uploadUnilav,
   handleWorkflow(req => unilav.confirm(req.file?.buffer, JSON.parse(req.body?.options || '{}'), req.authUser.id), 'Conferma UNILAV'));
 app.get('/api/azioni-veloci/unilav/bozze', requireAdmin,
@@ -358,6 +369,14 @@ app.get('/api/contabilita/fatture', handleWorkflow(async () => {
   return registrationStatuses(knex, rows);
 }));
 app.get('/api/contabilita/incassi-insoluti', handleWorkflow(() => incassiInsoluti.list()));
+app.get('/api/contabilita/incassi-insoluti/storiche/:id/pdf', async (req, res) => {
+  try {
+    const file = await historicalInvoices.pdf(req.params.id);
+    if (!file) return res.status(404).send('PDF della fattura storica non trovato.');
+    res.type('application/pdf').setHeader('Cache-Control', 'private, no-store');
+    return res.sendFile(file);
+  } catch (error) { return res.status(500).send(error.message); }
+});
 app.get('/api/contabilita/incassi-insoluti/:id/sollecito', handleWorkflow(req => sollecitiFatture.preview(req.params.id), 'Anteprima sollecito'));
 app.post('/api/contabilita/incassi-insoluti/solleciti/invia', handleWorkflow(req => sollecitiFatture.send(req.body), 'Invio sollecito'));
 app.post('/api/contabilita/incassi-insoluti/:id/incassi', handleWorkflow(req =>
@@ -556,6 +575,15 @@ app.post('/api/contabilita/fatture', invoiceUpload.single('allegato'), handleWor
   workflowElaborati.registerInvoice({ ...req.body, file: req.file, userId: req.authUser.id })));
 const arubaZipUpload = multer({ storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 2, fields: 5, parts: 7 } });
+app.post('/api/contabilita/incassi-insoluti/storiche/anteprima',
+  arubaZipUpload.fields([{ name: 'zip', maxCount: 1 }, { name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
+  handleWorkflow(req => historicalInvoices.preview({ zip: req.files?.zip?.[0]?.buffer,
+    xml: req.files?.xml?.[0], pdf: req.files?.pdf?.[0] })));
+app.post('/api/contabilita/incassi-insoluti/storiche/conferma',
+  arubaZipUpload.fields([{ name: 'zip', maxCount: 1 }, { name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
+  handleWorkflow(req => historicalInvoices.importSelected({ zip: req.files?.zip?.[0]?.buffer,
+    xml: req.files?.xml?.[0], pdf: req.files?.pdf?.[0],
+    selected: JSON.parse(req.body?.selected || '[]'), userId: req.authUser.id })));
 app.post('/api/contabilita/fatture/importazione-zip/anteprima',
   arubaZipUpload.fields([{ name: 'zip', maxCount: 1 }, { name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
   handleWorkflow(req => arubaZip.preview({ xmlZip: req.files?.zip?.[0]?.buffer || req.files?.xml?.[0]?.buffer,
@@ -1032,6 +1060,7 @@ app.get(['/api/contabilita/pdf/:tipo/:anno/:mese', '/api/contabilita/pdf/:tipo/:
     const rows = await workflowElaborati.lockedRows(tipo, mese, anno);
     const one = id ? rows.find(r => String(tipo === 'cliente' ? r.idCliente : r.idDipendente) === id) : null;
     if (id && !one) return res.status(404).send('Riga non disponibile.');
+    const aziendaM2i = await knex('m2i_azienda_dati').where('id', 1).first();
     let doc;
     if (!id) doc = tipo === 'cliente'
       ? pdfGenerator.buildStampaElaboratoClientiPDF(rows, mese, anno)
@@ -1039,13 +1068,13 @@ app.get(['/api/contabilita/pdf/:tipo/:anno/:mese', '/api/contabilita/pdf/:tipo/:
     else if (tipo === 'cliente') doc = pdfGenerator.buildElaboratoClientePDF({
       mese, anno, ragione_sociale: one.ragioneSociale, ore_lavorate: one.oreLavorate,
       imponibile: one.imponibile, notaFissa: one.notaFissa, notaMensile: one.notaMensile
-    });
+    }, aziendaM2i);
     else doc = pdfGenerator.buildElaboratoDipendentePDF({
       mese, anno, cognome_nome: one.cognomeNome, paga_lavorato: one.pagaLavorato,
       paga_ferie_permessi_malattia: one.pagaFPM, maggiorazioni: one.maggiorazioni,
       detrazioni: one.detrazioni, stipendio_netto: one.stipendioNetto,
       notaFissa: one.notaFissa, notaMensile: one.notaMensile
-    });
+    }, aziendaM2i);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Elaborato_${tipo}_${mese}_${anno}.pdf"`);
     res.send(await doc.getBuffer());
@@ -1060,7 +1089,8 @@ app.get('/api/pdf/fattura/:id', async (req, res) => {
     const cliente = await knex('clienti').where({ id: fattura.cliente_id }).first();
     fattura.cliente = cliente ? cliente.ragione_sociale : 'Cliente Sconosciuto';
     
-    const doc = pdfGenerator.buildFatturaPDF(fattura);
+    const aziendaM2i = await knex('m2i_azienda_dati').where('id', 1).first();
+    const doc = pdfGenerator.buildFatturaPDF(fattura, aziendaM2i);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Fattura_${fattura.numero}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -1077,7 +1107,8 @@ app.get('/api/pdf/provvigioni', async (req, res) => {
     
     if (!data) return res.status(404).send('Dati non trovati');
     
-    const doc = pdfGenerator.buildProvvigioniPDF(data);
+    const aziendaM2i = await knex('m2i_azienda_dati').where('id', 1).first();
+    const doc = pdfGenerator.buildProvvigioniPDF(data, aziendaM2i);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Provvigioni_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -1094,9 +1125,10 @@ app.get('/api/pdf/elaborato-dipendente', async (req, res) => {
     
     if (!data) return res.status(404).send('Dati non trovati');
     
+    const aziendaM2i = await knex('m2i_azienda_dati').where('id', 1).first();
     const doc = pdfGenerator.buildElaboratoDipendentePDF({
       ...data, notaFissa: data.nota_fissa_storica || '', notaMensile: data.nota_mensile_storica || ''
-    });
+    }, aziendaM2i);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="BustaPaga_${data.cognome_nome.replace(/\s+/g, '_')}_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -1113,9 +1145,10 @@ app.get('/api/pdf/elaborato-cliente', async (req, res) => {
     
     if (!data) return res.status(404).send('Dati non trovati');
     
+    const aziendaM2i = await knex('m2i_azienda_dati').where('id', 1).first();
     const doc = pdfGenerator.buildElaboratoClientePDF({
       ...data, notaFissa: data.nota_fissa_storica || '', notaMensile: data.nota_mensile_storica || ''
-    });
+    }, aziendaM2i);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="Fattura_Cortesia_${data.ragione_sociale.replace(/\s+/g, '_')}_${mese}_${anno}.pdf"`);
     const buffer = await doc.getBuffer(); res.send(buffer);
@@ -1670,6 +1703,9 @@ Promise.resolve().then(async () => {
   if (!await knex.schema.hasColumn('clienti', 'contratto_appalto_dati')) {
     await knex.schema.alterTable('clienti', table => table.text('contratto_appalto_dati'));
   }
+  if (!await knex.schema.hasColumn('clienti', 'visura_dati')) {
+    await knex.schema.alterTable('clienti', table => table.text('visura_dati'));
+  }
   await descrizioniFatture.initialize(knex);
   await workflowElaborati.initialize();
   initializationStep = 'servizi extra e costi dipendenti';
@@ -1677,6 +1713,7 @@ Promise.resolve().then(async () => {
   await employeeCostReport.initialize();
   initializationStep = 'incassi e insoluti';
   await incassiInsoluti.initialize();
+  await historicalInvoices.initialize();
   initializationStep = 'UNILAV';
   await unilav.initialize();
   initializationStep = 'cessazioni dipendenti';

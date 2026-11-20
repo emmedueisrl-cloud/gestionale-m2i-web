@@ -1,5 +1,6 @@
 import React from 'react';
 import { companyStampUrl } from '../../utils/companyStampUrl';
+import { nomeM2i, sedeM2i } from '../../utils/datiM2iDocumento';
 
 export default function PrintableModuloConsegnaCliente({ clienteData, aziendaData, dataVerbale, note }) {
   if (!clienteData) return null;
@@ -14,13 +15,13 @@ export default function PrintableModuloConsegnaCliente({ clienteData, aziendaDat
   return (
     <div className="print-only bg-white text-black p-8 max-w-4xl mx-auto min-h-screen text-[15px] leading-relaxed relative">
       <div className="flex flex-col items-center mb-6 border-b border-black pb-4">
-        <h2 className="font-bold text-xl">{aziendaData?.ragione_sociale || 'M2I S.R.L.'}</h2>
-        <p className="text-sm">Sede Legale: {aziendaData?.sede_legale || 'ROMA (RM) VIA DEL FONTANILE ANAGNINO 183 CAP 00118 C/O ST.COMM.DOT. CECCONI MARCO'}</p>
-        <p className="text-sm">P.IVA: {aziendaData?.partita_iva || '15989811003'} - C.F.: {aziendaData?.codice_fiscale || '15989811003'}</p>
+        <h2 className="font-bold text-xl">{nomeM2i(aziendaData)}</h2>
+        <p className="text-sm">Sede Legale: {sedeM2i(aziendaData)}</p>
+        <p className="text-sm">P.IVA: {aziendaData?.partita_iva || ''} - C.F.: {aziendaData?.codice_fiscale || ''}</p>
       </div>
 
       <h1 className="text-center font-bold text-xl mb-8 uppercase">
-        VERBALE DI CONSEGNA CHIAVI A {aziendaData?.ragione_sociale || 'M2I S.R.L.'}
+        VERBALE DI CONSEGNA CHIAVI A {nomeM2i(aziendaData)}
       </h1>
 
       <p className="mb-6">
@@ -37,7 +38,7 @@ export default function PrintableModuloConsegnaCliente({ clienteData, aziendaDat
       </div>
 
       <p className="mb-6">
-        dichiara di consegnare alla società <strong>M2I S.R.L.</strong> le chiavi relative al seguente immobile/cantiere:
+        dichiara di consegnare alla società <strong>{nomeM2i(aziendaData)}</strong> le chiavi relative al seguente immobile/cantiere:
       </p>
 
       <div className="mb-6 space-y-2">
@@ -46,13 +47,13 @@ export default function PrintableModuloConsegnaCliente({ clienteData, aziendaDat
       </div>
 
       <p className="mb-8">
-        La consegna viene effettuata esclusivamente per consentire al personale incaricato dalla M2I S.R.L. l'accesso ai locali ai fini dello svolgimento dei servizi appaltati/affidati.
+        La consegna viene effettuata esclusivamente per consentire al personale incaricato dalla {nomeM2i(aziendaData)} l'accesso ai locali ai fini dello svolgimento dei servizi appaltati/affidati.
       </p>
 
       <h2 className="font-bold text-lg mb-4">Condizioni di custodia</h2>
       
       <p className="mb-4">
-        Con la sottoscrizione del presente verbale, la M2I S.R.L. si impegna a:
+        Con la sottoscrizione del presente verbale, la {nomeM2i(aziendaData)} si impegna a:
       </p>
       
       <ul className="list-disc pl-8 mb-8 space-y-2">
@@ -110,7 +111,7 @@ export default function PrintableModuloConsegnaCliente({ clienteData, aziendaDat
           <p className="text-sm border-t border-black pt-1">(Timbro e Firma)</p>
         </div>
         <div className="text-center w-1/3 relative">
-          <p className="mb-2 font-bold">Per {aziendaData?.ragione_sociale || 'M2I S.R.L.'} (Ricevente)</p>
+          <p className="mb-2 font-bold">Per {nomeM2i(aziendaData)} (Ricevente)</p>
           <div className="h-24 flex items-center justify-center">
             {timbroUrl && <img src={timbroUrl} alt="Timbro Aziendale" className="max-h-24 max-w-full mix-blend-multiply opacity-90" />}
           </div>

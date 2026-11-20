@@ -31,16 +31,25 @@ test('sollecito: mostra le fatture aperte, allega solo quelle scelte e aggiorna 
     assert.deepEqual(preview.fatture.map(row => row.id), ['aruba:1', 'aruba:2']);
     assert.equal(preview.fatture[0].allegabile, true);
     assert.equal(preview.fatture[1].allegabile, false);
+    assert.equal(await db.schema.hasTable('solleciti_fatture_inviati'), false);
     const input = { fatture: ['aruba:1', 'aruba:2'], allegati: ['aruba:1'], destinatari: ['nuova@example.it'], cc: ['cc@example.it'], oggetto: 'Sollecito', corpo: 'Testo', aggiornamentoEmail: 'secondaria', nuovaEmail: 'nuova@example.it' };
     await assert.rejects(service.send({ ...input, fatture: ['aruba:1', 'aruba:4'] }), /non risultano più aperte/);
     await assert.rejects(service.send({ ...input, allegati: ['aruba:2'] }), /allegati selezionati/);
     assert.equal(sent.length, 0);
+    const failedService = createReminderService(db, { list: async () => ({ fatture: rows }) }, { dataDir,
+      createTransport: () => ({ sendMail: async () => { throw new Error('SMTP non disponibile'); } }) });
+    await assert.rejects(failedService.send(input), /SMTP non disponibile/);
+    assert.equal(Number((await db('solleciti_fatture_inviati').count('* as totale').first()).totale), 0);
     await service.send(input);
     assert.equal(sent[0].to, 'nuova@example.it');
     assert.equal(sent[0].cc, 'cc@example.it');
     assert.deepEqual(sent[0].attachments.map(item => item.path), [file]);
     assert.equal((await db('clienti').where({ id: 'C1' }).first()).email_secondaria, 'nuova@example.it');
     assert.equal((await db('emails').first()).stato, 'Inviata');
+    assert.deepEqual((await db('solleciti_fatture_inviati').orderBy('fattura_id')).map(row => row.fattura_id), ['aruba:1', 'aruba:2']);
+    await service.send({ ...input, fatture: ['aruba:1'], allegati: [] });
+    const counts = await db('solleciti_fatture_inviati').select('fattura_id').count('* as totale').groupBy('fattura_id').orderBy('fattura_id');
+    assert.deepEqual(counts.map(row => [row.fattura_id, Number(row.totale)]), [['aruba:1', 2], ['aruba:2', 1]]);
   } finally {
     await db.destroy(); fs.rmSync(dataDir, { recursive: true, force: true });
   }

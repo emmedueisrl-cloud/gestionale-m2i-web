@@ -5,8 +5,11 @@ import { recuperaDatiCompletiDipendente } from '../../api/dipendenti';
 import { recuperaModuliStandard, uploadModuloStandard, eliminaModuloStandard } from '../../api/azienda';
 import ModuloChiaviForm from '../../components/moduli/ModuloChiaviForm';
 import PrintableModuloChiavi from '../../components/moduli/PrintableModuloChiavi';
-import ModuloAssunzioneForm from '../../components/moduli/ModuloAssunzioneForm';
+import ModuloAssunzioneContrattoForm from '../../components/moduli/ModuloAssunzioneContrattoForm';
+import ModuloLetteraRapportoForm from '../../components/moduli/ModuloLetteraRapportoForm';
 import PrintableContrattoAssunzione from '../../components/moduli/PrintableContrattoAssunzione';
+import ModuloRegolamentoForm from '../../components/moduli/ModuloRegolamentoForm';
+import RegolamentoInterno from '../../components/moduli/RegolamentoInterno';
 import { stampaContrattoAssunzione } from '../../utils/printContrattoAssunzione';
 import ModernModal from '../../components/ui/ModernModal';
 
@@ -22,7 +25,10 @@ export default function ModuliDipendenti() {
   const [chiaviFormData, setChiaviFormData] = useState(null);
   
   const [isAssunzioneFormOpen, setIsAssunzioneFormOpen] = useState(false);
+  const [letterType, setLetterType] = useState(null);
   const [assunzioneFormData, setAssunzioneFormData] = useState(null);
+  const [isRegolamentoFormOpen, setIsRegolamentoFormOpen] = useState(false);
+  const [regolamentoFormData, setRegolamentoFormData] = useState(null);
 
   const [printMode, setPrintMode] = useState(false);
 
@@ -43,6 +49,24 @@ export default function ModuliDipendenti() {
       nome: "Lettera di Assunzione (Contratto)",
       icon: <FileStack className="w-5 h-5 text-indigo-400" />,
       descrizione: "Auto-compila la lettera di assunzione prelevando i dati dal database."
+    },
+    {
+      id: 'proroga',
+      nome: 'Lettera di Proroga',
+      icon: <FileStack className="w-5 h-5 text-indigo-400" />,
+      descrizione: 'Compila la lettera con dati manuali o da UNILAV, senza modificare la scheda.'
+    },
+    {
+      id: 'trasformazione',
+      nome: 'Lettera di Trasformazione',
+      icon: <FileStack className="w-5 h-5 text-indigo-400" />,
+      descrizione: 'Compila la lettera con dati manuali o da UNILAV, senza modificare la scheda.'
+    },
+    {
+      id: 'regolamento',
+      nome: 'Regolamento interno',
+      icon: <FileStack className="w-5 h-5 text-indigo-400" />,
+      descrizione: 'Compila la dichiarazione di accettazione e stampa il regolamento.'
     }
   ];
 
@@ -123,6 +147,13 @@ export default function ModuliDipendenti() {
     }, 500);
   };
 
+  const handleGenerateRegolamento = (formData, aziendaData) => {
+    setIsRegolamentoFormOpen(false);
+    setRegolamentoFormData({ formData, aziendaData });
+    setPrintMode('regolamento');
+    setTimeout(() => window.print(), 500);
+  };
+
   useEffect(() => {
     const handleAfterPrint = () => setPrintMode(false);
     window.addEventListener('afterprint', handleAfterPrint);
@@ -148,6 +179,10 @@ export default function ModuliDipendenti() {
         aziendaData={assunzioneFormData.aziendaData}
       />
     );
+  }
+
+  if (printMode === 'regolamento') {
+    return <RegolamentoInterno formData={regolamentoFormData.formData} azienda={regolamentoFormData.aziendaData} />;
   }
 
   // ----------------------------------------------------
@@ -210,6 +245,8 @@ export default function ModuliDipendenti() {
                     onClick={() => {
                       if (mod.id === 'chiavi') setIsChiaviFormOpen(true);
                       if (mod.id === 'assunzione') setIsAssunzioneFormOpen(true);
+                      if (mod.id === 'proroga' || mod.id === 'trasformazione') setLetterType(mod.id);
+                      if (mod.id === 'regolamento') setIsRegolamentoFormOpen(true);
                     }}
                     className="mt-4 w-full flex items-center justify-center gap-2 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 py-2.5 rounded-lg transition-colors border border-indigo-500/20"
                   >
@@ -303,14 +340,19 @@ export default function ModuliDipendenti() {
         />
       )}
 
-      {dipendenteData && (
-        <ModuloAssunzioneForm
-          isOpen={isAssunzioneFormOpen}
+      {dipendenteData && isAssunzioneFormOpen && (
+        <ModuloAssunzioneContrattoForm
           onClose={() => setIsAssunzioneFormOpen(false)}
           dipendenteData={dipendenteData}
           onGenerate={handleGenerateAssunzione}
         />
       )}
+
+      {dipendenteData && letterType && <ModuloLetteraRapportoForm key={letterType} tipo={letterType}
+        dipendenteData={dipendenteData} onClose={() => setLetterType(null)} />}
+
+      {dipendenteData && isRegolamentoFormOpen && <ModuloRegolamentoForm dipendenteData={dipendenteData}
+        onClose={() => setIsRegolamentoFormOpen(false)} onGenerate={handleGenerateRegolamento} />}
 
       <ModernModal 
         {...alertModal}

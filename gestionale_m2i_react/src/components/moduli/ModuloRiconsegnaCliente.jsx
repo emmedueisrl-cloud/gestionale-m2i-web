@@ -1,5 +1,6 @@
 import React from 'react';
 import { companyStampUrl } from '../../utils/companyStampUrl';
+import { nomeM2i, sedeM2i } from '../../utils/datiM2iDocumento';
 
 export default function ModuloRiconsegnaCliente({ clienteData, aziendaData, infoRiconsegna }) {
   if (!clienteData) return null;
@@ -26,8 +27,8 @@ export default function ModuloRiconsegnaCliente({ clienteData, aziendaData, info
       <div className="flex justify-between mb-8">
         <div>
           <p><strong>Da:</strong></p>
-          <p>{aziendaData?.ragione_sociale || 'M2I S.R.L.'}</p>
-          <p>{aziendaData?.sede_legale}</p>
+          <p>{nomeM2i(aziendaData)}</p>
+          <p>{sedeM2i(aziendaData)}</p>
           <p>P.IVA: {aziendaData?.partita_iva}</p>
         </div>
         <div className="text-right">
@@ -36,7 +37,7 @@ export default function ModuloRiconsegnaCliente({ clienteData, aziendaData, info
       </div>
 
       <p className="mb-6">
-        Con la presente, la società {aziendaData?.ragione_sociale || 'M2I S.R.L.'} dichiara di <strong>riconsegnare</strong> in via definitiva al cliente:
+        Con la presente, la società {nomeM2i(aziendaData)} dichiara di <strong>riconsegnare</strong> in via definitiva al cliente:
       </p>
 
       <div className="mb-6 space-y-2 p-4 bg-gray-50 border border-gray-300 rounded">
@@ -53,7 +54,7 @@ export default function ModuloRiconsegnaCliente({ clienteData, aziendaData, info
       </div>
 
       <p className="mb-8">
-        La riconsegna avviene a seguito della conclusione dell'appalto o su richiesta del Cliente. Con la sottoscrizione del presente verbale, il Cliente conferma di aver ricevuto le chiavi in oggetto e solleva M2I S.R.L. da ogni responsabilità relativa alla loro futura custodia o al loro utilizzo.
+        La riconsegna avviene a seguito della conclusione dell'appalto o su richiesta del Cliente. Con la sottoscrizione del presente verbale, il Cliente conferma di aver ricevuto le chiavi in oggetto e solleva {nomeM2i(aziendaData)} da ogni responsabilità relativa alla loro futura custodia o al loro utilizzo.
       </p>
 
       {infoRiconsegna?.note && (
@@ -64,7 +65,7 @@ export default function ModuloRiconsegnaCliente({ clienteData, aziendaData, info
 
       <div className="flex justify-between mt-24 pt-8">
         <div className="text-center w-1/3 relative">
-          <p className="mb-16 font-bold">Per {aziendaData?.ragione_sociale || 'M2I S.R.L.'} (Consegnatario)</p>
+          <p className="mb-16 font-bold">Per {nomeM2i(aziendaData)} (Consegnatario)</p>
           
           <div className="absolute top-8 left-1/2 -translate-x-1/2 opacity-90 mix-blend-multiply flex items-center justify-center h-24">
             {timbroUrl && <img src={timbroUrl} alt="Timbro" className="max-h-24 max-w-full" />}

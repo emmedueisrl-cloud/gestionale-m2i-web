@@ -208,6 +208,7 @@ export default function AzioniVeloci() {
       {error && <p role="alert" className="mt-3 text-sm text-red-300">{error}</p>}
       {draftSaved && <p role="status" className="mt-3 rounded-lg border border-emerald-700 bg-emerald-950/50 p-3 text-sm text-emerald-200">Bozza UNILAV salvata. La trovi in Anagrafica dipendenti, pulsante “Bozze”.</p>}
       <button type="button" disabled={loading || !(mode === 'testo' ? text.trim() : (file && /\.pdf$/i.test(file.name)) || fileText.trim())} onClick={analyze} className="mt-4 rounded-lg bg-indigo-600 px-5 py-3 font-bold hover:bg-indigo-500 disabled:opacity-50">{loading ? 'Lettura...' : 'Trova'}</button>
+      {loading && mode === 'file' && pdfKind === 'visura' && <p role="status" className="mt-2 text-sm text-slate-300">Se il PDF è una scansione, il riconoscimento delle pagine può richiedere alcuni secondi.</p>}
     </div>
     {showResults && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-2 sm:p-4 lg:p-8" onMouseDown={event => { if (event.target === event.currentTarget) closeResults(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="azioni-veloci-results-title" className="flex h-full max-h-[960px] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-600 bg-slate-900 shadow-2xl">

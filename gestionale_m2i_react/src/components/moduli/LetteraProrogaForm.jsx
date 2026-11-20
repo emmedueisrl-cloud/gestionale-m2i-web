@@ -5,6 +5,7 @@ import { companyStampUrl } from '../../utils/companyStampUrl';
 import { stampaLetteraProroga } from '../../utils/printLetteraProroga';
 import { downloadWord } from '../../utils/downloadWord';
 import { domicilioUnilav } from '../../pages/AzioniVeloci/domicilioUnilav';
+import { provinciaDaComune } from '../../utils/provinciaDaComune';
 import PrintableLetteraProroga from './PrintableLetteraProroga';
 
 const dateValue = value => String(value || '').slice(0, 10);
@@ -14,24 +15,24 @@ function draftFromEmployee(employee, unilav, nuovaScadenza) {
   const worker = unilav?.dipendente || employee?.unilavDati?.anagrafica || {};
   const rapporto = unilav?.rapporto || employee?.unilavDati?.rapporto || {};
   const domicilio = domicilioUnilav(worker);
-  const ore = rapporto.oreSettimanaliMedie || employee?.ore_settimanali || '';
   return {
     cognome: employee?.cognome || worker.cognome || '',
     nome: employee?.nome || worker.nome || '',
     indirizzo: employee?.indirizzo || domicilio.indirizzo,
     cap: employee?.cap || domicilio.cap,
     citta: employee?.citta || domicilio.citta,
-    provincia: employee?.provincia || '',
-    amministratore: '',
+    provincia: employee?.provincia || provinciaDaComune(employee?.citta || domicilio.citta),
     dataFirma: dateValue(unilav?.dataInvio || ''),
     dataAssunzione: dateValue(employee?.data_assunzione || employee?.dataAssunzione || rapporto.dataInizio),
-    nuovaScadenza: dateValue(nuovaScadenza || rapporto.dataOperazione),
-    oreSettimanali: ore ? String(ore) : ''
+    nuovaScadenza: dateValue(nuovaScadenza || rapporto.dataOperazione)
   };
 }
 
 export default function LetteraProrogaForm({ unilav, employee, nuovaScadenza, savedValues, onClose }) {
-  const [values, setValues] = useState(() => savedValues || draftFromEmployee(employee, unilav, nuovaScadenza));
+  const [values, setValues] = useState(() => {
+    const initial = savedValues || draftFromEmployee(employee, unilav, nuovaScadenza);
+    return { ...initial, provincia: initial.provincia || provinciaDaComune(initial.citta) };
+  });
   const [azienda, setAzienda] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,15 +42,16 @@ export default function LetteraProrogaForm({ unilav, employee, nuovaScadenza, sa
       if (active) {
         const company = Array.isArray(result) ? result[0] : result;
         setAzienda(company);
-        setValues(current => ({ ...current, amministratore: current.amministratore || company?.amministratore_unico || '' }));
       }
     }).catch(() => { if (active) setError('Impossibile caricare i dati aziendali.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
-  const change = (key, value) => setValues(current => ({ ...current, [key]: value }));
+  const change = (key, value) => setValues(current => key === 'citta'
+    ? { ...current, citta: value, provincia: provinciaDaComune(value) }
+    : { ...current, [key]: value });
   const field = (key, label, type = 'text') => <label key={key} className="block text-sm font-semibold text-slate-200">
-    {label} *<input type={type} required value={values[key]} onChange={event => change(key, event.target.value)} className={inputClass} />
+    {label} *<input type={type} required value={values[key] || ''} onChange={event => change(key, event.target.value)} className={inputClass} />
   </label>;
   const submit = async event => {
     event.preventDefault();
@@ -72,9 +74,6 @@ export default function LetteraProrogaForm({ unilav, employee, nuovaScadenza, sa
       <button type="button" onClick={() => onClose(values)} className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold">Torna alla proroga</button>
     </div>
     {loading ? <p>Caricamento dati aziendali...</p> : <>
-      <div className="rounded-lg border border-slate-700 bg-slate-800 p-4 text-sm">
-        <strong>Datore:</strong> {azienda?.ragione_sociale || 'M2I S.R.L.'} · <strong>Logo:</strong> {companyStampUrl(azienda?.logo_path) ? 'presente' : 'non caricato'} · <strong>Timbro e firma:</strong> {companyStampUrl(azienda?.timbro_path) ? 'presenti' : 'non caricati'}
-      </div>
       <form onSubmit={submit} className="space-y-5">
         <div><h4 className="mb-3 font-bold text-indigo-300">Destinatario e recapito</h4>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -84,11 +83,9 @@ export default function LetteraProrogaForm({ unilav, employee, nuovaScadenza, sa
         </div>
         <div><h4 className="mb-3 font-bold text-indigo-300">Dati della proroga</h4>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {field('amministratore', 'Amministratore unico')}
             {field('dataFirma', 'Data della lettera', 'date')}
             {field('dataAssunzione', 'Assunzione originaria', 'date')}
             {field('nuovaScadenza', 'Nuova scadenza', 'date')}
-            {field('oreSettimanali', 'Ore settimanali', 'number')}
           </div>
         </div>
         {error && <p role="alert" className="rounded-lg bg-red-950 p-3 text-red-200">{error}</p>}

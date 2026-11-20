@@ -66,7 +66,8 @@ async function ocrVisura(buffer, pages) {
     for (let number = 1; number <= Math.min(pages || document.numPages, document.numPages, 3); number++) {
       const page = await document.getPage(number);
       const base = page.getViewport({ scale: 1 });
-      const viewport = page.getViewport({ scale: 2200 / Math.max(base.width, base.height) });
+      // 1600 px mantengono leggibili le visure scansionate senza rallentare inutilmente l'OCR.
+      const viewport = page.getViewport({ scale: 1600 / Math.max(base.width, base.height) });
       const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
       await page.render({ canvasContext: canvas.getContext('2d'), viewport, canvas }).promise;
       results.push((await worker.recognize(canvas.toBuffer('image/png'))).data.text);
@@ -109,9 +110,16 @@ function parseVisuraText(text) {
   const pec = field(lines, /^(?:indirizzo\s*pec|pec|domicilio\s*digitale(?:\s*\/\s*pec)?)\s*[:\-]?\s*(.*)$/i)
     .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || '';
   const rappresentante = field(lines, /^(?:legale\s*rappresentante|amministratore\s*unico|socio\s*amministratore|titolare\s*dell.impresa)\s*[:\-]?\s*(.*)$/i);
+  const numeroRea = (field(lines, /^(?:numero\s*)?r\.?e\.?a\.?\s*[:\-]?\s*(.*)$/i)
+    .match(/\b[A-Z]{2}\s*[-/]?\s*\d{3,9}\b/i) || [])[0] || '';
+  const formaGiuridica = field(lines, /^forma\s+giuridica\s*[:\-]?\s*(.*)$/i);
+  const codiceAteco = (field(lines, /^(?:codice\s*)?ateco\s*[:\-]?\s*(.*)$/i)
+    .match(/\b\d{2}(?:\.\d{1,2}){1,2}\b/) || [])[0] || '';
+  const attivita = field(lines, /^(?:attivit[aà]\s+(?:prevalente|esercitata)|oggetto\s+dell.attivit[aà])\s*[:\-]?\s*(.*)$/i);
   return {
     ragioneSociale, partitaIva, codiceFiscale, sedeLegale: sedeCompleta,
-    indirizzoSede: via, cap, citta, provincia, pec, rappresentante
+    indirizzoSede: via, cap, citta, provincia, pec, rappresentante,
+    numeroRea, formaGiuridica, codiceAteco, attivita
   };
 }
 
