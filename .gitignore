@@ -86,6 +86,7 @@ DATI_LOCALI/
 !/gestionale_m2i_sql/unilav.js
 !/gestionale_m2i_sql/cessazioni_dipendenti.js
 !/gestionale_m2i_sql/visura_camerale.js
+!/gestionale_m2i_sql/visura_azienda.js
 !/gestionale_m2i_sql/ocr/
 !/gestionale_m2i_sql/servizi_extra.js
 !/gestionale_m2i_sql/consulente_email.js
